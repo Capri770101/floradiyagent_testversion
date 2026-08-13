@@ -179,8 +179,14 @@ class ReActAgent:
                 new_msgs.append({"role": "assistant", "content": final_reply})
                 break
         else:
-            # 超出 max_iterations：强制收尾，避免无限循环
-            final_reply = final_reply or "抱歉，我思考得太久啦，请简化需求或分步骤再问我～"
+            # 超出 max_iterations：强制收尾，避免无限循环。
+            # 若本轮工具已产生有效成果（方案/店铺/订单），则保留成果、用中性文案收尾，
+            # 由下方 _derive_ui 渲染对应卡片，不再武断回「思考太久」——用户实际已拿到方案，
+            # 只是 LLM 没自觉调用 respond_to_user 收尾。仅当全程无任何成功工具调用（纯空转）才回退超时提示。
+            if any(tc.status == "ok" for tc in tool_log):
+                final_reply = final_reply or "我已经为你整理好相关结果啦，请查看下方卡片～"
+            else:
+                final_reply = final_reply or "抱歉，我思考得太久啦，请简化需求或分步骤再问我～"
 
         # 阶段推进：respond_to_user 携带的 stage 优先（经状态机校验），否则按意图推导
         if respond_args is not None:
