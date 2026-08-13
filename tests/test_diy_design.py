@@ -25,10 +25,23 @@ def test_design_extracts_budget() -> None:
     assert "350" in p["estimated_price"]
 
 
-def test_design_stores_latest_plan_for_image() -> None:
-    tools.design_diy_plan("探病祝福 清淡")
-    assert tools._latest_diy_plan is not None
-    assert "effect_prompt" in tools._latest_diy_plan
+def test_design_stores_plan_in_session() -> None:
+    """方案写入当前会话（latest_diy_plan / selected_plan），不再依赖进程级全局（并发安全）。"""
+    from storage import memory as mem
+    from storage.db import init_db
+
+    init_db()
+    sid = mem.get_or_create_session("u_diy_store")
+    ctx = {"user_id": "u_diy_store", "session_id": sid, "location": None}
+    data = json.loads(tools.generate_diy_plan("探病祝福 清淡", ctx))
+    assert "effect_prompt" in data
+    stored = mem.get_session_json("u_diy_store", sid, "latest_diy_plan")
+    assert stored is not None
+    assert stored["plan_id"] == data["plan_id"]
+    selected = mem.get_session_json("u_diy_store", sid, "selected_plan")
+    assert selected is not None and selected["plan_id"] == data["plan_id"]
+    # 无会话上下文（如 cli 直调）不应写库，也不报错
+    assert json.loads(tools.generate_diy_plan("自己悦己 100"))["diy"] is True
 
 
 def test_generate_diy_plan_tool_returns_json() -> None:

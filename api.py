@@ -101,10 +101,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Flora Agent Service", version="1.0.0", lifespan=lifespan)
+# CORS 安全约束：通配符 "*" 与 allow_credentials=True 在浏览器侧互斥
+# （带凭证的通配符请求会被浏览器拒绝），且「任意源可带凭证」存在安全隐患。
+# 因此当 origins 含 "*" 时强制关闭 credentials，避免该矛盾组合；生产环境请
+# 将 CORS_ORIGINS 设为具体前端域名（逗号分隔），而非 "*"。
+_allow_credentials = settings.cors_allow_credentials
+if "*" in settings.cors_origins:
+    _allow_credentials = False
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -210,8 +217,12 @@ async def chat(req: ChatRequest, request: Request) -> Any:
 
 
 @app.get("/tasks/{task_id}")
-async def get_task(task_id: str) -> dict[str, Any]:
-    """轮询生图任务结果（同步 DB 在线程池执行）。"""
+async def get_task(task_id: str, request: Request) -> dict[str, Any]:
+    """轮询生图任务结果（同步 DB 在线程池执行）。
+
+    鉴权模式下强制校验 Bearer 令牌（dev 模式放行），防止越权轮询他人生图任务。
+    """
+    await get_current_user(request)
     return await asyncio.to_thread(tasks.get_image_task, task_id)
 
 
@@ -231,12 +242,18 @@ async def serve_generated(filename: str) -> FileResponse:
 
 
 @app.post("/chat/reset")
-async def reset(req: ResetRequest) -> dict[str, Any]:
-    """清空指定用户的短期记忆（会话与消息），便于测试。"""
+async def reset(req: ResetRequest, request: Request) -> dict[str, Any]:
+    """清空指定用户的短期记忆（会话与消息），便于测试。
+
+    鉴权模式下身份以 JWT openid 为准，忽略请求体 user_id，防止越权清他人会话；
+    dev 模式沿用请求体 user_id（兼容本地手测）。
+    """
     if not is_allowed(req.user_role, "reset"):
         raise HTTPException(status_code=403, detail=f"角色 {req.user_role} 无权执行 reset")
-    ok = await asyncio.to_thread(mem_store.reset_session, req.user_id)
-    return {"user_id": req.user_id, "reset": ok}
+    openid = await get_current_user(request)
+    user_id = openid or req.user_id
+    ok = await asyncio.to_thread(mem_store.reset_session, user_id)
+    return {"user_id": user_id, "reset": ok}
 
 
 @app.get("/health")

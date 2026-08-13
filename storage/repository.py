@@ -1,12 +1,14 @@
-"""storage/repository.py —— 数据仓库抽象 + Mock 实现。
+"""storage/repository.py —— 数据仓库抽象 + Mock / Remote 双实现。
 
 设计要点：
 - 上层（tools / agent）只依赖 Repository 抽象接口，不直接碰数据来源。
-- 当前仅实现 MockRepository（内置示例花店、方案、效果图占位 URL）。
-- 后续接入真实数据库 / 外部 API 时，只需新增一个实现并在装配处替换，
-  上层代码（tools.py、agent.py）零改动 —— 这是「Mock/真实双轨」的核心。
+- 提供两种实现，由 build_repository() 按 DATA_SOURCE 配置选择，上层零改动：
+  - MockRepository：内置示例花店、方案、效果图占位 URL，零配置可跑通全链路；
+  - RemoteRepository：通过 httpx 调真实后端（REMOTE_API_BASE + 端点路径可配），
+    按 INTEGRATION.md 契约返回与 Mock 同形状的 JSON，「改 .env 即接入」。
 - 检索接口支持传入结构化需求（FlowerRequirement）：Mock 做软过滤 + 排序，
   Remote 透传到真实后端，使「按需求检索」从接口层就成立。
+- 这是「Mock/真实双轨」的核心：业务 / 状态机 / UI 协议层完全不感知数据来源切换。
 """
 
 from __future__ import annotations

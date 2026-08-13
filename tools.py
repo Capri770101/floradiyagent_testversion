@@ -44,9 +44,6 @@ class ToolSpec:
 #: 全局工具注册表，agent 与提示词都从这里取
 TOOL_REGISTRY: dict[str, ToolSpec] = {}
 
-#: 最近一次设计的 DIY 方案（结构化），供生图生成精确 prompt
-_latest_diy_plan: dict | None = None
-
 
 def register_tool(
     name: str,
@@ -82,6 +79,49 @@ def _requirement_from_context(_context: dict | None) -> FlowerRequirement | None
         return None
     req = _context.get("requirement")
     return req if isinstance(req, FlowerRequirement) else None
+
+
+def _store_diy_plan(plan: dict, _context: dict | None) -> None:
+    """把最新 DIY 方案写入当前会话（会话级，替代旧全局变量，杜绝多用户串号）。
+
+    latest_diy_plan 供生图生成精确 prompt；selected_plan 作为「最近引用方案」，
+    让 search_shops / create_order 的 latest 占位符解析到正确方案。
+    """
+    uid = (_context or {}).get("user_id", "")
+    sid = (_context or {}).get("session_id", "")
+    if not uid or not sid:
+        return
+    memory.set_session_json(uid, sid, "latest_diy_plan", plan)
+    memory.set_session_json(uid, sid, "selected_plan", plan)
+
+
+def _resolve_session_plan(plan: str | None, _context: dict | None) -> dict | None:
+    """把工具参数里的方案引用解析为具体方案 dict。
+
+    - "latest" / "latest_diy" / 空：会话「最近引用方案」→ 会话最新 DIY 方案 → 首条预设方案。
+    - 显式 plan_id：先查仓库（现有方案）；查不到且形如 DIY_xxx 时回退到会话最新 DIY 方案。
+    - 解析结果与用户、会话绑定，不再依赖进程级全局状态（并发安全）。
+    """
+    uid = (_context or {}).get("user_id", "")
+    sid = (_context or {}).get("session_id", "")
+    if plan in ("latest", "latest_diy", "", None):
+        if sid:
+            selected = memory.get_session_json(uid, sid, "selected_plan")
+            if selected:
+                return selected
+            diy = memory.get_session_json(uid, sid, "latest_diy_plan")
+            if diy:
+                return diy
+        plans = repo.search_plans("")
+        return plans[0] if plans else None
+    found = repo.get_plan(plan)
+    if found:
+        return found
+    if sid:
+        diy = memory.get_session_json(uid, sid, "latest_diy_plan")
+        if diy and (diy.get("plan_id") == plan or str(plan).startswith("DIY_")):
+            return diy
+    return None
 
 
 @register_tool(
@@ -158,11 +198,13 @@ def retrieve_knowledge(domain: str, query: str) -> str:
         "properties": {"requirements": {"type": "string", "description": "用户的 DIY 需求描述"}},
         "required": ["requirements"],
     },
+    inject_context=True,
     tags=["diy"],
 )
-def generate_diy_plan(requirements: str) -> str:
-    """设计 DIY 方案（基于知识库的结构化生成）。"""
+def generate_diy_plan(requirements: str, _context: dict | None = None) -> str:
+    """设计 DIY 方案（基于知识库的结构化生成），并写入当前会话供生图/下单引用。"""
     plan = design_diy_plan(requirements)
+    _store_diy_plan(plan, _context)
     return json.dumps(plan, ensure_ascii=False)
 
 
@@ -640,7 +682,6 @@ def _build_plan(
         parent_id: 上一版方案 id，便于追溯。
         exclude_flowers: 反馈中要求移除的花材名集合。
     """
-    global _latest_diy_plan
     scene = get_by_id("scene", dims.get("scene")) if dims.get("scene") else None
 
     # 风格解析：显式风格 > 场景推荐 > 默认韩式
@@ -766,7 +807,6 @@ def _build_plan(
         ),
         "budget_breakdown": _build_budget_breakdown(main, fillers, foliage, packaging, tier, budget_num),
     }
-    _latest_diy_plan = plan
     return plan
 
 
@@ -794,10 +834,11 @@ def design_diy_plan(requirements: str) -> dict:
         },
         "required": ["plan", "feedback"],
     },
+    inject_context=True,
     tags=["diy"],
 )
-def revise_diy_plan(plan: str, feedback: str) -> str:
-    """基于已有方案 + 自然语言反馈，生成一版调整方案（version 递增）。"""
+def revise_diy_plan(plan: str, feedback: str, _context: dict | None = None) -> str:
+    """基于已有方案 + 自然语言反馈，生成一版调整方案（version 递增），并写入会话。"""
     original = _parse_plan(plan)
     dims = _dims_from_plan(original)
     fb = _extract_feedback(feedback)
@@ -808,6 +849,7 @@ def revise_diy_plan(plan: str, feedback: str) -> str:
         parent_id=original.get("plan_id"),
         exclude_flowers=fb["exclude"],
     )
+    _store_diy_plan(new_plan, _context)
     return json.dumps(new_plan, ensure_ascii=False)
 
 
@@ -861,10 +903,14 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
                 ensure_ascii=False,
             )
 
-    global _latest_diy_plan
-    # 生图可控化：有结构化方案时，用设计产出的 effect_prompt，而非盲填原文
-    if plan in ("latest", "latest_diy", "", None) and _latest_diy_plan:
-        prompt = _latest_diy_plan.get("effect_prompt") or _latest_diy_plan.get("desc", "")
+    # 生图可控化：有结构化方案时，用设计产出的 effect_prompt，而非盲填原文。
+    # 方案从当前会话读取（latest_diy_plan），不再使用进程级全局变量（并发安全）。
+    if plan in ("latest", "latest_diy", "", None):
+        diy = memory.get_session_json(uid, sid, "latest_diy_plan") if sid else None
+        if diy:
+            prompt = diy.get("effect_prompt") or diy.get("desc", "")
+        else:
+            prompt = plan
     else:
         prompt = plan
     task_id = tasks.create_image_task(prompt)
@@ -935,16 +981,20 @@ def respond_to_user(
     tags=["shop"],
 )
 def search_shops(plan: str = "latest", _context: dict | None = None) -> str:
-    """推荐店铺（结合用户位置与结构化需求排序）。"""
+    """推荐店铺（结合用户位置与结构化需求排序）。
+
+    方案引用经 _resolve_session_plan 解析到「会话最近引用方案」（不再取全局首方案），
+    解析结果写回 selected_plan，保证后续 create_order(plan_id="latest") 下单到同一方案。
+    """
     req = _requirement_from_context(_context)
     location = None
     if _context:
         location = _context.get("location") or (req.location if req else None)
-    if plan in ("latest", "latest_diy", "", None):
-        plans = repo.search_plans("")
-        plan_obj = plans[0] if plans else None
-    else:
-        plan_obj = repo.get_plan(plan)
+    plan_obj = _resolve_session_plan(plan, _context)
+    sid = (_context or {}).get("session_id", "")
+    uid = (_context or {}).get("user_id", "")
+    if plan_obj and sid:
+        memory.set_session_json(uid, sid, "selected_plan", plan_obj)
     shops = repo.list_shops(plan_obj, location, requirement=req)
     return json.dumps(shops, ensure_ascii=False)
 

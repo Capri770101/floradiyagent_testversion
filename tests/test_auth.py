@@ -71,3 +71,31 @@ def test_dev_mode_chat_uses_body_user_id(client: TestClient) -> None:
     r = client.post("/chat", json={"user_id": "tester", "message": "你好"})
     assert r.status_code == 200
     assert r.json()["user_id"] == "tester"
+
+
+def test_auth_mode_reset_requires_token_and_uses_openid(client: TestClient) -> None:
+    """鉴权模式下 /chat/reset 必须带 Bearer；身份以 JWT openid 为准，忽略请求体 user_id（防越权清他人会话）。"""
+    with patch.object(security.settings, "auth_required", True):
+        r = client.post("/chat/reset", json={"user_id": "victim"})
+        assert r.status_code == 401
+        token = security.create_token("real_openid")
+        r = client.post(
+            "/chat/reset",
+            json={"user_id": "victim"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 200
+        assert r.json()["user_id"] == "real_openid"
+
+
+def test_auth_mode_tasks_requires_token(client: TestClient) -> None:
+    """鉴权模式下 /tasks 必须带 Bearer，防止越权轮询他人生图任务。"""
+    with patch.object(security.settings, "auth_required", True):
+        r = client.get("/tasks/whatever")
+        assert r.status_code == 401
+        token = security.create_token("real_openid")
+        r = client.get(
+            "/tasks/whatever",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 200

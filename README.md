@@ -45,7 +45,7 @@ agent_service/                         # 本目录即服务根
 ├─ requirements.txt
 ├─ .env.example          # 含「真实小程序接入配置」分组
 ├─ .gitignore
-├─ tests/                # 状态机流转 + /chat 冒烟 + 鉴权 + 远程仓库 + 知识库 + 向量检索 + DIY设计/迭代 + 维度抽取 + 融合回归 共 102 用例
+├─ tests/                # 状态机流转 + /chat 冒烟 + 鉴权 + 远程仓库 + 知识库 + 向量检索 + DIY设计/迭代 + 维度抽取 + 融合回归 共 98 用例
 ├─ cli.py                # 本地调试 CLI（typer）：design / knowledge / revise / chat / tools
 └─ README.md             # 本文件：设计契约
 ```
@@ -253,7 +253,7 @@ curl http://localhost:8000/health
 2. `POST /chat` 发送「想给母亲买一束花，预算 200 元左右」完整走通：
    现有/DIY 选择弹窗 → 方案卡片 → 确认 → 店铺推荐 → 下单 → `pay_jump`。
 3. 确认前可在现有方案与 DIY 之间往返切换；中途闲聊不破坏流程；重置接口生效。
-4. `pytest` 全绿（当前 96 passed：状态机 + /chat 冒烟 + 鉴权 + 远程仓库 + 知识库 + 向量检索 + DIY 设计/迭代 + 维度抽取 + 场景模板 + **结构化需求状态 FlowerRequirement** + **检索诚实化（搜不到不返全量 / location 透传真实排序）**）。
+4. `pytest` 全绿（当前 98 passed：状态机 + /chat 冒烟 + 鉴权 + 远程仓库 + 知识库 + 向量检索 + DIY 设计/迭代 + 维度抽取 + 场景模板 + **结构化需求状态 FlowerRequirement** + **检索诚实化（搜不到不返全量 / location 透传真实排序）** + **会话级方案解析（杜绝并发串号）** + **历史回放 schema 归一化**）。
 5. 接真实小程序只需改 `.env`（详见 `INTEGRATION.md`），业务代码零改动。
 
 ---

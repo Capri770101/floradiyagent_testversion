@@ -83,8 +83,45 @@ def set_requirement(session_id: str, req: FlowerRequirement) -> None:
         )
 
 
+def _normalize_tool_calls(raw: Any) -> list[dict[str, Any]]:
+    """把历史 tool_calls 归一化为 OpenAI 规范 schema。
+
+    真实会话存的是 {id, type, function:{name, arguments}}；Mock 会话存的是
+    {name, arguments}（无 id）。若不归一化，同一会话从 Mock 切到真实 LLM 时
+    回放历史会触发 400（missing field 'type' / arguments 非 JSON 字符串）。
+    """
+    calls: list[dict[str, Any]] = []
+    for tc in raw or []:
+        if not isinstance(tc, dict):
+            continue
+        fn = tc.get("function") if isinstance(tc.get("function"), dict) else None
+        if fn:
+            name = fn.get("name", "")
+            args = fn.get("arguments")
+        else:
+            name = tc.get("name", "")
+            args = tc.get("arguments")
+        if not isinstance(args, str):
+            args = json.dumps(args or {}, ensure_ascii=False)
+        calls.append(
+            {
+                "id": tc.get("id") or "",
+                "type": "function",
+                "function": {"name": name, "arguments": args},
+            }
+        )
+    return calls
+
+
 def load_history(user_id: str, limit: int) -> list[dict[str, Any]]:
-    """载入该用户最近 limit 条消息（不含 system），还原为 OpenAI 格式。"""
+    """载入该用户最近 limit 条消息（不含 system），还原为 OpenAI 格式。
+
+    历史回放净化（保证「有 tool_calls 必有对应 tool 回执」的合法序列）：
+    - assistant 的 tool_calls 统一归一化为 OpenAI schema（兼容 Mock/真实双轨存储）。
+    - tool 回执按 FIFO 与其前驱 assistant 的 tool_call 配对：孤儿回执丢弃；
+      回执缺失（窗口截断 / Mock 空 id）的 assistant 工具调用消息一并丢弃，
+      避免真实接口 400。
+    """
     conn = get_conn()
     session = conn.execute(
         "SELECT session_id FROM sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1",
@@ -97,24 +134,39 @@ def load_history(user_id: str, limit: int) -> list[dict[str, Any]]:
         "WHERE session_id = ? ORDER BY id DESC LIMIT ?",
         (session["session_id"], limit),
     ).fetchall()
-    messages: list[dict[str, Any]] = []
+    cleaned: list[dict[str, Any]] = []
+    pending: list[str] = []  # 尚待回执的 tool_call_id（FIFO，与 OpenAI 回执顺序一致）
     for r in reversed(rows):  # 恢复原时间顺序
-        msg: dict[str, Any] = {"role": r["role"]}
-        if r["tool_calls"]:
-            msg["tool_calls"] = json.loads(r["tool_calls"])
-        else:
-            msg["content"] = r["content"] or ""
-        # OpenAI/DeepSeek 规范：tool 角色消息必须携带 tool_call_id，否则真实接口 400。
-        # 历史脏数据（缺 tool_call_id）直接丢弃，并连带丢弃其前面的 assistant(tool_calls)，
-        # 避免「有 tool_calls 却无对应 tool 回执」的非法序列。
-        if r["role"] == "tool":
-            if not r["tool_call_id"]:
-                if messages and messages[-1].get("role") == "assistant" and messages[-1].get("tool_calls"):
-                    messages.pop()
+        if r["role"] == "assistant" and r["tool_calls"]:
+            calls = _normalize_tool_calls(json.loads(r["tool_calls"]))
+            for tc in calls:
+                pending.append(tc["id"])
+            cleaned.append({"role": "assistant", "tool_calls": calls})
+        elif r["role"] == "tool":
+            tid = r["tool_call_id"]
+            # 孤儿 / 失配回执（前驱不在窗口内，或 id 顺序错位）→ 丢弃，连带其 assistant 后段清理。
+            # 注意：Mock 会话的配对 id 是空串（""），是合法配对键，不能用「非空」判定。
+            if tid is None or not pending or pending[0] != tid:
                 continue
-            msg["tool_call_id"] = r["tool_call_id"]
-        messages.append(msg)
-    return messages
+            pending.pop(0)
+            cleaned.append(
+                {"role": "tool", "content": r["content"] or "", "tool_call_id": tid}
+            )
+        else:
+            cleaned.append({"role": r["role"], "content": r["content"] or ""})
+    # 仍有未收到回执的 assistant 工具调用消息 → 丢弃（缺回执的序列真实接口会 400）
+    if pending:
+        stale = set(pending)
+        cleaned = [
+            m
+            for m in cleaned
+            if not (
+                m.get("role") == "assistant"
+                and m.get("tool_calls")
+                and any(tc["id"] in stale for tc in m["tool_calls"])
+            )
+        ]
+    return cleaned
 
 
 def save_messages(session_id: str, messages: list[dict[str, Any]]) -> None:
@@ -147,6 +199,7 @@ def reset_session(user_id: str) -> bool:
     sid = session["session_id"]
     with transaction() as c:
         c.execute("DELETE FROM messages WHERE session_id = ?", (sid,))
+        c.execute("DELETE FROM session_flags WHERE session_id = ?", (sid,))
         c.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
     return True
 
@@ -189,6 +242,30 @@ def clear_session_flags(user_id: str, session_id: str, prefix: str = "") -> None
                 "DELETE FROM session_flags WHERE user_id = ? AND session_id = ?",
                 (user_id, session_id),
             )
+
+
+def set_session_json(user_id: str, session_id: str, key: str, value: Any) -> None:
+    """写入 / 覆盖一条会话级 JSON 状态（如会话内最新 DIY 方案、最近引用方案）。
+
+    用 session_flags 表承载（value 存 JSON 字符串），随会话隔离，多用户互不串号。
+    """
+    with transaction() as c:
+        c.execute(
+            "INSERT OR REPLACE INTO session_flags (user_id, session_id, key, value, updated_at) "
+            "VALUES (?,?,?,?,?)",
+            (user_id, session_id, key, json.dumps(value, ensure_ascii=False), _now()),
+        )
+
+
+def get_session_json(user_id: str, session_id: str, key: str) -> Any:
+    """读取会话级 JSON 状态（无或解析失败返回 None）。"""
+    raw = get_session_flag(user_id, session_id, key)
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
 
 
 # --------------------------------------------------------------------------- #

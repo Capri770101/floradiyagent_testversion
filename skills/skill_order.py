@@ -12,19 +12,31 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 
 from config import settings
 from storage.db import transaction
 from storage.repository import repo
-from tools import register_tool
+from tools import _resolve_session_plan, register_tool
 
 logger = logging.getLogger("skills.order")
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _plan_price(plan: dict) -> float:
+    """方案金额：预设方案取 price；DIY 方案无 price 字段，用预算明细的估算价兜底。"""
+    if isinstance(plan.get("price"), (int, float)):
+        return float(plan["price"])
+    breakdown = plan.get("budget_breakdown") or {}
+    if isinstance(breakdown.get("total_estimate"), (int, float)):
+        return float(breakdown["total_estimate"])
+    m = re.search(r"(\d+(?:\.\d+)?)", str(plan.get("estimated_price", "")))
+    return float(m.group(1)) if m else 0.0
 
 
 @register_tool(
@@ -48,14 +60,19 @@ def create_order(
     """组装订单并写入 orders 表，返回 order_card + pay_jump 数据。"""
     user_id = (_context or {}).get("user_id", "anonymous")
 
-    # 解析占位符：'first' → 推荐列表首店；'latest' → 默认首方案
+    # 解析占位符：'first' → 推荐列表首店；方案引用经会话解析（latest → 会话最近引用方案，
+    # 与 search_shops 推荐的是同一份，不再固定取首条预设方案导致下错单）
     shop = repo.get_shop(shop_id) if shop_id != "first" else repo.list_shops(None, None)[0]
-    plan = repo.get_plan(plan_id) if plan_id != "latest" else repo.search_plans("")[0]
+    plan = _resolve_session_plan(plan_id, _context)
     if not shop or not plan:
         return json.dumps({"error": "店铺或方案不存在"}, ensure_ascii=False)
 
+    # DIY 方案（diy=True）的 plan_type 由方案自身决定，忽略模型传入的占位值
+    if plan.get("diy"):
+        plan_type = "diy"
+
     order_id = "O_" + uuid.uuid4().hex[:10]
-    total = float(plan["price"])
+    total = _plan_price(plan)
     items = [{"plan_id": plan["plan_id"], "name": plan["name"], "price": total, "qty": 1}]
 
     with transaction() as c:
