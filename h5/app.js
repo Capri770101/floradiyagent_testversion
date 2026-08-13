@@ -72,6 +72,61 @@ function addNote(text) {
   scrollDown();
 }
 
+/* 生图结果轮询：提交后后端通常已同步生成（zhipu 等），轮询 /tasks/{id}
+ * 拿到 result_url（本地 /generated/ 路径）后渲染图片卡片。
+ * 兼容 dashscope 等异步 provider：轮询直到 status=done。 */
+window.onImgError = function (img, taskId) {
+  const card = img.closest(".img-card");
+  if (card) {
+    card.innerHTML =
+      '<div class="img-fallback">图片加载失败，请在 /tasks/' +
+      esc(taskId) +
+      " 查看</div>";
+  }
+};
+
+async function pollImageTask(taskId) {
+  const wrap = document.createElement("div");
+  wrap.className = "msg bot";
+  wrap.innerHTML =
+    '<div class="avatar">🌸</div><div class="bubble">' +
+    '<div class="img-loading">🎨 AI 正在生成效果图，约 10–20 秒，请稍候…</div></div>';
+  messagesEl.appendChild(wrap);
+  scrollDown();
+  let url = null;
+  for (let i = 0; i < 40; i++) {
+    try {
+      const r = await fetch("/tasks/" + taskId);
+      if (r.ok) {
+        const d = await r.json();
+        if (d.status === "done" && d.result_url) {
+          url = d.result_url;
+          break;
+        }
+      }
+    } catch (e) {
+      /* 网络抖动则重试 */
+    }
+    await new Promise((res) => setTimeout(res, 1500));
+  }
+  const bubble = wrap.querySelector(".bubble");
+  if (url) {
+    bubble.innerHTML =
+      '<div class="img-card"><div class="img-title">🌸 AI 生成的效果图</div>' +
+      '<img src="' +
+      esc(url) +
+      '" alt="效果图" onerror="onImgError(this,\'' +
+      esc(taskId) +
+      "')\"></div>";
+  } else {
+    bubble.innerHTML =
+      '<div class="img-fallback">生图轮询超时，请稍后在 /tasks/' +
+      esc(taskId) +
+      " 查看</div>";
+  }
+  scrollDown();
+}
+
 function appendBotWidget(node) {
   const wrap = document.createElement("div");
   wrap.className = "msg bot";
@@ -119,17 +174,25 @@ function showQuickStart() {
 function planCard(p) {
   const card = document.createElement("div");
   card.className = "card";
-  const tags = (p.tags || []).map((t) => '<span class="tag">' + esc(t) + "</span>").join("");
+  // 兼容两套字段命名：
+  //  - 现有方案（商家）：price / effect_image_url / merchant_name / tags
+  //  - DIY 方案：estimated_price（无 merchant、无现成图、风格在 style/substyle/scene）
+  const price = p.price ?? p.estimated_price ?? "";
   const img = p.effect_image_url
     ? '<img src="' + esc(p.effect_image_url) + '" alt="" onerror="this.remove()">'
     : '<span class="ph">💐</span>';
+  const merchant = p.merchant_name
+    ? "🏪 " + esc(p.merchant_name)
+    : (p.diy ? "🛠 DIY 定制" : "");
+  const tagSource = p.tags || [p.style, p.substyle, p.scene].filter(Boolean);
+  const tags = tagSource.map((t) => '<span class="tag">' + esc(t) + "</span>").join("");
   card.innerHTML =
     '<div class="card-img">' + img + "</div>" +
     '<div class="card-body">' +
     '<div class="card-title">' + esc(p.name) + "</div>" +
-    '<div class="card-price">¥' + esc(p.price) + "</div>" +
+    (price !== "" ? '<div class="card-price">¥' + esc(price) + "</div>" : "") +
     '<div class="card-desc">' + esc(p.desc) + "</div>" +
-    (p.merchant_name ? '<div class="card-meta">🏪 ' + esc(p.merchant_name) + "</div>" : "") +
+    (merchant ? '<div class="card-meta">' + merchant + "</div>" : "") +
     (tags ? '<div class="card-meta">' + tags + "</div>" : "") +
     "</div>";
   const act = document.createElement("div");
@@ -240,9 +303,9 @@ function renderUi(resp) {
   } else if (ui === "pay_jump") {
     appendBotWidget(payBox(data));
   } else {
-    // text
+    // text —— 若含生图任务，则轮询结果并渲染图片卡片
     if (data && data.task_id) {
-      addNote("🖼️ 效果图任务已提交：task_id=" + data.task_id);
+      pollImageTask(data.task_id);
     }
   }
 }

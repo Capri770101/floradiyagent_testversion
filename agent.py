@@ -22,7 +22,7 @@ from typing import Any
 
 import skills  # noqa: F401  —— 触发技能自动注册（create_order 等），仅副作用，名字不直接引用
 from config import settings, setup_logging
-from engine.llm import call_llm
+from engine.llm import _is_chitchat, call_llm
 from engine.state import STAGE_GUIDANCE, SessionStage, can_transition
 from engine.ui_protocol import ChatResponse, ToolCallRecord, UIType
 from storage import memory as mem_store
@@ -92,6 +92,14 @@ class ReActAgent:
     ) -> ChatResponse:
         t0 = time.perf_counter()
         sid = mem_store.get_or_create_session(user_id)
+        stage = SessionStage(mem_store.get_stage(sid))
+        # 上一单已完成（DONE）且本轮是新的购买需求 → 自动开启全新会话。
+        # 会话是 user 1:1 复用：不清空的话用户会永远卡在「感谢您的选购」出不来，
+        # 且旧历史的工具调用会污染 Mock/LLM 上下文（环节错乱的一大来源）。
+        if stage == SessionStage.DONE and not _is_chitchat(message):
+            mem_store.reset_session(user_id)
+            sid = mem_store.get_or_create_session(user_id)
+            stage = SessionStage.ANALYZE
         # 结构化需求状态：每轮从用户消息抽取并与历史累加，持久化到会话记忆，
         # 再注入工具上下文，供 search_plans / list_shops 按需求检索。
         existing_req = mem_store.get_requirement(sid)
@@ -202,13 +210,28 @@ class ReActAgent:
             try:
                 ui = UIType(ui_arg)
             except ValueError:
-                ui = self._derive_ui(tool_log, new_stage, final_reply)[0]
+                ui = UIType.TEXT
             data_arg = respond_args.get("data") or {}
             data = data_arg if isinstance(data_arg, dict) else {}
+
+            # 工具推导的卡片/按钮 ui（依据本轮工具成果或当前阶段）
+            inferred_ui, inferred_data = self._derive_ui(tool_log, new_stage, final_reply)
+            # 关键修复：LLM 在 respond_to_user 中常只填 ui=text + 空 data，导致 _derive_ui
+            # 本应产出的卡片/按钮（模式选择 / 确认方案 / 选店铺 / 去支付）被整体丢弃，
+            # 前端按钮分支形同死代码。当 LLM 未给出有效卡片（非卡片类 ui 或 data 为空），
+            # 但工具已有可渲染成果时，强制采用 _derive_ui 的结构化卡片，保证 UI 契约落地。
+            # 若 LLM 已正确填了卡片类 ui 且 data 非空，则尊重 LLM（不覆盖）。
+            _card_types = {
+                UIType.DIALOG_OPTIONS, UIType.PLAN_CARD,
+                UIType.SHOP_CARD, UIType.ORDER_CARD, UIType.PAY_JUMP,
+            }
+            if ui not in _card_types or not data:
+                if inferred_ui in _card_types and inferred_data:
+                    ui = inferred_ui
+                    data = inferred_data
             # 生图结果兜底：本轮若 generate_effect_image 真实成功（工具已返回 task_id），
             # 强制走 text 分支并注入 task_id，避免 LLM 在 respond_to_user 漏填 data.task_id，
             # 导致前端收不到 task_id、不发起 /tasks 轮询、图片永不渲染。
-            _inferred_ui, inferred_data = self._derive_ui(tool_log, new_stage, final_reply)
             if inferred_data.get("task_id"):
                 ui = UIType.TEXT
                 data = {"task_id": inferred_data["task_id"], "poll": inferred_data.get("poll")}
@@ -219,11 +242,23 @@ class ReActAgent:
             new_stage = self._derive_next_stage(incoming, message)
             if not can_transition(incoming, new_stage):
                 new_stage = incoming
+            # 一致性校正：阶段推进与实际工具产出对齐，杜绝「环节错乱」——
+            # - DONE 只能在 create_order 真实产出后到达（用户刚说「确认」但店铺还没推荐过时，
+            #   本轮产出的是 shop_card，阶段应停在 SHOP_RECOMMEND 而不是直接结束）；
+            # - 同理 SHOP_RECOMMEND 的确认消息若本轮只产出了方案/生图结果，也不得跳过店铺推荐。
+            if new_stage == SessionStage.DONE:
+                ordered = [tc.name for tc in tool_log if tc.status == "ok"]
+                if "create_order" not in ordered:
+                    new_stage = SessionStage.SHOP_RECOMMEND if "search_shops" in ordered else incoming
             ui, data = self._derive_ui(tool_log, new_stage, final_reply)
 
-        # 进入生图确认阶段：每次进入须重新征求确认，清除历史 image_* 标记（融合自 111）
+        # 进入生图确认阶段：每次进入须重新征求确认，清除历史 image_* 标记（融合自 111）。
+        # 若用户本轮消息本身就是明确生图请求（如「生成效果图看看」），直接视为已确认，
+        # 避免「明明说了生成、还要再确认一次」的体验断裂。
         if new_stage == SessionStage.IMAGE_GEN and new_stage != incoming:
             mem_store.clear_session_flags(user_id, sid, prefix="image_")
+            if is_affirmative(message):
+                mem_store.set_session_flag(user_id, sid, "image_confirmed", "1")
 
         # 持久化本轮新增消息 + 最新阶段
         mem_store.save_messages(sid, new_msgs)
@@ -283,8 +318,11 @@ class ReActAgent:
     def _derive_next_stage(current: SessionStage, message: str) -> SessionStage:
         """依据当前阶段 + 用户消息意图推导下一阶段（状态机业务骨架）。
 
-        阶段推进只由「用户消息意图」驱动，与具体调用了哪个工具解耦，
-        保证确认前可在现有/DIY 间切换、确认后才进店铺推荐。
+        阶段推进只由「用户消息意图」驱动，与具体调用了哪个工具解耦：
+        - 浏览/设计阶段只有「明确确认/选定」才前进，普通提问、描述、闲聊一律停留，
+          避免用户问一句「这个多少钱」就被推进到店铺推荐（环节错乱）。
+        - 生图意图把 DIY 设计引导到 IMAGE_GEN；生图确认后才进店铺推荐。
+        - 店铺推荐阶段选定店铺才结束，未选定不跳步。
         """
         from engine.llm import _intent, _is_chitchat
 
@@ -301,19 +339,29 @@ class ReActAgent:
                 return SessionStage.SELECT_MODE
             if intent["diy"]:
                 return SessionStage.DIY_DESIGN
-            return SessionStage.SHOP_RECOMMEND
+            if intent["confirm"] or intent["pick_shop"]:
+                return SessionStage.SHOP_RECOMMEND
+            return current
         if current == SessionStage.DIY_DESIGN:
             if intent["abandon"]:
                 return SessionStage.SELECT_MODE
             if intent["image"]:
                 return SessionStage.IMAGE_GEN
-            return SessionStage.SHOP_RECOMMEND
+            if intent["confirm"]:
+                return SessionStage.SHOP_RECOMMEND
+            return current
         if current == SessionStage.IMAGE_GEN:
-            return SessionStage.SHOP_RECOMMEND
+            if intent["abandon"]:
+                return SessionStage.SELECT_MODE
+            if intent["confirm"]:
+                return SessionStage.SHOP_RECOMMEND
+            return current
         if current == SessionStage.SHOP_RECOMMEND:
             if intent["abandon"]:
                 return SessionStage.SELECT_MODE
-            return SessionStage.DONE
+            if intent["confirm"] or intent["pick_shop"]:
+                return SessionStage.DONE
+            return current
         return current
 
     @staticmethod
