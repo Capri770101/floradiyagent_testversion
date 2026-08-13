@@ -29,7 +29,8 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from agent import ReActAgent, is_allowed
@@ -115,6 +116,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+#: H5 前端（ChatResponse 的可视化 Renderer）。纯静态文件，与 /chat 同源，
+#: 避免跨域；生产可改为独立 CDN/对象存储，只要 CORS_ORIGINS 配好即可。
+_H5_DIR = Path(__file__).resolve().parent / "h5"
+if _H5_DIR.exists():
+    app.mount("/h5", StaticFiles(directory=str(_H5_DIR), html=True), name="h5")
+
+    @app.get("/")
+    async def index() -> RedirectResponse:
+        """根路径重定向到 H5 入口。"""
+        return RedirectResponse("/h5/")
 
 
 @app.middleware("http")
