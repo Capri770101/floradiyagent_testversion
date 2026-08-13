@@ -1,0 +1,331 @@
+"""storage/repository.py —— 数据仓库抽象 + Mock 实现。
+
+设计要点：
+- 上层（tools / agent）只依赖 Repository 抽象接口，不直接碰数据来源。
+- 当前仅实现 MockRepository（内置示例花店、方案、效果图占位 URL）。
+- 后续接入真实数据库 / 外部 API 时，只需新增一个实现并在装配处替换，
+  上层代码（tools.py、agent.py）零改动 —— 这是「Mock/真实双轨」的核心。
+- 检索接口支持传入结构化需求（FlowerRequirement）：Mock 做软过滤 + 排序，
+  Remote 透传到真实后端，使「按需求检索」从接口层就成立。
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+import re
+from abc import ABC, abstractmethod
+from typing import Any
+
+import httpx
+
+from config import settings
+
+logger = logging.getLogger("repository")
+
+
+# --------------------------------------------------------------------------- #
+# 检索辅助
+# --------------------------------------------------------------------------- #
+
+
+def _haversine(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """两点间距离（km），用于按真实坐标排序店铺。"""
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
+    return r * 2 * math.asin(math.sqrt(a))
+
+
+def _parse_price_range(s: str | None) -> tuple[float | None, float | None]:
+    """解析 '100-300' 形式的价位区间，失败返回 (None, None)。"""
+    if not s:
+        return None, None
+    m = re.match(r"\s*(\d+)\s*-\s*(\d+)\s*", str(s))
+    if m:
+        return float(m.group(1)), float(m.group(2))
+    return None, None
+
+
+def _filter_plans_by_requirement(
+    plans: list[dict[str, Any]], requirement: Any | None
+) -> list[dict[str, Any]]:
+    """按结构化需求对方案做「软过滤」。
+
+    说明：这里刻意做成软过滤（某条件全不中时回退到不过滤），
+    避免演示时出现空结果；而「关键词搜不到 → 返回空」的诚实行为由
+    search_plans 的关键词分支保证（见 MockRepository.search_plans）。
+    """
+    if not requirement:
+        return plans
+    out = plans
+    if requirement.budget_min is not None:
+        lo = requirement.budget_min
+        hi = requirement.budget_max or requirement.budget_min
+        filtered = [p for p in out if lo <= p.get("price", 0) <= hi * 1.5]
+        out = filtered or out
+    if requirement.colors:
+        def hit(p: dict[str, Any]) -> bool:
+            blob = (p.get("name", "") + p.get("desc", "") + " ".join(p.get("tags", []))).lower()
+            return any(c.lower() in blob for c in requirement.colors)
+
+        filtered = [p for p in out if hit(p)]
+        out = filtered or out
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# 抽象接口
+# --------------------------------------------------------------------------- #
+
+
+class Repository(ABC):
+    """数据访问抽象。所有方法返回纯 dict / list[dict]，便于序列化为 UI data。"""
+
+    @abstractmethod
+    def search_plans(self, keyword: str, requirement: Any | None = None) -> list[dict[str, Any]]:
+        """按关键词搜索商家预设方案；requirement 用于结构化软过滤。"""
+
+    @abstractmethod
+    def get_plan(self, plan_id: str) -> dict[str, Any] | None:
+        """获取单个方案详情。"""
+
+    @abstractmethod
+    def list_shops(
+        self,
+        plan: dict[str, Any] | None,
+        location: dict[str, float] | None = None,
+        requirement: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        """按距离 / 价格 / 评价综合排序推荐店铺；location 与 requirement 用于排序过滤。"""
+
+    @abstractmethod
+    def get_shop(self, shop_id: str) -> dict[str, Any] | None:
+        """获取单个店铺详情。"""
+
+
+# --------------------------------------------------------------------------- #
+# Mock 实现（示例数据）
+# --------------------------------------------------------------------------- #
+
+
+class MockRepository(Repository):
+    """内置示例数据，零依赖即可跑通导购全链路。"""
+
+    def __init__(self) -> None:
+        self._plans: list[dict[str, Any]] = [
+            {
+                "plan_id": "P001",
+                "name": "康乃馨感恩花束",
+                "price": 199.0,
+                "desc": "11 支粉色康乃馨 + 满天星，适合送给母亲表达感恩。",
+                "effect_image_url": "https://example.com/mock/plan_P001.png",
+                "merchant_name": "花漾工坊",
+                "tags": ["母亲节", "康乃馨", "温馨"],
+            },
+            {
+                "plan_id": "P002",
+                "name": "玫瑰轻奢花盒",
+                "price": 299.0,
+                "desc": "19 朵红玫瑰礼盒装，高级感拉满，适合纪念日。",
+                "effect_image_url": "https://example.com/mock/plan_P002.png",
+                "merchant_name": "花漾工坊",
+                "tags": ["玫瑰", "礼盒", "高端"],
+            },
+            {
+                "plan_id": "P003",
+                "name": "向日葵花束",
+                "price": 159.0,
+                "desc": "阳光向日葵 + 尤加利叶，元气满满。",
+                "effect_image_url": "https://example.com/mock/plan_P003.png",
+                "merchant_name": "绿野花艺",
+                "tags": ["向日葵", "活力", "平价"],
+            },
+        ]
+        # 店铺补充经纬度，使 location 透传后能按真实距离排序（而非静态 distance_km）
+        self._shops: list[dict[str, Any]] = [
+            {
+                "shop_id": "S001",
+                "name": "花漾工坊(盐田店)",
+                "distance_km": 1.2,
+                "price_range": "100-300",
+                "rating": 4.8,
+                "plan_ids": ["P001", "P002"],
+                "lat": 22.560,
+                "lng": 114.242,
+            },
+            {
+                "shop_id": "S002",
+                "name": "绿野花艺",
+                "distance_km": 2.5,
+                "price_range": "80-250",
+                "rating": 4.6,
+                "plan_ids": ["P003"],
+                "lat": 22.572,
+                "lng": 114.230,
+            },
+            {
+                "shop_id": "S003",
+                "name": "都市花房",
+                "distance_km": 3.8,
+                "price_range": "150-400",
+                "rating": 4.9,
+                "plan_ids": ["P001", "P002", "P003"],
+                "lat": 22.548,
+                "lng": 114.255,
+            },
+        ]
+
+    def search_plans(
+        self, keyword: str, requirement: Any | None = None
+    ) -> list[dict[str, Any]]:
+        kw = (keyword or "").lower()
+        # 空关键词 = 浏览全部；非空但无命中 = 返回空（诚实，不兜底返全量）
+        if not kw:
+            plans = self._plans
+        else:
+            plans = [
+                p
+                for p in self._plans
+                if kw in p["name"].lower() or kw in p["desc"].lower() or any(kw in t for t in p["tags"])
+            ]
+        return _filter_plans_by_requirement(plans, requirement)
+
+    def get_plan(self, plan_id: str) -> dict[str, Any] | None:
+        return next((p for p in self._plans if p["plan_id"] == plan_id), None)
+
+    def list_shops(
+        self,
+        plan: dict[str, Any] | None,
+        location: dict[str, float] | None = None,
+        requirement: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        plan_id = plan.get("plan_id") if plan else None
+
+        def dist(s: dict[str, Any]) -> float:
+            if location and s.get("lat") is not None:
+                return _haversine(location["lat"], location["lng"], s["lat"], s["lng"])
+            return float(s.get("distance_km", 999))
+
+        def sort_key(s: dict[str, Any]) -> tuple:
+            has_plan = 0 if (plan_id and plan_id in s.get("plan_ids", [])) else 1
+            budget_penalty = 0
+            if requirement and requirement.budget_min is not None:
+                lo, hi = _parse_price_range(s.get("price_range", ""))
+                if lo is not None:
+                    rmin = requirement.budget_min
+                    rmax = requirement.budget_max or requirement.budget_min
+                    # 店铺价位与需求预算完全不重叠 → 降权（仍可见，但不优先）
+                    if hi < rmin or lo > rmax * 1.5:
+                        budget_penalty = 1
+            return (has_plan, budget_penalty, dist(s), -s.get("rating", 0))
+
+        return sorted(self._shops, key=sort_key)
+
+    def get_shop(self, shop_id: str) -> dict[str, Any] | None:
+        return next((s for s in self._shops if s["shop_id"] == shop_id), None)
+
+
+# --------------------------------------------------------------------------- #
+# Remote 实现（对接真实小程序后端）
+# --------------------------------------------------------------------------- #
+#
+# 通过配置 REMOTE_API_BASE + 各端点路径，把对 Mock 的调用透明转成 HTTP 请求。
+# 真实后端只需按 INTEGRATION.md 的契约返回与 Mock 同形状的 JSON，即可「换配置即接入」，
+# 上层 tools.py / skill_order.py 零改动。
+
+
+class RemoteRepository(Repository):
+    """对接真实后端的数据仓库：所有方法转成对远端 REST 接口的调用。"""
+
+    def __init__(self) -> None:
+        self.base = settings.remote_api_base.rstrip("/")
+        self.timeout = settings.remote_timeout
+        self.paths = {
+            "plans": settings.remote_plans_path,
+            "plan_detail": settings.remote_plan_detail_path,
+            "shops": settings.remote_shops_path,
+            "shop_detail": settings.remote_shop_detail_path,
+        }
+        self._client = httpx.Client(timeout=self.timeout)
+
+    def _get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        """发起 GET 并解析 JSON；网络/解析错误向上抛，由 tools.execute_tool 兜底成 error。"""
+        url = f"{self.base}{path}"
+        resp = self._client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+    def _requirement_params(self, requirement: Any | None) -> dict[str, Any]:
+        """把结构化需求转成查询参数（真实后端按需取用，缺省忽略）。"""
+        params: dict[str, Any] = {}
+        if not requirement:
+            return params
+        if requirement.budget_min is not None:
+            params["budget_min"] = requirement.budget_min
+            params["budget_max"] = requirement.budget_max or requirement.budget_min
+        if requirement.colors:
+            params["colors"] = ",".join(requirement.colors)
+        if requirement.style:
+            params["style"] = requirement.style
+        return params
+
+    def search_plans(
+        self, keyword: str, requirement: Any | None = None
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"keyword": keyword or ""}
+        params.update(self._requirement_params(requirement))
+        data = self._get_json(self.paths["plans"], params=params)
+        return data or []
+
+    def get_plan(self, plan_id: str) -> dict[str, Any] | None:
+        try:
+            path = self.paths["plan_detail"].format(id=plan_id)
+        except (KeyError, IndexError):
+            # 路径未含 {id} 占位符：退回 query 形式兜底
+            return self._get_json(self.paths["plan_detail"], params={"plan_id": plan_id})
+        return self._get_json(path)
+
+    def list_shops(
+        self,
+        plan: dict[str, Any] | None,
+        location: dict[str, float] | None = None,
+        requirement: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {}
+        if plan:
+            params["plan_id"] = plan.get("plan_id")
+        if location:
+            params["lat"] = location.get("lat")
+            params["lng"] = location.get("lng")
+        params.update(self._requirement_params(requirement))
+        data = self._get_json(self.paths["shops"], params=params)
+        return data or []
+
+    def get_shop(self, shop_id: str) -> dict[str, Any] | None:
+        try:
+            path = self.paths["shop_detail"].format(id=shop_id)
+        except (KeyError, IndexError):
+            return self._get_json(self.paths["shop_detail"], params={"shop_id": shop_id})
+        return self._get_json(path)
+
+
+def build_repository() -> Repository:
+    """按配置装配数据仓库。
+
+    - DATA_SOURCE=remote 且配置了 REMOTE_API_BASE → RemoteRepository（对接真实后端）
+    - DATA_SOURCE=remote 但缺 base → 告警并回退 Mock，保证服务可启动
+    - 其余（含默认 mock）→ MockRepository
+    """
+    if settings.data_source == "remote":
+        if settings.remote_api_base:
+            logger.info("数据仓库装配: RemoteRepository -> %s", settings.remote_api_base)
+            return RemoteRepository()
+        logger.warning("DATA_SOURCE=remote 但未配置 REMOTE_API_BASE，回退 MockRepository")
+    return MockRepository()
+
+
+#: 进程级单例仓储（按 DATA_SOURCE 选择；接真实后端只需改 .env）
+repo: Repository = build_repository()

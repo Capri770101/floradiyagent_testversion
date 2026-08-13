@@ -1,0 +1,271 @@
+"""knowledge/store.py —— 花卉 DIY 知识库加载与向量混合检索。
+
+升级说明（相对旧版纯关键词检索）：
+- 检索升级为「向量空间模型（TF-IDF + 字符 n-gram 切词）+ 余弦相似度」的语义检索（RAG 思路），
+  但对外接口 query_knowledge(domain, query) 的签名、返回结构完全不变，上层 tools.py / 工具零改动。
+- 采用「关键词命中保底 ∪ 向量语义召回」的混合策略：
+  * 关键词命中（旧的 _match 逻辑）一定被包含，保证既有精确查询（单 token 查找）零退化；
+  * 仅在「多 token 或长自然语句」时，额外用向量相似度召回语义相关条目并参与排序，
+    提升自然语言查询的召回与相关性（如 LLM 工具 retrieve_knowledge 传来的中文 NL 查询）。
+- 纯 Python 实现（仅标准库 math/re/json），不引入 numpy/sklearn，保证 dev 零成本、可离线跑。
+- settings.rag_enabled=False 时整体回退到旧关键词行为，可一键回滚。
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+import re
+from pathlib import Path
+from typing import Any
+
+from config import settings
+
+logger = logging.getLogger("knowledge")
+
+#: 各域对应的 JSON 文件名
+_DOMAINS: dict[str, str] = {
+    "flower": "flowers.json",
+    "style": "styles.json",
+    "pairing": "pairings.json",
+    "budget": "budget.json",
+    "packaging": "packaging.json",
+    "scene": "scenes.json",
+}
+
+_BASE_DIR = Path(__file__).resolve().parent
+
+_cache: dict[str, list[dict[str, Any]]] = {}
+_index_cache: dict[str, _VectorSpace] = {}
+
+#: 中文连续段（用于字符 n-gram 切词）；拉丁/数字作为整词
+_CJK = re.compile(r"[\u4e00-\u9fff]+")
+_WORD = re.compile(r"[a-zA-Z0-9]+")
+
+#: 触发向量语义扩展的门槛：多 token 或长自然语句（短单 token 仍走精确关键词，保证零退化）
+_SEMANTIC_MIN_LEN = 6
+
+
+# --------------------------------------------------------------------------- #
+# 文本特征提取：字符 unigram + bigram（中文友好），拉丁/数字整词
+# --------------------------------------------------------------------------- #
+def _tokenize(text: str) -> list[str]:
+    """把文本切成检索特征：中文走字符 unigram+bigram，拉丁/数字作为整词小写。
+
+    为什么用字符 n-gram：中文没有空格分词，字符 bigram 是成熟且零依赖的切词方式，
+    能捕捉「探病/生病」「母亲/母爱」等局部字符共现，为向量检索提供可计算的相似度。
+    """
+    features: list[str] = []
+    for m in _CJK.finditer(text or ""):
+        run = m.group(0)
+        features.extend(run)  # unigram：单字也能提供弱共现信号
+        for i in range(len(run) - 1):
+            features.append(run[i : i + 2])  # bigram：主要语义信号
+    for m in _WORD.finditer(text or ""):
+        features.append(m.group(0).lower())
+    return features
+
+
+# --------------------------------------------------------------------------- #
+# 向量空间模型（TF-IDF + 余弦）：纯 Python，无第三方依赖
+# --------------------------------------------------------------------------- #
+class _VectorSpace:
+    """极简 TF-IDF 向量空间：fit 语料后，similarity(query) 返回每条文档的余弦相似度。"""
+
+    def __init__(self) -> None:
+        self._vocab: dict[str, int] = {}        # term -> index
+        self._idf: list[float] = []
+        self._vecs: list[dict[int, float]] = []  # 归一化后的稀疏 tf-idf 向量
+
+    def fit(self, docs: list[str]) -> _VectorSpace:
+        df: dict[str, int] = {}
+        term_counts: list[dict[str, int]] = []
+        for d in docs:
+            tc: dict[str, int] = {}
+            for f in _tokenize(d):
+                tc[f] = tc.get(f, 0) + 1
+            term_counts.append(tc)
+            for t in tc:
+                df[t] = df.get(t, 0) + 1
+
+        self._vocab = {t: i for i, t in enumerate(df.keys())}
+        n = len(docs)
+        # 平滑 IDF，避免 df=0 或极端值
+        self._idf = [math.log((n + 1) / (df[t] + 1)) + 1.0 for t in self._vocab]
+
+        self._vecs = []
+        for tc in term_counts:
+            vec: dict[int, float] = {}
+            length = 0.0
+            total = sum(tc.values()) or 1
+            for t, c in tc.items():
+                idx = self._vocab[t]
+                w = (c / total) * self._idf[idx]
+                vec[idx] = w
+                length += w * w
+            norm = math.sqrt(length) or 1.0
+            self._vecs.append({k: v / norm for k, v in vec.items()})
+        return self
+
+    def similarity(self, query: str) -> list[float]:
+        """返回 query 与每条文档的余弦相似度（已归一化向量 → 点积即余弦）。"""
+        tc: dict[str, int] = {}
+        for f in _tokenize(query):
+            tc[f] = tc.get(f, 0) + 1
+        qvec: dict[int, float] = {}
+        qlen = 0.0
+        total = sum(tc.values()) or 1
+        for t, c in tc.items():
+            if t in self._vocab:
+                idx = self._vocab[t]
+                w = (c / total) * self._idf[idx]
+                qvec[idx] = w
+                qlen += w * w
+        if not qvec:
+            return [0.0] * len(self._vecs)
+        qnorm = math.sqrt(qlen)
+
+        scores: list[float] = []
+        for vec in self._vecs:
+            # 遍历较小的一方，降低复杂度
+            if len(qvec) <= len(vec):
+                dot = sum((w / qnorm) * vec[idx] for idx, w in qvec.items() if idx in vec)
+            else:
+                dot = sum((vec[idx] / qnorm) * w for idx, w in qvec.items() if idx in vec)
+            scores.append(dot)
+        return scores
+
+
+# --------------------------------------------------------------------------- #
+# 加载与缓存
+# --------------------------------------------------------------------------- #
+def _load(domain: str) -> list[dict[str, Any]]:
+    """加载某域数据（带内存缓存，避免重复读盘）。"""
+    if domain in _cache:
+        return _cache[domain]
+    path = _BASE_DIR / _DOMAINS[domain]
+    if not path.exists():
+        logger.warning("[knowledge] 数据文件缺失: %s", path)
+        _cache[domain] = []
+        return _cache[domain]
+    with path.open(encoding="utf-8") as f:
+        data = json.load(f)
+    _cache[domain] = data
+    return data
+
+
+def _entry_text(entry: dict[str, Any]) -> str:
+    """把一条知识的可检索字段拼成一段文本，用于构建向量。"""
+    parts: list[str] = []
+    for v in entry.values():
+        if isinstance(v, str):
+            parts.append(v)
+        elif isinstance(v, list):
+            parts.extend(str(x) for x in v)
+    return " ".join(parts)
+
+
+def _get_index(domain: str) -> _VectorSpace:
+    """懒构建并按域缓存向量空间（首次非关键词查询时构建）。"""
+    if domain not in _index_cache:
+        _index_cache[domain] = _VectorSpace().fit([_entry_text(e) for e in _load(domain)])
+    return _index_cache[domain]
+
+
+def _match(entry: dict[str, Any], tokens: list[str]) -> bool:
+    """entry 是否命中任一 token：匹配 name/aliases/tags/flower_language/colors 等文本字段。"""
+    haystack = " ".join(
+        str(v)
+        for k, v in entry.items()
+        if isinstance(v, (str, list))
+        for v in ([v] if isinstance(v, str) else v)
+    )
+    return any(tok in haystack for tok in tokens)
+
+
+def _allow_vector(query: str, tokens: list[str]) -> bool:
+    """是否启用向量语义扩展：仅当 rag 开启，且查询为「多 token 或长自然语句」。
+
+    短单 token（如「母亲节」「康乃馨」「妈妈」）一律走精确关键词，保证内部查找与旧测试零退化。
+    """
+    return settings.rag_enabled and (len(tokens) >= 2 or len(query) >= _SEMANTIC_MIN_LEN)
+
+
+def _retrieve_domain(
+    domain: str, tokens: list[str], allow_vector: bool
+) -> list[tuple[dict[str, Any], float]]:
+    """单域检索：返回 [(entry, score)]，按 score 降序。
+
+    - allow_vector=False：仅关键词命中（= 旧行为），score 记为 1.0。
+    - allow_vector=True：关键词命中 ∪ 向量相似度≥阈值的条目；关键词命中额外加成，排序更相关。
+    """
+    entries = _load(domain)
+    if not entries:
+        return []
+
+    kw_hits = [_match(e, tokens) for e in entries]
+    if not allow_vector:
+        return [(e, 1.0) for e, hit in zip(entries, kw_hits, strict=True) if hit]
+
+    sims = _get_index(domain).similarity(" ".join(tokens))
+    out: list[tuple[dict[str, Any], float]] = []
+    for e, hit, sim in zip(entries, kw_hits, sims, strict=True):
+        score = float(sim)
+        if hit:
+            score += settings.rag_keyword_boost
+        if hit or score >= settings.rag_min_score:
+            out.append((e, score))
+    out.sort(key=lambda x: x[1], reverse=True)
+    if settings.rag_top_k and len(out) > settings.rag_top_k:
+        out = out[: settings.rag_top_k]
+    return out
+
+
+def query_knowledge(domain: str = "all", query: str = "") -> dict[str, Any]:
+    """知识库检索（向量混合检索，接口向后兼容）。
+
+    Args:
+        domain: "all" 或 flower/style/pairing/budget/packaging/scene 之一。
+        query: 自然语言或关键词。
+            - 空串：返回该域全部（上层枚举场景/风格/预算档依赖此行为）。
+            - 短单 token：精确关键词匹配（向后兼容内部查找与旧测试）。
+            - 多 token / 长自然语句：关键词命中 ∪ 向量语义召回，按相关度排序。
+
+    Returns:
+        { "domain": str, "query": str, "count": int, "results": [ {_domain, _score, ...entry} ] }
+        新增 _score 字段（相似度/相关性，仅用于排序与可解释性，不影响既有字段读取）。
+    """
+    tokens = [t for t in (query.replace(",", " ").split()) if t]
+    domains = list(_DOMAINS) if domain == "all" else [domain]
+
+    # 空查询 → 返回全部（枚举型调用依赖：场景映射、风格解析、预算档、花材名表等）
+    if not tokens:
+        results = []
+        for dom in domains:
+            if dom not in _DOMAINS:
+                continue
+            for entry in _load(dom):
+                results.append({"_domain": dom, "_score": 1.0, **entry})
+        return {"domain": domain, "query": query, "count": len(results), "results": results}
+
+    allow_vector = _allow_vector(query, tokens)
+    results = []
+    for dom in domains:
+        if dom not in _DOMAINS:
+            continue
+        for entry, score in _retrieve_domain(dom, tokens, allow_vector):
+            results.append({"_domain": dom, "_score": round(score, 4), **entry})
+
+    # 跨域（"all"）时统一按相关性排序；单域已排序，保持稳定
+    if domain == "all":
+        results.sort(key=lambda r: r["_score"], reverse=True)
+    return {"domain": domain, "query": query, "count": len(results), "results": results}
+
+
+def get_by_id(domain: str, item_id: str) -> dict[str, Any] | None:
+    """按 id 精确取一条知识（设计函数内部用）。"""
+    for entry in _load(domain):
+        if entry.get("id") == item_id:
+            return entry
+    return None

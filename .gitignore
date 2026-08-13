@@ -1,0 +1,27 @@
+# 密钥与环境
+.env
+
+# Python 缓存
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# 数据库（运行时生成）
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# IDE
+.idea/
+
+# 虚拟环境
+venv/
+.venv/
+
+# 旧版备份（重构前存档，不纳入版本控制）
+_legacy/
+
+# WorkBuddy 运行时记忆/元数据（非源码）
+.workbuddy/
