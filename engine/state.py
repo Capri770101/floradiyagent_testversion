@@ -97,7 +97,14 @@ STAGE_GUIDANCE: Final[dict[SessionStage, str]] = {
     SessionStage.ANALYZE: "先理解用户需求，提取预算、送花对象、偏好色系/花材等关键信息，再进入模式选择。",
     SessionStage.SELECT_MODE: "用 dialog_options 向用户提问：要『现有商家方案』还是『自己 DIY 设计』，二选一。",
     SessionStage.VIEW_PLAN: "调用 search_plans / get_plan_detail 展示商家方案卡片；可切换到 DIY，或让用户确认。",
-    SessionStage.DIY_DESIGN: "调用 generate_diy_plan 产出 DIY 草稿；可切换回现有方案、触发生图，或确认。",
+    SessionStage.DIY_DESIGN: (
+        "必须调用 generate_diy_plan（或按反馈调用 revise_diy_plan）产出结构化 DIY 方案——"
+        "这是唯一的设计手段，方案会自动写入会话供生图使用。禁止在回复里自行罗列花材/配比/预算"
+        "（那会绕过知识库，且生图会因缺少结构化方案而失败）；"
+        "禁止编造『自动生成工具失败/有偏差』之类说法——你并没有独立的自动生成工具，"
+        "方案不满意请用 revise_diy_plan 调整，不要假装工具出错。"
+        "需求零散跨多轮时，先汇总成一句话需求再调用 generate_diy_plan。"
+    ),
     SessionStage.IMAGE_GEN: "已提交生图任务，告知用户等待，并提示可通过 /tasks 轮询；完成后回到确认。",
     SessionStage.PLAN_CONFIRM: "向用户确认方案无误；确认后只能进入店铺推荐，不得跳步或回退到浏览。",
     SessionStage.SHOP_RECOMMEND: "调用 search_shops 按距离/价格/评价推荐店铺，给出 shop_card。",

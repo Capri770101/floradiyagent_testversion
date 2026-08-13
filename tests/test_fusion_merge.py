@@ -58,6 +58,11 @@ def test_image_guard_ok_when_confirmed(monkeypatch):
     sid = mem.get_or_create_session("u_img_ok")
     mem.update_stage(sid, "image_gen")
     mem.set_session_flag("u_img_ok", sid, "image_confirmed", "1")
+    # 必须先有结构化方案（generate_diy_plan 才会写入），否则生图兜底会报错
+    mem.set_session_json(
+        "u_img_ok", sid, "latest_diy_plan",
+        {"effect_prompt": "fake prompt", "desc": "fake desc"},
+    )
     monkeypatch.setattr(tools_mod.tasks, "create_image_task", lambda p: "fake_task")
     ctx = {"user_id": "u_img_ok", "session_id": sid, "location": None}
     out = json.loads(generate_effect_image("latest_diy", ctx))
@@ -65,6 +70,19 @@ def test_image_guard_ok_when_confirmed(monkeypatch):
     # 同一轮重复提交应被 image_submitted 拦截
     out2 = json.loads(generate_effect_image("latest_diy", ctx))
     assert "error" in out2
+
+
+def test_effect_image_requires_session_plan(monkeypatch):
+    """生图兜底：已确认但会话无结构化方案时，必须报错而非拿字面量生垃圾图。"""
+    sid = mem.get_or_create_session("u_img_no_plan")
+    mem.update_stage(sid, "image_gen")
+    mem.set_session_flag("u_img_no_plan", sid, "image_confirmed", "1")
+    captured = {}
+    monkeypatch.setattr(tools_mod.tasks, "create_image_task", lambda p: captured.setdefault("called", True))
+    ctx = {"user_id": "u_img_no_plan", "session_id": sid, "location": None}
+    out = json.loads(generate_effect_image("latest_diy", ctx))
+    assert "error" in out  # 缺少方案 → 明确报错
+    assert "called" not in captured  # 绝不应提交生图任务
 
 
 def test_agent_respond_to_user_e2e(monkeypatch):

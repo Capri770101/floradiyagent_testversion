@@ -916,7 +916,18 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
         if diy:
             prompt = diy.get("effect_prompt") or diy.get("desc", "")
         else:
-            prompt = plan
+            # 没有结构化方案：绝不用字面量（如 "latest_diy"）当 prompt 生垃圾图，
+            # 明确报错引导用户先经 generate_diy_plan 设计一版方案。
+            return json.dumps(
+                {
+                    "error": (
+                        "当前会话还没有任何 DIY 设计方案，无法生成效果图。"
+                        "请先描述需求，由我调用 generate_diy_plan 设计一版方案（会自动写入会话），"
+                        "确认后再生成效果图。"
+                    )
+                },
+                ensure_ascii=False,
+            )
     else:
         prompt = plan
     task_id = tasks.create_image_task(prompt)
