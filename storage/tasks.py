@@ -17,6 +17,7 @@ import base64
 import logging
 import mimetypes
 import uuid
+import zlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,44 @@ def _ensure_generated_dir() -> Path:
     d = Path(settings.generated_dir)
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _write_mock_placeholder(task_id: str) -> str:
+    """生成一张本地占位 PNG（纯 Python zlib，无第三方依赖），返回 /generated/{id}.png。
+
+    替代 example.com 占位 URL：example.com 是保留域名无法渲染，前端 <image> 拿到的是
+    本服务托管地址 /generated/{id}.png，Mock / 出图失败降级时也能正常显示。
+    """
+    size = 256
+    # 竖向渐变（浅粉 → 米白），256 色 RGB，无隔行
+    rows = []
+    for y in range(size):
+        r = int(255 - 90 * y / size)
+        g = int(228 - 60 * y / size)
+        b = int(228 - 60 * y / size)
+        rows.append(b"\x00" + bytes([r, g, b]) * size)
+    raw = b"".join(rows)
+
+    def chunk(ctype: bytes, data: bytes) -> bytes:
+        c = ctype + data
+        return len(data).to_bytes(4, "big") + c + zlib.crc32(c).to_bytes(4, "big")
+
+    ihdr = b"".join(
+        [
+            size.to_bytes(4, "big"),
+            size.to_bytes(4, "big"),
+            b"\x08\x02\x00\x00\x00",  # 8-bit, RGB, 无隔行
+        ]
+    )
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(raw, 6))
+        + chunk(b"IEND", b"")
+    )
+    path = _ensure_generated_dir() / f"{task_id}.png"
+    path.write_bytes(png)
+    return f"/generated/{path.name}"
 
 
 def _save_base64_image(b64: str, task_id: str, ext: str = "png") -> str:
@@ -281,11 +320,11 @@ def create_image_task(prompt: str) -> str:
             try:
                 result_url = _image_client_submit_api2img(prompt, task_id)
             except RuntimeError:
-                # 出图失败时退化为 mock 占位，保证对话流程不中断
+                # 出图失败时退化为本地占位，保证对话流程不中断且前端可渲染
                 task_id = uuid.uuid4().hex
                 status = "done"
-                result_url = f"https://example.com/mock/effect_{uuid.uuid4().hex[:8]}.png"
-                logger.warning("[tasks] api2img 出图失败，降级为 mock 占位")
+                result_url = _write_mock_placeholder(task_id)
+                logger.warning("[tasks] api2img 出图失败，降级为本地占位图")
                 with transaction() as c:
                     c.execute(
                         "INSERT INTO image_tasks(task_id, status, prompt, result_url, created_at) VALUES (?,?,?,?,?)",
@@ -301,8 +340,8 @@ def create_image_task(prompt: str) -> str:
             except RuntimeError:
                 task_id = uuid.uuid4().hex
                 status = "done"
-                result_url = f"https://example.com/mock/effect_{uuid.uuid4().hex[:8]}.png"
-                logger.warning("[tasks] 智谱出图失败，降级为 mock 占位")
+                result_url = _write_mock_placeholder(task_id)
+                logger.warning("[tasks] 智谱出图失败，降级为本地占位图")
                 with transaction() as c:
                     c.execute(
                         "INSERT INTO image_tasks(task_id, status, prompt, result_url, created_at) VALUES (?,?,?,?,?)",
@@ -311,14 +350,14 @@ def create_image_task(prompt: str) -> str:
                 return task_id
             status = "done"
         else:
-            # 未知 provider → 兜底 mock
+            # 未知 provider → 兜底本地占位
             task_id = uuid.uuid4().hex
             status = "done"
-            result_url = f"https://example.com/mock/effect_{uuid.uuid4().hex[:8]}.png"
+            result_url = _write_mock_placeholder(task_id)
     else:
         task_id = uuid.uuid4().hex
         status = "done"
-        result_url = f"https://example.com/mock/effect_{uuid.uuid4().hex[:8]}.png"
+        result_url = _write_mock_placeholder(task_id)
     with transaction() as c:
         c.execute(
             "INSERT INTO image_tasks(task_id, status, prompt, result_url, created_at) VALUES (?,?,?,?,?)",

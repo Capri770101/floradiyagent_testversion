@@ -142,7 +142,10 @@ def _intent(text: str) -> dict[str, bool]:
     t = text.lower()
     return {
         "diy": any(k in t for k in ("diy", "自己", "手工", "自定", "自制")),
-        "confirm": any(k in t for k in ("确认", "就这个", "好的", "可以", "要了", "下单", "确定", "行")),
+        "confirm": any(k in t for k in (
+            "确认", "就这个", "好的", "可以", "要了", "下单", "确定", "行",
+            "第一个", "第一家", "这家", "要这个", "就它", "这个方案", "选这个", "订",
+        )),
         "abandon": any(k in t for k in ("不要", "重选", "换", "重新", "放弃", "不要了", "取消")),
         "image": any(k in t for k in ("生图", "效果图", "图片", "图", "渲染")),
         "pick_shop": any(k in t for k in ("第一家", "这家", "就这", "第二家", "选它", "这个店")),
@@ -194,6 +197,12 @@ def _mock_decide(
     工具，下一轮（用户下条消息）再根据新意图发下一个工具；否则只回文本。这样
     避免一轮 ReAct 里连发多个工具，导致 UI 类型与状态机阶段错位（例如刚查到
     方案就直接被推进到店铺推荐，前端拿不到 plan_card）。
+
+    阶段推进与工具调用保持一致：
+    - SELECT_MODE 选 DIY → 先问需求（不调工具，下轮在 DIY_DESIGN 出草稿）；
+    - VIEW_PLAN / DIY_DESIGN 只有明确「确认/选定」才进店铺推荐；
+    - 生图意图只做引导，真正调 generate_effect_image 在 IMAGE_GEN 阶段发生；
+    - SHOP_RECOMMEND 先推荐店铺，用户选定后才下单。
     """
     intent = _intent(user_msg)
     budget = _extract_budget(user_msg)
@@ -211,8 +220,13 @@ def _mock_decide(
             )
         return ("请问您想选择【商家现有方案】还是【自己 DIY 设计】？", [])
 
-    # 2) 模式选择阶段：查现有方案（一步），确认交给下一回合
+    # 2) 模式选择阶段：DIY 先收集需求（不调工具）；现有方案一步查列表，确认交给下一回合
     if stage == SessionStage.SELECT_MODE:
+        if intent["diy"]:
+            return (
+                "好的，DIY 请描述您的需求：送谁 / 什么场合 / 预算 / 喜好色系，我来为您设计～",
+                [],
+            )
         if "search_plans" not in called:
             kw = _extract_keyword(user_msg)
             return (
@@ -221,18 +235,18 @@ def _mock_decide(
             )
         return ("已为您找到方案，请确认或告诉我您想换一种方式。", [])
 
-    # 3) 浏览现有方案：收到「确认」才进店铺推荐
+    # 3) 浏览现有方案：明确确认/选定才进店铺推荐
     if stage == SessionStage.VIEW_PLAN:
         if intent["abandon"]:
             return ("好的，我们重新选择购买方式。", [])
-        if intent["confirm"] and "search_shops" not in called:
+        if (intent["confirm"] or intent["pick_shop"]) and "search_shops" not in called:
             return (
                 "已为您选定方案，正在推荐合适店铺……",
                 [_MockToolCall("search_shops", {"plan": "latest"})],
             )
         return ("以上为推荐方案，确认或想换方式都可以告诉我～", [])
 
-    # 4) DIY 设计：先出草稿，再视意图生图 / 确认进店铺
+    # 4) DIY 设计：先出草稿；描述/提问不推进；生图只做引导；确认才进店铺推荐
     if stage == SessionStage.DIY_DESIGN:
         if intent["abandon"]:
             return ("好的，我们重新选择购买方式。", [])
@@ -241,38 +255,50 @@ def _mock_decide(
                 "正在为您生成 DIY 花艺方案草稿……",
                 [_MockToolCall("generate_diy_plan", {"requirements": user_msg})],
             )
-        if intent["image"] and "generate_effect_image" not in called:
+        if intent["image"]:
             return (
-                "正在为您生成 DIY 方案的效果图，任务已提交……",
-                [_MockToolCall("generate_effect_image", {"plan": "latest_diy"})],
+                "好的，正在为您生成效果图，请稍候……",
+                [],
             )
         if intent["confirm"] and "search_shops" not in called:
             return (
                 "已生成 DIY 方案，正在推荐合适店铺……",
                 [_MockToolCall("search_shops", {"plan": "latest_diy"})],
             )
-        return ("DIY 草稿已就绪，需要生图或确认都行～", [])
+        return ("DIY 草稿已就绪，可生图看效果或确认下单，也可以继续修改～", [])
 
-    # 5) 生图阶段：图就绪后进店铺推荐
+    # 5) 生图阶段：先提交生图任务（前端轮询 /tasks），确认后才进店铺推荐
     if stage == SessionStage.IMAGE_GEN:
-        if "search_shops" not in called:
+        if intent["abandon"]:
+            return ("好的，我们重新选择购买方式。", [])
+        if "generate_effect_image" not in called:
+            return (
+                "正在为您生成效果图，请稍候……",
+                [_MockToolCall("generate_effect_image", {"plan": "latest_diy"})],
+            )
+        if intent["confirm"] and "search_shops" not in called:
             return (
                 "效果图已就绪，正在推荐合适店铺……",
                 [_MockToolCall("search_shops", {"plan": "latest_diy"})],
             )
-        return ("以上为推荐店铺，请问选哪一家？", [])
+        return ("效果图已生成，可确认后进入店铺推荐，也可以继续调整方案～", [])
 
-    # 6) 店铺推荐 → 下单
+    # 6) 店铺推荐：先出店铺卡片，用户选定后才下单
     if stage == SessionStage.SHOP_RECOMMEND:
         if intent["abandon"]:
             return ("好的，我们回到方案确认环节重新选择。", [])
-        if "create_order" not in called:
+        if "search_shops" not in called:
+            return (
+                "正在为您推荐合适店铺……",
+                [_MockToolCall("search_shops", {"plan": "latest"})],
+            )
+        if (intent["confirm"] or intent["pick_shop"]) and "create_order" not in called:
             plan_type = "diy" if "latest_diy" in called else "existing"
             return (
                 "正在为您组装订单并生成支付跳转参数……",
                 [_MockToolCall("create_order", {"shop_id": "first", "plan_id": "latest", "plan_type": plan_type})],
             )
-        return ("订单已生成，请在小程序完成支付。", [])
+        return ("以上为推荐店铺，选一家我就帮您下单～", [])
 
     # 7) 已完成
     return ("感谢您的选购，期待再次为您服务 🌿", [])
@@ -281,9 +307,24 @@ def _mock_decide(
 def _mock_llm_response(
     messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None
 ) -> _MockResponse:
-    """Mock 引擎：解析阶段与意图，产出与 OpenAI 兼容的响应。"""
+    """Mock 引擎：解析阶段与意图，产出与 OpenAI 兼容的响应。
+
+    一次 run 内严格执行「一次一步」：若上一条消息是工具回执（observation），
+    本轮只回引导文本、不再发工具，保证每轮至多推进一步（工具结果/UI 与阶段不错位）。
+    """
     stage = _parse_stage(messages)
     user_msg = _latest_user(messages)
+
+    if messages and messages[-1].get("role") == "tool":
+        reply = {
+            SessionStage.VIEW_PLAN: "已为您找到方案，请确认或告诉我您想换一种方式。",
+            SessionStage.DIY_DESIGN: "DIY 草稿已就绪，可生图看效果或确认下单，也可以继续修改～",
+            SessionStage.IMAGE_GEN: "效果图任务已提交，稍后可在小程序查看效果图；确认后为您推荐店铺～",
+            SessionStage.SHOP_RECOMMEND: "以上为推荐店铺，选一家我就帮您下单～",
+        }.get(stage, "好的，还有什么可以帮您？")
+        logger.info("[llm:mock] stage=%s 工具回填轮（只回文本）", stage.value)
+        return _MockResponse(choices=[_MockChoice(message=_MockMessage(content=reply, tool_calls=[]))])
+
     called = _called_tools(messages)
     reply, tool_calls = _mock_decide(stage, user_msg, called)
     logger.info("[llm:mock] stage=%s reply=%s tools=%s", stage.value, reply[:30], [t.name for t in tool_calls])

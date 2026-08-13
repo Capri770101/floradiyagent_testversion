@@ -22,6 +22,7 @@ from typing import Any
 import httpx
 
 from config import settings
+from storage import tasks
 
 logger = logging.getLogger("repository")
 
@@ -123,7 +124,7 @@ class MockRepository(Repository):
                 "name": "康乃馨感恩花束",
                 "price": 199.0,
                 "desc": "11 支粉色康乃馨 + 满天星，适合送给母亲表达感恩。",
-                "effect_image_url": "https://example.com/mock/plan_P001.png",
+                "effect_image_url": "/generated/plan_P001.png",
                 "merchant_name": "花漾工坊",
                 "tags": ["母亲节", "康乃馨", "温馨"],
             },
@@ -132,7 +133,7 @@ class MockRepository(Repository):
                 "name": "玫瑰轻奢花盒",
                 "price": 299.0,
                 "desc": "19 朵红玫瑰礼盒装，高级感拉满，适合纪念日。",
-                "effect_image_url": "https://example.com/mock/plan_P002.png",
+                "effect_image_url": "/generated/plan_P002.png",
                 "merchant_name": "花漾工坊",
                 "tags": ["玫瑰", "礼盒", "高端"],
             },
@@ -141,11 +142,14 @@ class MockRepository(Repository):
                 "name": "向日葵花束",
                 "price": 159.0,
                 "desc": "阳光向日葵 + 尤加利叶，元气满满。",
-                "effect_image_url": "https://example.com/mock/plan_P003.png",
+                "effect_image_url": "/generated/plan_P003.png",
                 "merchant_name": "绿野花艺",
                 "tags": ["向日葵", "活力", "平价"],
             },
         ]
+        # 效果图为本地托管占位：生成真实可访问的 PNG 文件，替代 example.com 死链
+        for p in self._plans:
+            tasks._write_mock_placeholder(f"plan_{p['plan_id']}")
         # 店铺补充经纬度，使 location 透传后能按真实距离排序（而非静态 distance_km）
         self._shops: list[dict[str, Any]] = [
             {

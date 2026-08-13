@@ -35,7 +35,10 @@ class SessionStage(StrEnum):
 
 #: 正常前进路径的邻接表（包含「确认前 VIEW_PLAN ↔ DIY_DESIGN 互切」）。
 _ALLOWED: Final[dict[SessionStage, set[SessionStage]]] = {
-    SessionStage.ANALYZE: {SessionStage.SELECT_MODE},
+    SessionStage.ANALYZE: {
+        SessionStage.SELECT_MODE,   # 默认：需求不明，先让用户选「现有方案 / DIY」
+        SessionStage.DIY_DESIGN,    # 用户首句即明确 DIY 意图（含「自己/diy」等）→ 直接进设计，不绕一圈 SELECT_MODE
+    },
     SessionStage.SELECT_MODE: {SessionStage.VIEW_PLAN, SessionStage.DIY_DESIGN},
     SessionStage.VIEW_PLAN: {
         SessionStage.DIY_DESIGN,      # 确认前切换到 DIY

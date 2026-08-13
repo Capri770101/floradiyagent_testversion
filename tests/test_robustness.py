@@ -141,6 +141,67 @@ def test_response_schema(client: TestClient) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 9) 环节错乱回归：普通提问不跳步；确认才前进；DONE 后可重新购买
+# --------------------------------------------------------------------------- #
+def test_question_does_not_advance_stage(client: TestClient) -> None:
+    """浏览方案时提问（如「这个多少钱」）不应被当作确认推进到店铺推荐。"""
+    uid = "rb_010"
+    _chat(client, uid, "想给母亲买一束花，预算200元左右")
+    _chat(client, uid, "选现有方案")
+    b = _chat(client, uid, "这个多少钱？")
+    assert b["stage"] == "view_plan"
+    assert b["ui"] == "text"
+    assert all(tc["name"] != "search_shops" for tc in b["tool_calls"])
+
+
+def test_diy_flow_image_task_then_shops(client: TestClient) -> None:
+    """DIY 生图链路：表达生图意图即触发生图并下发 task_id（前端轮询），确认后才进店铺推荐。
+
+    注：生图在用户表达生图意图（「生成效果图看看」）那一轮即由兜底补调触发——
+    进入 IMAGE_GEN 即视为已确认，不再多要一次确认（避免「说了生成还要再确认」的断裂）。
+    因此 task_id 在生图意图轮即下发，而非等到「好的，生成吧」确认轮。
+    """
+    uid = "rb_011"
+    _chat(client, uid, "想给母亲买一束花，预算200元左右")
+    _chat(client, uid, "自己DIY设计")
+    _chat(client, uid, "用粉色康乃馨和满天星，温柔一点")
+    b = _chat(client, uid, "生成效果图看看")
+    assert b["stage"] == "image_gen"
+    # 生图意图轮直接触发生图：工具被调用且 task_id 交给前端轮询
+    assert any(tc["name"] == "generate_effect_image" for tc in b["tool_calls"])
+    assert b["data"].get("task_id") and b["data"].get("poll")
+    # 确认轮：进入店铺推荐，图已生成不再重复生图
+    b = _chat(client, uid, "好的，生成吧")
+    assert b["stage"] == "shop_recommend"
+    # 店铺未推荐前，确认消息不得直接结束流程（stage 不得为 done）
+    b = _chat(client, uid, "确认下单")
+    assert b["stage"] == "shop_recommend"
+    assert b["ui"] == "shop_card"
+    b = _chat(client, uid, "第一家")
+    assert b["stage"] == "done"
+    assert b["ui"] == "pay_jump"
+
+
+def test_after_done_can_buy_again(client: TestClient) -> None:
+    """上一单完成（DONE）后再次购买：自动开启新会话，不被旧流程卡死。"""
+    uid = "rb_012"
+    for msg in ("想给母亲买一束花，预算200元左右", "选现有方案", "就这个吧", "第一家"):
+        _chat(client, uid, msg)
+    assert _chat(client, uid, "想再买一束送给朋友")["stage"] == "select_mode"
+
+
+def test_done_with_chitchat_keeps_state(client: TestClient) -> None:
+    """DONE 后闲聊不清空会话；再次表达购买需求才开新会话。"""
+    uid = "rb_013"
+    for msg in ("想给母亲买一束花，预算200元左右", "选现有方案", "就这个吧", "第一家"):
+        _chat(client, uid, msg)
+    b = _chat(client, uid, "谢谢")
+    assert b["stage"] == "done"
+    b = _chat(client, uid, "再买一束送朋友，预算100")
+    assert b["stage"] == "select_mode"
+
+
+# --------------------------------------------------------------------------- #
 # 8) 状态机合法流转（happy path 每步都满足 can_transition）
 # --------------------------------------------------------------------------- #
 def test_state_transitions_all_legal(client: TestClient) -> None:

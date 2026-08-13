@@ -196,16 +196,20 @@ class ReActAgent:
             else:
                 final_reply = final_reply or "抱歉，我思考得太久啦，请简化需求或分步骤再问我～"
 
-        # 阶段推进：respond_to_user 携带的 stage 优先（经状态机校验），否则按意图推导
+        # 阶段推进：不再盲信 LLM 在 respond_to_user 填的 stage（live 下 DeepSeek 几乎不填/乱填，
+        # 导致 stage 失真、UI 与 stage 严重脱节）。统一改用「用户意图推导 + 工具产出校正」，
+        # 与 else/mock 分支逻辑完全一致，保证 live/mock 行为统一、UI 与 stage 始终对齐。
+        # LLM 填的 stage 字段在此被忽略（仅 ui/data/reply 仍取自 respond_args）。
         if respond_args is not None:
-            target_stage_str = str(respond_args.get("stage", incoming.value))
-            try:
-                target = SessionStage(target_stage_str)
-            except ValueError:
-                target = incoming
-            if not can_transition(incoming, target):
-                target = incoming
-            new_stage = target
+            new_stage = self._derive_next_stage(incoming, message)
+            if not can_transition(incoming, new_stage):
+                new_stage = incoming
+            # DONE 一致性校正：仅当 create_order 真实产出后才允许到达 DONE，
+            # 避免用户一句「确认」但店铺还没推荐过时直接结束流程。
+            if new_stage == SessionStage.DONE:
+                ordered = [tc.name for tc in tool_log if tc.status == "ok"]
+                if "create_order" not in ordered:
+                    new_stage = SessionStage.SHOP_RECOMMEND if "search_shops" in ordered else incoming
             ui_arg = str(respond_args.get("ui", ""))
             try:
                 ui = UIType(ui_arg)
@@ -225,7 +229,10 @@ class ReActAgent:
                 UIType.DIALOG_OPTIONS, UIType.PLAN_CARD,
                 UIType.SHOP_CARD, UIType.ORDER_CARD, UIType.PAY_JUMP,
             }
-            if ui not in _card_types or not data:
+            # 仅当 LLM 完全未提供结构化数据（data 为空）时，才用 _derive_ui 依据工具成果
+            # 推导的卡片/按钮覆盖：解决「按钮不下发」与「空 dialog_options 无按钮」；若 LLM 已带
+            # 有效 data（哪怕 ui=text），则尊重 LLM，不强行覆盖成其它 ui。
+            if not data:
                 if inferred_ui in _card_types and inferred_data:
                     ui = inferred_ui
                     data = inferred_data
@@ -253,12 +260,47 @@ class ReActAgent:
             ui, data = self._derive_ui(tool_log, new_stage, final_reply)
 
         # 进入生图确认阶段：每次进入须重新征求确认，清除历史 image_* 标记（融合自 111）。
-        # 若用户本轮消息本身就是明确生图请求（如「生成效果图看看」），直接视为已确认，
-        # 避免「明明说了生成、还要再确认一次」的体验断裂。
+        # 用户能走到 IMAGE_GEN，本身就说明本轮消息已表达生图意图（如「生成效果图看看」），
+        # 因此**进入即视为已确认**并置位 image_confirmed——避免「明明说了生成、还要再确认一次」
+        # 的体验断裂，也确保下方生图补调能兜底触发（live 下 LLM 常只说"正在生成"而不真调工具）。
+        # 不再用 is_affirmative 当闸门：它会漏判「帮我生成/生成效果图看看」这类直接请求，
+        # 导致 image_confirmed 永不置位、图始终生成不出来（已在 live 抽测复现）。
         if new_stage == SessionStage.IMAGE_GEN and new_stage != incoming:
             mem_store.clear_session_flags(user_id, sid, prefix="image_")
-            if is_affirmative(message):
-                mem_store.set_session_flag(user_id, sid, "image_confirmed", "1")
+            mem_store.set_session_flag(user_id, sid, "image_confirmed", "1")
+        # 生图强制收敛（live 兜底）：用户已确认生图（image_confirmed 置位），但至今未真正调用
+        # generate_effect_image（live 下 LLM 常只用文字"正在生成"而不调工具，或说"生成吧"后直接
+        # 跳去店铺推荐），则在此补调一次，保证前端能拿到 task_id 轮询渲染。
+        # 闸门从「必须停留在 IMAGE_GEN」放宽到「已确认 + 至今未生成 + 未到终态」，以覆盖
+        # "用户说生成吧后 LLM 直接推进到 shop_recommend" 的 live 场景——否则图会再次丢。
+        # 工具内部 image_submitted 标记防重复生图；一旦成功产出 eff_done=True 即不再补调。
+        eff_confirmed = mem_store.get_session_flag(user_id, sid, "image_confirmed") == "1"
+        eff_done = any(tc.name == "generate_effect_image" and tc.status == "ok" for tc in tool_log)
+        if eff_confirmed and not eff_done and new_stage not in (
+            SessionStage.DONE, SessionStage.ORDER_CONFIRM
+        ):
+            try:
+                from tools import generate_effect_image as _gei
+                # 生图工具内置安全闸门会校验「当前阶段==IMAGE_GEN 且已确认」，而本兜底补调
+                # 发生在最终 update_stage 之前，DB 阶段仍是旧值（如 diy_design），会触发闸门报错、
+                # 导致 task_id 拿不到。故调用前先把阶段临时置为 IMAGE_GEN 放行，
+                # 末尾的 update_stage(new_stage) 仍会把阶段修正回真实值（如 shop_recommend）。
+                mem_store.update_stage(sid, SessionStage.IMAGE_GEN.value)
+                raw = _gei("latest_diy", {"user_id": user_id, "session_id": sid, "location": location})
+                eff = json.loads(raw)
+                if "task_id" in eff:
+                    ui = UIType.TEXT
+                    data = {"task_id": eff["task_id"], "poll": eff.get("poll", True)}
+                    final_reply = "正在为您生成效果图预览，请稍候～ 🎨"
+                    tool_log.append(ToolCallRecord(
+                        name="generate_effect_image",
+                        arguments={"plan": "latest_diy"},
+                        result=raw, status="ok",
+                    ))
+                    new_msgs.append({"role": "tool", "content": raw, "tool_call_id": "forced_effect_image"})
+                    logger.info("[agent] 生图补调成功 task_id=%s", eff["task_id"])
+            except Exception:  # noqa: BLE001
+                logger.exception("[agent] 生图补调失败")
 
         # 持久化本轮新增消息 + 最新阶段
         mem_store.save_messages(sid, new_msgs)
@@ -331,7 +373,10 @@ class ReActAgent:
         intent = _intent(message)
 
         if current == SessionStage.ANALYZE:
-            return SessionStage.SELECT_MODE
+            # 全新会话首句即可能带强意图（如「自己DIY设计一束粉色康乃馨」），
+            # 直接尊重 diy 意图进入 DIY_DESIGN；其余（浏览/模糊需求）先 SELECT_MODE
+            # 让用户确认「看方案 or 自己设计」，避免在还没弄清意图时被错误分支接管。
+            return SessionStage.DIY_DESIGN if intent["diy"] else SessionStage.SELECT_MODE
         if current == SessionStage.SELECT_MODE:
             return SessionStage.DIY_DESIGN if intent["diy"] else SessionStage.VIEW_PLAN
         if current == SessionStage.VIEW_PLAN:

@@ -107,4 +107,4 @@ def test_agent_respond_to_user_e2e(monkeypatch):
     r = agent.run("u_e2e", "帮我设计一束花", None, "user", None)
     assert r.reply == "好的，已为您设计"
     assert r.ui.value == "text"  # UIType 校验通过
-    assert r.stage == "analyze"  # stage 经状态机校验后保留
+    assert r.stage == "select_mode"  # 改动后 stage 由用户意图推导，不再盲信 LLM 填的 stage
