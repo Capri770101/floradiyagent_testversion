@@ -205,6 +205,13 @@ class ReActAgent:
                 ui = self._derive_ui(tool_log, new_stage, final_reply)[0]
             data_arg = respond_args.get("data") or {}
             data = data_arg if isinstance(data_arg, dict) else {}
+            # 生图结果兜底：本轮若 generate_effect_image 真实成功（工具已返回 task_id），
+            # 强制走 text 分支并注入 task_id，避免 LLM 在 respond_to_user 漏填 data.task_id，
+            # 导致前端收不到 task_id、不发起 /tasks 轮询、图片永不渲染。
+            _inferred_ui, inferred_data = self._derive_ui(tool_log, new_stage, final_reply)
+            if inferred_data.get("task_id"):
+                ui = UIType.TEXT
+                data = {"task_id": inferred_data["task_id"], "poll": inferred_data.get("poll")}
             final_reply = str(respond_args.get("reply", final_reply) or final_reply)
         else:
             # 仅依据「本轮用户消息意图 + 当前阶段」推导，不在循环内随工具跳变，
