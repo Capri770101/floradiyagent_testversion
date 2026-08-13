@@ -889,7 +889,13 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
         stage = memory.get_stage(sid)
         if stage != SessionStage.IMAGE_GEN.value:
             return json.dumps(
-                {"error": f"当前业务阶段（{stage or '无会话'}）不可直接生成效果图，请先征求用户是否生成效果图"},
+                {
+                    "error": (
+                        f"当前业务阶段（{stage or '无会话'}）不可直接生成效果图。"
+                        "若想生成效果图，请重新描述需求开启新的方案设计"
+                        "（进入生图阶段后我会先征求你的确认）。"
+                    )
+                },
                 ensure_ascii=False,
             )
         if memory.get_session_flag(uid, sid, "image_confirmed") != "1":

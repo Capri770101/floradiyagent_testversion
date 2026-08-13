@@ -102,5 +102,11 @@ STAGE_GUIDANCE: Final[dict[SessionStage, str]] = {
     SessionStage.PLAN_CONFIRM: "向用户确认方案无误；确认后只能进入店铺推荐，不得跳步或回退到浏览。",
     SessionStage.SHOP_RECOMMEND: "调用 search_shops 按距离/价格/评价推荐店铺，给出 shop_card。",
     SessionStage.ORDER_CONFIRM: "调用下单技能组装订单，返回 order_card 与 pay_jump 参数。",
-    SessionStage.DONE: "已提供支付跳转参数，等待用户在小程序完成支付。",
+    SessionStage.DONE: (
+        "已提供支付跳转参数，等待用户在小程序完成支付。"
+        "DONE 是终态，新一轮咨询视为全新开始，不要承接上一轮的未决步骤，也不要主动提及之前的生图/确认环节。"
+        "若用户想看或生成效果图，说明希望重新设计：引导其描述新需求开启新一轮对话"
+        "（会自动回到方案设计阶段），或提示方案已下单、效果图将在小程序订单中展示；"
+        "不要在当前 DONE 阶段调用 generate_effect_image。"
+    ),
 }
