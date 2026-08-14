@@ -1,9 +1,20 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Placeholder } from './Placeholder'
 import { Button } from './Button'
 import { IconFlower } from './icons'
 import { PLACEHOLDER } from '../tokens'
 import SmartImage from './SmartImage'
+import { getImageTask, withApiUrl } from '../api/chat'
+
+// 花材列表归一化：LLM 可能给数组（{name, role, ...}）或字符串（"洋桔梗、郁金香"）
+function toFlowerList(v) {
+  if (!v) return []
+  if (Array.isArray(v)) return v
+  return String(v)
+    .split(/[、，,;；/\s]+/)
+    .filter(Boolean)
+    .map((name) => ({ name }))
+}
 
 // 把后端返回的 DIY 方案（design 嵌套 / 顶层混合）归一化为前端稳定字段，
 // 避免 LLM 输出结构漂移导致卡片渲染错位。
@@ -11,10 +22,15 @@ export function normalizePlan(plan) {
   if (!plan) return null
   const d = plan.design || {}
   const flowers = [
-    ...(d.main_flowers || plan.main_flowers || []),
-    ...(d.fillers || plan.fillers || []),
-    ...(d.foliage || plan.foliage || []),
+    ...toFlowerList(d.main_flowers ?? plan.main_flowers),
+    ...toFlowerList(d.fillers ?? plan.fillers),
+    ...toFlowerList(d.foliage ?? plan.foliage),
   ]
+  const toList = (v) => {
+    if (!v) return []
+    if (Array.isArray(v)) return v
+    return String(v).split(/[、，,;；/\s]+/).filter(Boolean)
+  }
   return {
     plan_id: plan.plan_id,
     name: plan.name || '我的花艺方案',
@@ -24,7 +40,7 @@ export function normalizePlan(plan) {
     price: plan.estimated_price ?? plan.price,
     meaning: d.meaning ?? plan.meaning,
     packaging: d.packaging ?? plan.packaging,
-    colorScheme: d.color_scheme ?? plan.color_scheme,
+    colorScheme: toList(d.color_scheme ?? plan.color_scheme),
     diySteps: plan.diy_steps ?? d.diy_steps,
     careTips: plan.care_tips ?? d.care_tips,
     cardMessage: plan.card_message ?? d.card_message,
@@ -59,17 +75,53 @@ function Chevron({ open }) {
   )
 }
 
-export default function DiyPlanCard({ plan, onConfirm, onAdjust }) {
-  const [open, setOpen] = useState(true)
+export default function DiyPlanCard({ plan, onConfirm, onAdjust, img }) {
+  const [open, setOpen] = useState(false)
   const p = normalizePlan(plan)
+  const [imgState, setImgState] = useState({ status: 'none', url: null })
   if (!p) return null
+
+  // 效果图状态随 img prop 变化（生图在方案卡之后才完成，prop 是异步挂上的）：
+  // result_url → 直接渲染；仅 task_id → 每 2s 轮询 /tasks 直至 done/failed。
+  useEffect(() => {
+    if (img?.result_url) {
+      setImgState({ status: 'done', url: withApiUrl(img.result_url) })
+      return
+    }
+    if (!img?.task_id) {
+      setImgState({ status: 'none', url: null })
+      return
+    }
+    setImgState({ status: 'pending', url: null })
+    let alive = true
+    const poll = async () => {
+      try {
+        const r = await getImageTask(img.task_id)
+        if (!alive) return
+        if (r.status === 'done') {
+          setImgState({ status: 'done', url: withApiUrl(r.result_url) })
+        } else if (r.status === 'failed') {
+          setImgState({ status: 'failed', url: null })
+        } else {
+          setTimeout(poll, 2000)
+        }
+      } catch (e) {
+        if (alive) setImgState({ status: 'failed', url: null })
+      }
+    }
+    poll()
+    return () => {
+      alive = false
+    }
+  }, [img?.task_id, img?.result_url])
 
   return (
     <div className="animate-fade-up mt-2 overflow-hidden rounded-card-lg bg-white shadow-card">
-      {/* 头部：点击展开/收起 */}
+      {/* 头部：方案名 + 价格，点击展开/收起 */}
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-3 px-4 py-3 text-left"
+        aria-expanded={open}
       >
         <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-pink text-white">
           <IconFlower width={16} height={16} />
@@ -88,11 +140,24 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust }) {
       </button>
 
       {open && (
-        <div className="border-t border-line px-4 pb-4 pt-1">
+        <div className="border-t border-line px-4 pb-4 pt-3">
+          {/* 效果图状态提示：生图完成后的图片渲染在下方「方案效果图」占位符位置，
+              这里只保留进行中 / 失败的状态文案，避免出现两处图片 */}
+          {imgState.status === 'pending' && (
+            <p className="mb-2 text-[11px] text-sub">效果图生成中，请稍候…</p>
+          )}
+          {imgState.status === 'failed' && (
+            <p className="mb-2 text-[11px] text-pink">
+              效果图生成失败了，可以让我重新生成试试。
+            </p>
+          )}
+
           <div className="flex gap-3">
             <SmartImage
+              src={imgState.status === 'done' ? imgState.url : null}
               imgKey="diy_main"
               className="h-[104px] w-[92px] shrink-0 rounded-[14px]"
+              alt="方案效果图"
             />
             <div className="flex-1">
               <Section title="花卉组成">
@@ -139,7 +204,9 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust }) {
           </Section>
 
           <Section title="DIY 操作步骤">
-            <span className="whitespace-pre-line">{p.diySteps || '—'}</span>
+            <span className="whitespace-pre-line">
+              {Array.isArray(p.diySteps) ? p.diySteps.join('\n') : p.diySteps || '—'}
+            </span>
           </Section>
 
           <Section title="养护建议">

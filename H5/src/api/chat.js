@@ -66,3 +66,17 @@ export async function deleteConversation(convId, userId) {
   if (!res.ok) throw new Error(`删除会话失败 ${res.status}`)
   return true
 }
+
+// 生图任务轮询（后端契约：{task_id, status: pending|done|failed, result_url}）
+export async function getImageTask(taskId) {
+  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, {
+    headers: authHeaders(),
+  })
+  if (!res.ok) throw new Error(`查询生图任务失败 ${res.status}`)
+  return res.json()
+}
+
+// 后端图片 URL（/generated/xxx）需经 Vite 代理补 /api 前缀，否则打到 5173 端口 404
+export function withApiUrl(u) {
+  return u && !u.startsWith('/api') ? `/api${u}` : u
+}

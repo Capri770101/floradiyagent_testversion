@@ -1181,10 +1181,18 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
     task_id = tasks.create_image_task(prompt)
     if sid:
         memory.set_session_flag(uid, sid, "image_submitted", "1")
-    return json.dumps(
-        {"task_id": task_id, "status": "submitted", "poll": f"/tasks/{task_id}"},
-        ensure_ascii=False,
-    )
+    result: dict[str, Any] = {
+        "task_id": task_id,
+        "status": "submitted",
+        "poll": f"/tasks/{task_id}",
+    }
+    # 同步 provider（api2img / zhipu / mock）落盘即 done，直接带 result_url，
+    # 前端无需轮询即可渲染；dashscope 异步任务保持 submitted，由前端轮询 poll。
+    row = tasks.get_image_task(task_id)
+    if row and row["status"] == "done" and row.get("result_url"):
+        result["status"] = "done"
+        result["result_url"] = row["result_url"]
+    return json.dumps(result, ensure_ascii=False)
 
 
 @register_tool(

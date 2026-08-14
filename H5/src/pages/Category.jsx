@@ -148,9 +148,13 @@ export default function Category() {
         <h2 className="text-[16px] font-medium text-dark">按场景</h2>
         <div className="mt-3 grid grid-cols-3 gap-2.5">
           {SCENES.map((s, i) => (
-            <button key={s} onClick={() => setScene(i)}>
-              <Pill label={s} selected={scene === i} style={{ width: 96 }} />
-            </button>
+            <Pill
+              key={s}
+              label={s}
+              selected={scene === i}
+              onClick={() => setScene(i)}
+              style={{ width: 96 }}
+            />
           ))}
         </div>
       </div>

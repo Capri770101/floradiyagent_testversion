@@ -7,6 +7,8 @@ import {
   createConversation,
   getMessages,
   deleteConversation,
+  getImageTask,
+  withApiUrl,
 } from '../api/chat'
 import { createOrder } from '../api/shop'
 import { Placeholder } from '../components/Placeholder'
@@ -76,6 +78,66 @@ function ChatPlanCard({ plan, onConfirm, onAdjust }) {
           </Button>
         )}
       </div>
+    </div>
+  )
+}
+
+// 生图结果卡片：同步任务带 result_url 直接渲染；异步任务轮询 /tasks/{id} 至 done
+// 仅在无前置方案卡时独立展示（通常效果图会并入方案卡片）
+function ImageTaskCard({ data }) {
+  // 后端 result_url 为 /generated/{id}.jpg 形式，经 Vite 代理需补 /api 前缀
+  const doneUrl = withApiUrl(data?.result_url || data?.image_url)
+  const [state, setState] = useState(() =>
+    doneUrl ? { status: 'done', result_url: doneUrl } : { status: 'pending' }
+  )
+
+  useEffect(() => {
+    if (!data?.task_id || doneUrl) return
+    let alive = true
+    const poll = async () => {
+      try {
+        const r = await getImageTask(data.task_id)
+        if (!alive) return
+        if (r.status === 'done') {
+          setState({ status: 'done', result_url: withApiUrl(r.result_url) })
+        } else if (r.status === 'failed') {
+          setState({ status: 'failed' })
+        } else {
+          setTimeout(poll, 2000)
+        }
+      } catch (e) {
+        if (alive) setState({ status: 'failed' })
+      }
+    }
+    poll()
+    return () => {
+      alive = false
+    }
+  }, [data?.task_id, doneUrl])
+
+  if (state.status === 'failed') {
+    return (
+      <p className="mt-2 rounded-[12px] bg-pink2 px-3 py-2 text-[11px] text-pink">
+        效果图生成失败了，可以让我重新生成试试。
+      </p>
+    )
+  }
+  return (
+    <div className="mt-2 rounded-card-lg bg-white p-3 shadow-card">
+      {state.status === 'pending' && (
+        <p className="mb-2 text-[12px] text-sub">
+          效果图生成中，请稍候…
+        </p>
+      )}
+      {state.status === 'done' && state.result_url && (
+        <SmartImage
+          src={state.result_url}
+          imgKey="agent_plan"
+          color={PLACEHOLDER.agentPlan}
+          className="w-full rounded-[10px]"
+          alt="效果图"
+        />
+      )}
     </div>
   )
 }
@@ -259,7 +321,41 @@ export default function Agent() {
     const arr = []
     if (data.plan) arr.push({ ...data.plan, _type: 'diy' })
     if (data.existing_plan) arr.push({ ...data.existing_plan, _type: 'shop' })
+    // LLM 有时把方案对象平铺在 data 顶层（无 plans 包装），按 DIY 方案兜底识别
+    if (!arr.length && (data.plan_id || data.name)) {
+      arr.push({ ...data, _type: 'diy' })
+    }
     return arr
+  }
+
+  // 把生图结果（image_task）挂到最近的前一张方案卡片上，效果图并入卡片展示；
+  // 无前置方案卡时才保留为独立生图卡片；生图消息若带文本内容则保留为纯文本气泡
+  // （如「效果图已生成，展开卡片查看」/ 确认类提示），避免整条消息被吞掉。
+  function attachImages(msgs) {
+    const out = []
+    for (let i = 0; i < msgs.length; i++) {
+      const m = msgs[i]
+      if (m.ui === 'image_task' && m.data) {
+        const img = {
+          task_id: m.data.task_id,
+          result_url: m.data.result_url || m.data.image_url,
+          poll: m.data.poll,
+        }
+        let attached = false
+        for (let j = out.length - 1; j >= 0; j--) {
+          if (out[j].ui === 'plan_card') {
+            out[j] = { ...out[j], _img: img }
+            attached = true
+            break
+          }
+        }
+        if (!attached) out.push(m)
+        else if (m.content) out.push({ ...m, ui: 'text' })
+      } else {
+        out.push(m)
+      }
+    }
+    return out
   }
 
   function renderMessage(m, idx) {
@@ -299,6 +395,7 @@ export default function Agent() {
                 <DiyPlanCard
                   key={i}
                   plan={p}
+                  img={m._img}
                   onConfirm={() =>
                     nav(`/diy/${p.plan_id || 'demo'}`, { state: { plan: p } })
                   }
@@ -313,16 +410,21 @@ export default function Agent() {
                 />
                 )
               )}
+            {m.ui === 'image_task' && <ImageTaskCard data={m.data} />}
             {m.ui === 'dialog_options' &&
-              m.data?.options?.map((o, i) => (
-                <Pill
-                  key={i}
-                  label={o.label}
-                  selected={i === 0}
-                  onClick={() => send(o.value || o.label)}
-                  style={{ marginTop: 8 }}
-                />
-              ))}
+              m.data?.options?.map((o, i) => {
+                const opt =
+                  typeof o === 'string' ? { label: o, value: o } : o
+                return (
+                  <Pill
+                    key={i}
+                    label={opt?.label}
+                    selected={i === 0}
+                    onClick={() => send(opt?.value || opt?.label)}
+                    style={{ marginTop: 8 }}
+                  />
+                )
+              })}
             {m.ui === 'pay_jump' && (
               <Button
                 className="mt-2 w-full"
@@ -362,7 +464,7 @@ export default function Agent() {
       </div>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-3">
-        {messages.map(renderMessage)}
+        {attachImages(messages).map(renderMessage)}
         {loading && (
           <div className="px-4 pb-3">
             <div className="flex items-start gap-2">

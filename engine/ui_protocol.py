@@ -22,6 +22,7 @@ class UIType(StrEnum):
     SHOP_CARD = "shop_card"
     ORDER_CARD = "order_card"
     PAY_JUMP = "pay_jump"
+    IMAGE_TASK = "image_task"  # 生图结果：同步已 done 直接给 result_url，异步给 poll 轮询
 
 
 class ToolCallRecord(BaseModel):

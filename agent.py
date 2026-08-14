@@ -192,7 +192,9 @@ class ReActAgent:
                     ],
                 }
                 messages.append(assistant_msg)
-                new_msgs.append(assistant_msg)
+                # 中间轮（带工具调用）只作模型上下文，不向用户展示：存库时清空 content，
+                # 最终展示文本由收尾的 respond_to_user 消息（ui/data）承载，避免重复文本。
+                new_msgs.append({**assistant_msg, "content": ""})
                 for tc in tool_calls:
                     if tc["name"] == "respond_to_user":
                         # 终结信号：记录参数，回填一条 tool 观测（OpenAI 协议要求），随后跳出 ReAct 循环
@@ -268,13 +270,60 @@ class ReActAgent:
                 if inferred_ui in _card_types and inferred_data:
                     ui = inferred_ui
                     data = inferred_data
+            # plan_card 加固：LLM 常把方案平铺成残缺对象（缺 meaning / packaging /
+            # diy_steps / care_tips / budget_breakdown 等字段），而工具（generate_diy_plan）
+            # 返回的方案结构完整（design / 花语 / 步骤 / 预算明细齐全）——方案卡片一律
+            # 以工具成果为准，保证卡片内容完整，不被 LLM 平铺数据覆盖。
+            elif ui == UIType.PLAN_CARD and inferred_ui == UIType.PLAN_CARD and inferred_data:
+                ui = inferred_ui
+                data = inferred_data
             # 生图结果兜底：本轮若 generate_effect_image 真实成功（工具已返回 task_id），
-            # 强制走 text 分支并注入 task_id，避免 LLM 在 respond_to_user 漏填 data.task_id，
+            # 强制下发任务信息，避免 LLM 在 respond_to_user 漏填 data.task_id，
             # 导致前端收不到 task_id、不发起 /tasks 轮询、图片永不渲染。
+            # 同步 provider 已 done 且带 result_url → image_task 卡片直渲；
+            # 异步 pending（仅 task_id）→ text + task_id 提示，由前端轮询。
             if inferred_data.get("task_id"):
-                ui = UIType.TEXT
-                data = {"task_id": inferred_data["task_id"], "poll": inferred_data.get("poll")}
+                if inferred_data.get("result_url"):
+                    ui = UIType.IMAGE_TASK
+                    data = {
+                        "task_id": inferred_data["task_id"],
+                        "poll": inferred_data.get("poll"),
+                        "result_url": inferred_data["result_url"],
+                    }
+                else:
+                    ui = UIType.TEXT
+                    data = {"task_id": inferred_data["task_id"], "poll": inferred_data.get("poll")}
             final_reply = str(respond_args.get("reply", final_reply) or final_reply)
+            # 空回复兜底：LLM 偶尔调 respond_to_user 时 reply 为空字符串，导致前端
+            # 看似没有回复。有工具成果 → 引导查看卡片；否则给出通用的收到提示。
+            if not final_reply:
+                if tool_log:
+                    final_reply = "我已经为你整理好相关结果啦，请查看下方卡片～"
+                else:
+                    final_reply = "好的，收到你的想法啦，请稍等～"
+            # options 契约归一化：LLM 常把选项直接写成字符串数组，而前端 Pill 期望
+            # {label, value} 对象——统一转成对象，避免空按钮 / 点击无效。
+            if ui == UIType.DIALOG_OPTIONS and isinstance(data.get("options"), list):
+                data["options"] = [
+                    o if isinstance(o, dict) and o.get("label")
+                    else {"label": str(o), "value": str(o)}
+                    for o in data["options"]
+                ]
+            # 生图 ui 加固：image_task 的 task_id 必须以工具真实产出为准——LLM 常在生图
+            # 工具被拦 / 未调用时，幻觉编造 task_id（如 "DIY_xxx_effect"）谎报成功，
+            # 前端轮询会 404 卡 pending。有真实 task_id → 保留（done 带 result_url 直渲，
+            # 否则前端轮询）；本轮没有真实生图 → 降级纯文本，绝不透传幻觉数据。
+            if ui == UIType.IMAGE_TASK:
+                if inferred_data.get("task_id"):
+                    data = {
+                        "task_id": inferred_data["task_id"],
+                        "poll": inferred_data.get("poll"),
+                    }
+                    if inferred_data.get("result_url"):
+                        data["result_url"] = inferred_data["result_url"]
+                else:
+                    ui = UIType.TEXT
+                    data = {}
         else:
             # 仅依据「本轮用户消息意图 + 当前阶段」推导，不在循环内随工具跳变，
             # 避免同一轮里 Mock 误把 VIEW_PLAN 当成已确认而去调 search_shops。
@@ -289,14 +338,22 @@ class ReActAgent:
                     new_stage = SessionStage.SHOP_RECOMMEND if "search_shops" in ordered else incoming
             ui, data = self._derive_ui(tool_log, new_stage, final_reply)
 
-        # 进入生图确认阶段：每次进入须重新征求确认，清除历史 image_* 标记（融合自 111）。
-        # 用户能走到 IMAGE_GEN，本身就说明本轮消息已表达生图意图（如「生成效果图看看」），
-        # 因此**进入即视为已确认**并置位 image_confirmed——避免「明明说了生成、还要再确认一次」
-        # 的体验断裂，也确保下方生图补调能兜底触发（live 下 LLM 常只说"正在生成"而不真调工具）。
-        # 不再用 is_affirmative 当闸门：它会漏判「帮我生成/生成效果图看看」这类直接请求，
-        # 导致 image_confirmed 永不置位、图始终生成不出来（已在 live 抽测复现）。
+        # 生图确认关卡（两条路径）：
+        # 1) 阶段推进到 IMAGE_GEN（工具成功产出效果图任务 / stage 迁移）——进入即置位；
+        # 2) 用户消息直接表达生图意图（含「效果图 / 生图 / 生成」）——即使本轮
+        #    generate_effect_image 被闸门拦截（无 ok 产出、阶段不推进），也视为已确认。
+        #    live 已复现：用户说「确认方案，生成效果图吧」，LLM 先调生图工具被拦，
+        #    若只依赖工具产出推导（_derive_focus 只认 ok），image_confirmed 永不置位，
+        #    LLM 转而谎报「正在生成」，图永远出不来。
+        _img_intent = any(w in message for w in ("效果图", "生图", "生成"))
         if new_stage == SessionStage.IMAGE_GEN and new_stage != incoming:
             mem_store.clear_session_flags(user_id, sid, prefix="image_")
+            mem_store.set_session_flag(user_id, sid, "image_confirmed", "1")
+        elif (
+            _img_intent
+            and incoming in (SessionStage.DIY_DESIGN, SessionStage.IMAGE_GEN)
+            and mem_store.get_session_flag(user_id, sid, "image_confirmed") != "1"
+        ):
             mem_store.set_session_flag(user_id, sid, "image_confirmed", "1")
         # 生图强制收敛（live 兜底）：用户已确认生图（image_confirmed 置位），但至今未真正调用
         # generate_effect_image（live 下 LLM 常只用文字"正在生成"而不调工具，或说"生成吧"后直接
@@ -381,10 +438,13 @@ class ReActAgent:
             parts.append("## 用户长期偏好（来自记忆，回复时参考）：" + mem)
         parts.append(
             "## 回复格式要求\n"
-            "- 用清晰的结构化中文表达：用「序号 / 短标题 / 换行」组织信息，一段话只讲一件事。\n"
-            "- 不要使用 ** 这种 markdown 加粗符号，也不要用 # 标题符；花材名、价格等靠换行与序号区分即可。\n"
-            "- 文案连贯、不堆砌：先给结论（如方案名/总价），再分点说明组成、寓意、养护；结尾一句行动建议。\n"
-            "- 术语准确、语气亲切，像一位专业花艺师在耐心讲解，而不是罗列参数。"
+            "- 回复要简短：方案、店铺、订单等结构化内容会以卡片形式展示给用户，"
+            "文字里只给结论 + 一句行动建议，不要重复罗列卡片已有的细节"
+            "（花材明细、寓意、包装、养护、步骤、价格清单等）。\n"
+            "- 设计完方案后：一句『方案已设计好，点击卡片可查看详情』即可，花材寓意等交给卡片。\n"
+            "- 生成效果图后：一句『效果图已生成，展开方案卡片即可查看』即可，不要描述画面细节。\n"
+            "- 不要使用 ** 这种 markdown 加粗符号，也不要用 # 标题符。\n"
+            "- 术语准确、语气亲切，像一位专业花艺师在简短讲解，而不是罗列参数。"
         )
         parts.append("## 工具说明书\n" + generate_tool_manual())
         return "\n\n".join(parts)
@@ -453,7 +513,13 @@ class ReActAgent:
             return UIType.SHOP_CARD, {"shops": self._last_ok_result(tool_log, last)}
         if last == "generate_effect_image":
             r = self._last_ok_result(tool_log, last)
-            return UIType.TEXT, {"task_id": r.get("task_id"), "poll": r.get("poll")}
+            data: dict[str, Any] = {
+                "task_id": r.get("task_id"),
+                "poll": r.get("poll"),
+            }
+            if r.get("result_url"):
+                data["result_url"] = r["result_url"]
+            return UIType.IMAGE_TASK, data
         if last == "create_order":
             r = self._last_ok_result(tool_log, last)
             pay_jump = r.get("pay_jump", {})

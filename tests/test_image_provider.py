@@ -15,6 +15,12 @@ import pytest
 
 from config import settings
 from storage import tasks
+from storage.db import init_db
+
+
+def setup_module(module) -> None:
+    # 初始化临时 DB（conftest 已设 DB_PATH 到临时文件），保证独立运行时表结构就绪
+    init_db()
 
 
 def test_image_enabled_api2img_requires_key_and_base(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -67,6 +73,51 @@ def test_api2img_submit_parses_b64_and_saves(tmp_path: pytest.TempPathFactory, m
     sent_body = called.kwargs["json"]
     assert sent_body["model"] == "gpt-image-2"
     assert sent_body["size"] == "1024x1024"
+
+
+def test_detect_image_ext_by_magic() -> None:
+    """魔数识别：png / jpeg / webp 与不可识别内容。"""
+    assert tasks._detect_image_ext(b"\x89PNG\r\n\x1a\n" + b"x") == "png"
+    assert tasks._detect_image_ext(b"\xff\xd8\xff\xe0JFIF") == "jpg"
+    assert tasks._detect_image_ext(b"RIFF\x10\x00\x00\x00WEBPVP8 ") == "webp"
+    assert tasks._detect_image_ext(b"not-an-image") is None
+    assert tasks._detect_image_ext(b"RIFF\x00\x00\x00\x00XXXX") is None
+
+
+def test_download_image_to_local_magic_wins_over_content_type(
+    tmp_path: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """上游 content-type 声称 png 但内容实为 JPEG 时，按魔数落盘为 .jpg。"""
+    monkeypatch.setattr(settings, "generated_dir", str(tmp_path))
+    jpeg_bytes = b"\xff\xd8\xff\xe0" + b"\x00\x10JFIF fake-jpeg" + b"\x00" * 20
+
+    fake_resp = MagicMock()
+    fake_resp.headers = {"content-type": "image/png"}
+    fake_resp.content = jpeg_bytes
+    fake_resp.raise_for_status.return_value = None
+    monkeypatch.setattr(tasks, "_is_safe_image_url", lambda url: True)
+    monkeypatch.setattr(tasks, "_safe_get", lambda url: fake_resp)
+
+    url = tasks._download_image_to_local("https://img.example.com/x", "tid_jpg")
+    assert url == "/generated/tid_jpg.jpg"
+    assert (tmp_path / "tid_jpg.jpg").read_bytes() == jpeg_bytes
+
+
+def test_download_image_to_local_rejects_non_image(
+    tmp_path: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """内容既非受支持图片、content-type 也无法兜底时拒绝落盘。"""
+    monkeypatch.setattr(settings, "generated_dir", str(tmp_path))
+
+    fake_resp = MagicMock()
+    fake_resp.headers = {"content-type": "text/html"}
+    fake_resp.content = b"<html>not an image</html>"
+    fake_resp.raise_for_status.return_value = None
+    monkeypatch.setattr(tasks, "_is_safe_image_url", lambda url: True)
+    monkeypatch.setattr(tasks, "_safe_get", lambda url: fake_resp)
+
+    with pytest.raises(RuntimeError, match="不是受支持的图片格式"):
+        tasks._download_image_to_local("https://img.example.com/x", "tid_bad")
 
 
 def test_create_image_task_api2img_sync_done(tmp_path: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:

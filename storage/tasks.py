@@ -16,7 +16,6 @@ from __future__ import annotations
 import base64
 import ipaddress
 import logging
-import mimetypes
 import socket
 import uuid
 import zlib
@@ -190,6 +189,21 @@ def _safe_get(url: str, max_redirects: int = 3) -> httpx.Response:
     raise RuntimeError("图片下载重定向次数过多")
 
 
+def _detect_image_ext(data: bytes) -> str | None:
+    """按文件魔数识别真实图片格式（不信任上游 content-type，防止错标扩展名）。
+
+    Returns:
+        "png" / "jpg" / "webp"，无法识别时返回 None。
+    """
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
 def _download_image_to_local(url: str, task_id: str) -> str:
     """把中转商直接返回的图片 URL 下载到本地，统一返回本地 URL。
 
@@ -217,15 +231,21 @@ def _download_image_to_local(url: str, task_id: str) -> str:
     except Exception as exc:  # noqa: BLE001
         logger.exception("[tasks] 图片下载失败")
         raise RuntimeError(f"图片下载失败: {exc}") from exc
-    ct = resp.headers.get("content-type", "")
-    if "png" in ct:
-        ext = "png"
-    elif "jpeg" in ct or "jpg" in ct:
-        ext = "jpg"
-    elif "webp" in ct:
-        ext = "webp"
-    else:
-        ext = (mimetypes.guess_extension(ct) or ".png").lstrip(".")
+    data = resp.content
+    ext = _detect_image_ext(data)
+    if ext is None:
+        ct = resp.headers.get("content-type", "").lower()
+        if "jpeg" in ct or "jpg" in ct:
+            ext = "jpg"
+        elif "png" in ct:
+            ext = "png"
+        elif "webp" in ct:
+            ext = "webp"
+        else:
+            raise RuntimeError(
+                f"下载内容不是受支持的图片格式（content-type={ct or '空'}，"
+                f"前 8 字节 {data[:8]!r}）"
+            )
     path = _ensure_generated_dir() / f"{task_id}.{ext}"
     path.write_bytes(resp.content)
     logger.info("[tasks] api2img 远程图片已落盘 %s (%d bytes)", path.name, len(resp.content))
