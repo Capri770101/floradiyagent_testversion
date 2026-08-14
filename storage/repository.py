@@ -5,7 +5,7 @@
 - 提供两种实现，由 build_repository() 按 DATA_SOURCE 配置选择，上层零改动：
   - MockRepository：内置示例花店、方案、效果图占位 URL，零配置可跑通全链路；
   - RemoteRepository：通过 httpx 调真实后端（REMOTE_API_BASE + 端点路径可配），
-    按 INTEGRATION.md 契约返回与 Mock 同形状的 JSON，「改 .env 即接入」。
+    按 config.py 中 remote_*_path 约定的契约返回与 MockRepository 同形状的 JSON，「改 .env 即接入」。
 - 检索接口支持传入结构化需求（FlowerRequirement）：Mock 做软过滤 + 排序，
   Remote 透传到真实后端，使「按需求检索」从接口层就成立。
 - 这是「Mock/真实双轨」的核心：业务 / 状态机 / UI 协议层完全不感知数据来源切换。
@@ -239,7 +239,7 @@ class MockRepository(Repository):
 # --------------------------------------------------------------------------- #
 #
 # 通过配置 REMOTE_API_BASE + 各端点路径，把对 Mock 的调用透明转成 HTTP 请求。
-# 真实后端只需按 INTEGRATION.md 的契约返回与 Mock 同形状的 JSON，即可「换配置即接入」，
+# 真实后端只需按 config.py 中 remote_*_path 约定的契约返回与 MockRepository 同形状的 JSON，即可「换配置即接入」，
 # 上层 tools.py / skill_order.py 零改动。
 
 

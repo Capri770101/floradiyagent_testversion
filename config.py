@@ -5,7 +5,7 @@
 - 所有可调项都有默认值兜底，保证「零配置也能跑起来」（LLM 走 Mock，生图走 mock，数据走 Mock）。
 - 其他模块统一通过 `from config import settings, setup_logging` 使用，避免散落硬编码。
 - 「真实小程序接入」所需的全部字段都集中在本文件，替换 .env 中对应值即可上线，
-  详见 INTEGRATION.md。
+  微信 / JWT / 远程数据源字段均已集中于本文件，按 .env 填充即可上线。
 
 .env 解析由 pydantic-settings 完成；未提供时使用下面的默认值。
 """
@@ -87,7 +87,7 @@ class Settings(BaseSettings):
 
     # ---- 数据源（mock | remote）----
     # mock=内置示例数据（零依赖跑通）；remote=对接真实小程序后端（配置 REMOTE_API_BASE 即可）。
-    # 后端需实现 INTEGRATION.md 中约定的端点，返回与 Mock 同形状的 JSON。
+    # 后端需按 config 中 remote_*_path 约定的端点返回与 MockRepository 同形状的 JSON。
     data_source: str = "mock"  # "mock" | "remote"
     remote_api_base: str = ""  # 真实后端基址，如 https://your-backend.com/api
     remote_timeout: float = 5.0

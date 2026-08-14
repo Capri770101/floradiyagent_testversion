@@ -41,7 +41,6 @@ agent_service/                         # 本目录即服务根
 ├─ Dockerfile            # python:3.12-slim + uvicorn 生产镜像
 ├─ docker-compose.yml    # env_file 注入 + ./data 卷持久化 + 自动重启
 ├─ .dockerignore
-├─ INTEGRATION.md        # 「仅替换真实小程序连接数据即可接入」的成品化集成指南
 ├─ requirements.txt
 ├─ .env.example          # 含「真实小程序接入配置」分组
 ├─ .gitignore
@@ -194,7 +193,7 @@ PLAN_CONFIRM → SHOP_RECOMMEND → ORDER_CONFIRM → DONE
 - `build_repository()` 工厂按 `DATA_SOURCE` 选择实现：
   - `DATA_SOURCE=mock`（默认）：`MockRepository`，内置示例花店、产品、效果图占位 URL，零配置可跑。
   - `DATA_SOURCE=remote`：`RemoteRepository`，通过 `httpx` 调你的真实后端（`REMOTE_API_BASE` + 各端点路径可配）。
-- **契约是「换配置即接入」的核心**：只要真实后端按 `INTEGRATION.md` 第四节返回的 `Plan`/`Shop` JSON 形状与 Mock 一致，上层导购逻辑、状态机、UI 协议**零改动**即可工作。
+- **契约是「换配置即接入」的核心**：只要真实后端返回的 `Plan`/`Shop` JSON 形状与 `MockRepository` 一致（端点与字段见 `config.py` 的 `remote_*_path` 与 `storage/repository.py`），上层导购逻辑、UI 协议**零改动**即可工作。
 - `DATA_SOURCE=remote` 但缺 `REMOTE_API_BASE` 时，启动告警并自动回退 `MockRepository`，服务照常起。
 - 生图 API 同理：统一 `image_client`，可在 `config.py` 切换 `mock` / `dashscope` / `api2img` / `zhipu` 四种 `provider`。
 
@@ -204,7 +203,7 @@ PLAN_CONFIRM → SHOP_RECOMMEND → ORDER_CONFIRM → DONE
 `call_llm(messages, tools=None, stream=False)`：基于 `openai>=1.x` 客户端，
 `base_url / api_key / model` 全部可配置（示例提供 DashScope 兼容端点写法）；
 支持流式 / 非流式、可配置超时与重试；`logging` 记录输入摘要、工具调用序列、错误栈，**不打印密钥**。
-未配置 `LLM_API_KEY` 时自动降级到内置 Mock 引擎，保证零配置可跑通全链路。
+必须配置 `LLM_API_KEY`（系统已移除 Mock 引擎，未配置会启动报错），走真实模型。
 
 ---
 
@@ -218,7 +217,7 @@ PLAN_CONFIRM → SHOP_RECOMMEND → ORDER_CONFIRM → DONE
 - 必须 **HTTPS** 且域名已**备案**；域名需加入小程序 `request` 合法域名白名单。
 - 鉴权开关：`AUTH_REQUIRED=false`（dev）时 `/chat` 可用 `user_id` 直连；`=true`（上线）时强制 `Authorization: Bearer <token>`。生产务必设 `JWT_SECRET`（自生成随机长串），缺失时仅进程内随机密钥（仅联调）。
 - 推荐用 Docker 部署闭环：`docker compose up -d --build`，`.env` 经 `env_file` 注入，数据与生图落盘挂载 `./data` 卷，容器重建不丢。
-- 详见 `INTEGRATION.md`。
+- 部署与鉴权细节见第十节配置规范与 `.env.example`（微信 / JWT / 远程数据源字段已内置）。
 
 ---
 
@@ -254,7 +253,7 @@ curl http://localhost:8000/health
    现有/DIY 选择弹窗 → 方案卡片 → 确认 → 店铺推荐 → 下单 → `pay_jump`。
 3. 确认前可在现有方案与 DIY 之间往返切换；中途闲聊不破坏流程；重置接口生效。
 4. `pytest` 全绿（当前 98 passed：状态机 + /chat 冒烟 + 鉴权 + 远程仓库 + 知识库 + 向量检索 + DIY 设计/迭代 + 维度抽取 + 场景模板 + **结构化需求状态 FlowerRequirement** + **检索诚实化（搜不到不返全量 / location 透传真实排序）** + **会话级方案解析（杜绝并发串号）** + **历史回放 schema 归一化**）。
-5. 接真实小程序只需改 `.env`（详见 `INTEGRATION.md`），业务代码零改动。
+5. 接真实小程序只需改 `.env`（微信 / JWT / 远程数据源字段见 `.env.example`），业务代码零改动。
 
 ---
 
@@ -263,6 +262,6 @@ curl http://localhost:8000/health
 本项目已做成「**仅替换配置即可接入真实小程序**」的成品，业务代码零改动。三步接入：
 1. `.env` 填 `WECHAT_APPID` / `WECHAT_SECRET`（微信登录）。
 2. 填 `JWT_SECRET` 并设 `AUTH_REQUIRED=true`（开启鉴权）。
-3. 设 `DATA_SOURCE=remote` + `REMOTE_API_BASE`（真实后端按 `INTEGRATION.md` 契约返回 JSON）。
+3. 设 `DATA_SOURCE=remote` + `REMOTE_API_BASE`（真实后端按 `config.py` 中 `remote_*_path` 约定的端点返回 JSON）。
 
-完整的小程序侧流程、结构化 UI 响应、远程后端接口契约、部署速查，见 **`INTEGRATION.md`**。
+结构化 UI 响应协议见第四节；远程后端接口契约见 `config.py` 的 `remote_*_path` 与 `storage/repository.py`；部署速查见第十一 / 十二节。

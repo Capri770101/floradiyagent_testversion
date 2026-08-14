@@ -1,6 +1,6 @@
 """security.py —— 微信小程序登录鉴权 + JWT 签发/校验。
 
-集成方式（替换真实小程序数据即可上线，详见 INTEGRATION.md）：
+集成方式（替换真实小程序数据即可上线，字段见 config.py 与各 remote_*_path 端点约定）：
 1. 在 .env 设置 WECHAT_APPID / WECHAT_SECRET（小程序后台获取）。
 2. 设置 JWT_SECRET（自己生成的随机长串）。
 3. 设置 AUTH_REQUIRED=true 开启强制鉴权。
