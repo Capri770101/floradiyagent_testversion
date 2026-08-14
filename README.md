@@ -13,22 +13,22 @@
 
 - **角色**：普通用户（user）/ 商家（merchant）/ 管理员（admin）。本期仅放行 `user`。
 - **接入点**：`/chat` 接受 `openid` 或 `user_id`。dev 模式下 `user_id` 可为任意字符串（测试用）；正式环境由小程序 `wx.login` 换 `openid` 后，经 `POST /auth/wx-login` 签发 JWT，后续请求携带 `Authorization: Bearer <token>`（`security.py` 负责校验）。
-- **模式**：ReAct（思考-行动-观察）主循环 + 会话状态机（业务骨架）。
+- **模式**：ReAct（思考-行动-观察）主循环 + skill 编排（**无状态机**：流程由 ReAct 循环与工具产物依赖驱动，不再有阶段邻接锁）。
 
 ---
 
 ## 二、目录结构
 
 ```
-agent_service/                         # 本目录即服务根
-├─ agent.py              # 智能体主类：ReAct 主循环 + 状态机驱动（respond_to_user 终结工具 + session_flags 生图守卫）
+flora_diy_agent/                       # 服务根（仓库根目录）
+├─ agent.py              # 智能体主类：ReAct 主循环 + skill 编排（respond_to_user 终结工具 + session_flags 生图守卫）
 ├─ tools.py              # 工具注册表 TOOL_REGISTRY + 内建工具
 ├─ skills/
 │  ├─ __init__.py        # 自动扫描并注册 skills/
 │  └─ skill_order.py     # 下单技能（独立模块，自描述 + 自注册）
 ├─ engine/
 │  ├─ llm.py             # call_llm：OpenAI 兼容封装（流式 / 非流式）
-│  ├─ state.py           # SessionStage 状态机与流转校验
+│  ├─ state.py           # SessionStage 焦点（Focus）枚举，仅 UI 高亮，不参与流程闸门
 │  └─ ui_protocol.py     # UI 消息协议的 pydantic 模型定义
 ├─ storage/
 │  ├─ db.py              # SQLite 连接与事务封装（线程安全）
@@ -44,31 +44,34 @@ agent_service/                         # 本目录即服务根
 ├─ requirements.txt
 ├─ .env.example          # 含「真实小程序接入配置」分组
 ├─ .gitignore
-├─ tests/                # 状态机流转 + /chat 冒烟 + 鉴权 + 远程仓库 + 知识库 + 向量检索 + DIY设计/迭代 + 维度抽取 + 融合回归 共 98 用例
+├─ tests/                # 鉴权 + 远程仓库 + 知识库 + 向量检索 + 场景模板 + DIY 设计/迭代 + 维度抽取 + 结构化需求 FlowerRequirement + 检索诚实化 + 会话级方案解析 + 历史回放 schema 归一化 + 生图 provider 共 73 用例
 ├─ cli.py                # 本地调试 CLI（typer）：design / knowledge / revise / chat / tools
 └─ README.md             # 本文件：设计契约
 ```
 
 ---
 
-## 三、会话状态机（业务骨架）
+## 三、会话焦点（Focus）标识
 
-会话按 `user_id` 隔离，当前阶段持久化到 SQLite，重启不丢。
+> 早期版本用状态机（`_ALLOWED` 邻接表 + `can_transition()` 硬锁每一步流转）。自「skill 编排」重构后已**彻底移除状态机**：流程由 **ReAct 循环 + 工具产物依赖**驱动——模型可随时调用任一技能（设计 / 生图 / 搜店 / 改方案），不再受阶段邻接约束。详见 `engine/state.py` 头部说明。
 
-### SessionStage 枚举
+会话按 `user_id` 隔离，当前焦点持久化到 SQLite，重启不丢。`SessionStage` 仅表示「用户当前在干嘛」的 **UI 高亮 / 进度标识**，**不参与任何流程闸门或流转校验**，模型也无需按固定顺序推进。
+
+### SessionStage 枚举（值即小写字符串，直接存库、可作前端进度）
 ```
-ANALYZE → SELECT_MODE → VIEW_PLAN / DIY_DESIGN → IMAGE_GEN →
-PLAN_CONFIRM → SHOP_RECOMMEND → ORDER_CONFIRM → DONE
+ANALYZE / SELECT_MODE / VIEW_PLAN / DIY_DESIGN /
+IMAGE_GEN / PLAN_CONFIRM / SHOP_RECOMMEND / ORDER_CONFIRM / DONE
 ```
 
-### 流转规则
+### 焦点语义（仅 UI 展示，非流程约束）
 - `ANALYZE`：理解需求，提取预算 / 对象 / 偏好等。
 - `SELECT_MODE`：弹出「现有方案 / DIY」二选一（`ui=dialog_options`）。
-- `VIEW_PLAN` 与 `DIY_DESIGN`：**在 `PLAN_CONFIRM` 之前可随时来回切换**。
-- 用户明确放弃订单时可回退到上游阶段。
-- `PLAN_CONFIRM` 之后进入店铺推荐，提示词**必须约束模型遵守该顺序**，不得跳步。
+- `VIEW_PLAN` 与 `DIY_DESIGN`：设计阶段可在现有方案与 DIY 间自由往返，无强制顺序。
 - `IMAGE_GEN`：DIY 方案可触发异步生图任务，客户端轮询 `/tasks/{task_id}`。
-- `ORDER_CONFIRM`：由下单技能组装订单并返回 `pay_jump`。
+- `PLAN_CONFIRM`：用户确认方案。
+- `SHOP_RECOMMEND`：按距离 / 价格 / 评价综合排序推荐店铺（`search_shops`）。
+- `ORDER_CONFIRM`：由 `skill_order` 组装订单并返回 `pay_jump`，支付由小程序承接。
+- `DONE`：已生成支付跳转参数。
 
 ---
 
@@ -188,7 +191,10 @@ PLAN_CONFIRM → SHOP_RECOMMEND → ORDER_CONFIRM → DONE
 
 ---
 
-## 八、数据层（可切换：Mock ↔ 真实后端）
+## 八、数据层（可切换：Mock 数据源 ↔ 真实后端）
+
+> 此处的 Mock 指**数据层**占位实现（`MockRepository`），与第九节「已移除的 LLM Mock 引擎」无关——LLM 必须配置真实密钥。
+
 - `storage/repository.py` 定义抽象接口（`search_plans` / `get_plan` / `list_shops` / `get_shop` / 用户信息等）；`search_plans` / `list_shops` 额外接收 `FlowerRequirement` 结构化需求做过滤与排序，Mock 软过滤、Remote 透传真实后端。
 - `build_repository()` 工厂按 `DATA_SOURCE` 选择实现：
   - `DATA_SOURCE=mock`（默认）：`MockRepository`，内置示例花店、产品、效果图占位 URL，零配置可跑。
@@ -252,7 +258,7 @@ curl http://localhost:8000/health
 2. `POST /chat` 发送「想给母亲买一束花，预算 200 元左右」完整走通：
    现有/DIY 选择弹窗 → 方案卡片 → 确认 → 店铺推荐 → 下单 → `pay_jump`。
 3. 确认前可在现有方案与 DIY 之间往返切换；中途闲聊不破坏流程；重置接口生效。
-4. `pytest` 全绿（当前 98 passed：状态机 + /chat 冒烟 + 鉴权 + 远程仓库 + 知识库 + 向量检索 + DIY 设计/迭代 + 维度抽取 + 场景模板 + **结构化需求状态 FlowerRequirement** + **检索诚实化（搜不到不返全量 / location 透传真实排序）** + **会话级方案解析（杜绝并发串号）** + **历史回放 schema 归一化**）。
+4. `pytest` 全绿（当前 **73 passed**：鉴权 + 远程仓库 + 知识库 + 向量检索 + 场景模板 + DIY 设计/迭代 + 维度抽取 + **结构化需求状态 FlowerRequirement** + **检索诚实化（搜不到不返全量 / location 透传真实排序）** + **会话级方案解析（杜绝并发串号）** + **历史回放 schema 归一化** + 生图 provider）。
 5. 接真实小程序只需改 `.env`（微信 / JWT / 远程数据源字段见 `.env.example`），业务代码零改动。
 
 ---
