@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
@@ -17,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from engine.llm import call_llm
 from engine.ui_protocol import UIType
 from knowledge import get_by_id, query_knowledge
 from requirements import FlowerRequirement
@@ -810,14 +812,169 @@ def _build_plan(
     return plan
 
 
-def design_diy_plan(requirements: str) -> dict:
-    """设计一份结构化 DIY 花艺方案。
+# --------------------------------------------------------------------------- #
+# 语义化设计：RAG 检索 + LLM 生成（规则引擎 _build_plan 作兜底与结构补全）
+# --------------------------------------------------------------------------- #
 
-    链路：抽维度 → 查知识库（场景/风格/预算/搭配/花材/包装）→ 组装方案 → 生成生图 prompt。
+def _retrieve_for_design(requirements: str) -> str:
+    """把知识库 RAG 检索结果格式化为 LLM 可读的上下文（候选花材/风格/场景）。"""
+    parts: list[str] = []
+    flowers = query_knowledge("flower", requirements)["results"][:8]
+    if flowers:
+        lines = [
+            f"- {f['name']}（花语：{'、'.join(f.get('flower_language', []))}；"
+            f"可选色：{'、'.join(f.get('colors', []))}；搭配：{f.get('pairing_notes', '')}）"
+            for f in flowers
+        ]
+        parts.append("【候选花材】\n" + "\n".join(lines))
+    styles = query_knowledge("style", requirements)["results"][:5]
+    if styles:
+        lines = [
+            f"- {s['name']}：{s.get('description', '')}"
+            f"（调色板：{','.join(s.get('color_palette', []))}）"
+            for s in styles
+        ]
+        parts.append("【候选风格】\n" + "\n".join(lines))
+    scenes = query_knowledge("scene", requirements)["results"][:4]
+    if scenes:
+        lines = [
+            f"- {s['name']}：{s.get('notes', '')}"
+            f"（推荐主花：{','.join(s.get('main_flower_preference', []))}）"
+            for s in scenes
+        ]
+        parts.append("【候选场景】\n" + "\n".join(lines))
+    return "\n\n".join(parts) if parts else "（知识库暂无相关召回）"
+
+
+def _merge_plan(baseline: dict, llm_plan: dict) -> dict:
+    """用 LLM 生成的语义字段覆盖 baseline；缺字段回落 baseline，保证 schema 完整不崩。
+
+    baseline 由规则引擎 _build_plan 产出（机械字段齐全、花材真实），LLM 负责提升语义
+    贴合度（选花/配色/文案/寓意）。两者合并既治本（理解模糊需求）又稳（结构永不错位）。
+    """
+    plan = copy.deepcopy(baseline)
+    if not isinstance(llm_plan, dict):
+        return plan
+    for key in (
+        "name", "style", "recipient", "occasion", "scene", "desc",
+        "effect_prompt", "estimated_price", "budget_tier",
+    ):
+        if llm_plan.get(key) not in (None, "", []):
+            plan[key] = llm_plan[key]
+    ld = llm_plan.get("design")
+    if isinstance(ld, dict):
+        bd = plan.setdefault("design", {})
+        for key in (
+            "main_flowers", "fillers", "foliage", "color_scheme", "packaging",
+            "meaning", "notes", "diy_steps", "care_tips", "card_message",
+            "budget_breakdown",
+        ):
+            if ld.get(key) not in (None, "", []):
+                bd[key] = ld[key]
+    return plan
+
+
+def design_with_llm(requirements: str) -> dict:
+    """语义化设计：RAG 检索知识库 + DeepSeek 生成方案，规则引擎作兜底与结构补全。
+
+    相对纯规则引擎，LLM 能理解「治愈系」「有故事感」「不按常理」等模糊/语义化需求，
+    从知识库召回的真实花材中组织出更贴合的方案文案、选花与配色，而非套模板。
+    """
+    baseline = _build_plan(_extract(requirements))
+    try:
+        knowledge = _retrieve_for_design(requirements)
+        system = (
+            "你是资深花艺设计师。依据用户需求与下方【知识库召回】设计一份花艺方案，"
+            "只输出 JSON、不要额外解释。字段须严格为："
+            '{"name":方案名,"style":风格标签,"recipient":收礼人,"occasion":场景或节日,'
+            '"scene":场景名,"desc":一句话方案描述,'
+            '"effect_prompt":"生图 prompt（描述花材/色彩/形态/包装，与方案一致）",'
+            '"design":{"main_flowers":[{"name":花名,"role":"主花","flower_language":[花语]}],'
+            '"fillers":[{"name":花名,"role":"填充"}],'
+            '"foliage":[{"name":叶材名,"role":"叶材"}],'
+            '"color_scheme":[颜色],"packaging":包装名,"meaning":寓意文案,'
+            '"diy_steps":DIY 步骤,"care_tips":养护贴士,"card_message":贺卡文案}}。'
+            "要求：花材必须从【候选花材】中选取真实名称；配色与风格须与知识库一致；"
+            "若用户未指定某维度，按花语与场景合理默认，不要留空。"
+        )
+        user = f"用户需求：{requirements}\n\n{knowledge}"
+        resp = call_llm(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            response_format={"type": "json_object"},
+        )
+        content = resp.choices[0].message.content
+        llm_plan = json.loads(content)
+        plan = _merge_plan(baseline, llm_plan)
+        # 保留 baseline 的机械标识，确保可追溯 / 生图 / 下单一致
+        plan["plan_id"] = baseline["plan_id"]
+        plan["version"] = baseline.get("version", 1)
+        plan["parent_id"] = baseline.get("parent_id")
+        plan["diy"] = True
+        return plan
+    except Exception:  # noqa: BLE001
+        logger.exception("[design] LLM 语义生成失败，回退规则引擎")
+        return baseline
+
+
+def design_diy_plan(requirements: str) -> dict:
+    """设计一份结构化 DIY 花艺方案（RAG + LLM 语义生成，规则引擎兜底）。
+
+    链路：RAG 检索知识库 → DeepSeek 生成语义化方案 → 规则引擎 _build_plan 补全结构/兜底。
     返回可供 UI 渲染、生图与下单承接的结构化 dict。
     """
-    dims = _extract(requirements)
-    return _build_plan(dims)
+    return design_with_llm(requirements)
+
+
+def revise_with_llm(plan: str, feedback: str) -> dict:
+    """语义化改版：RAG 检索 + DeepSeek 基于已有方案与反馈调整，规则引擎兜底。
+
+    反馈里明确要改的（预算/风格/色系/移除花材）必须落实；未提及维度保持原方案。
+    """
+    original = _parse_plan(plan)
+    dims = _dims_from_plan(original)
+    fb = _extract_feedback(feedback)
+    dims.update(fb["dims"])
+    baseline = _build_plan(
+        dims,
+        version=original.get("version", 1) + 1,
+        parent_id=original.get("plan_id"),
+        exclude_flowers=fb["exclude"],
+    )
+    try:
+        knowledge = _retrieve_for_design(f"{original.get('desc', '')} {feedback}")
+        system = (
+            "你是资深花艺设计师。基于【已有方案】与【用户反馈】调整出一版新方案，"
+            "只输出 JSON、不要额外解释。字段须严格同设计："
+            '{"name":方案名,"style":风格标签,"recipient":收礼人,"occasion":场景或节日,'
+            '"scene":场景名,"desc":一句话方案描述,'
+            '"effect_prompt":"生图 prompt（与方案一致）",'
+            '"design":{"main_flowers":[{"name":花名,"role":"主花","flower_language":[花语]}],'
+            '"fillers":[{"name":花名,"role":"填充"}],'
+            '"foliage":[{"name":叶材名,"role":"叶材"}],'
+            '"color_scheme":[颜色],"packaging":包装名,"meaning":寓意文案,'
+            '"diy_steps":DIY 步骤,"care_tips":养护贴士,"card_message":贺卡文案}}。'
+            "要求：反馈明确要改的维度必须落实；花材从知识库真实名称选；"
+            "未提及的维度保持原方案，不要随意改动。"
+        )
+        user = (
+            f"已有方案：{json.dumps(original, ensure_ascii=False)}\n"
+            f"用户反馈：{feedback}\n\n{knowledge}"
+        )
+        resp = call_llm(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            response_format={"type": "json_object"},
+        )
+        llm_plan = json.loads(resp.choices[0].message.content)
+        new_plan = _merge_plan(baseline, llm_plan)
+        # 直接以原方案为追溯锚点，保证 parent/version 正确（不依赖 baseline 透传）
+        new_plan["plan_id"] = baseline["plan_id"]
+        new_plan["version"] = original.get("version", 1) + 1
+        new_plan["parent_id"] = original.get("plan_id")
+        new_plan["diy"] = True
+        return new_plan
+    except Exception:  # noqa: BLE001
+        logger.exception("[revise] LLM 语义改版失败，回退规则引擎")
+        return baseline
 
 
 @register_tool(
@@ -839,16 +996,7 @@ def design_diy_plan(requirements: str) -> dict:
 )
 def revise_diy_plan(plan: str, feedback: str, _context: dict | None = None) -> str:
     """基于已有方案 + 自然语言反馈，生成一版调整方案（version 递增），并写入会话。"""
-    original = _parse_plan(plan)
-    dims = _dims_from_plan(original)
-    fb = _extract_feedback(feedback)
-    dims.update(fb["dims"])
-    new_plan = _build_plan(
-        dims,
-        version=original.get("version", 1) + 1,
-        parent_id=original.get("plan_id"),
-        exclude_flowers=fb["exclude"],
-    )
+    new_plan = revise_with_llm(plan, feedback)
     _store_diy_plan(new_plan, _context)
     return json.dumps(new_plan, ensure_ascii=False)
 

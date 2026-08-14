@@ -21,6 +21,7 @@ def _openai_call(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None,
     stream: bool,
+    response_format: dict[str, Any] | None = None,
 ) -> Any:
     """调用 OpenAI 兼容接口。密钥不打印，仅记录输入摘要与工具序列。"""
     from openai import OpenAI  # 仅真实路径才 import
@@ -41,6 +42,8 @@ def _openai_call(
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = "auto"
+    if response_format:
+        kwargs["response_format"] = response_format
 
     logger.info(
         "[llm] 真实请求 model=%s tools=%s stream=%s",
@@ -55,6 +58,7 @@ def call_llm(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,
     stream: bool = False,
+    response_format: dict[str, Any] | None = None,
 ) -> Any:
     """统一的 LLM 调用入口（live-only）。
 
@@ -75,7 +79,7 @@ def call_llm(
             "请在 .env 配置 LLM_API_KEY 后启动。"
         )
     try:
-        return _openai_call(messages, tools, stream)
+        return _openai_call(messages, tools, stream, response_format)
     except Exception as exc:  # noqa: BLE001
         logger.exception("[llm] 真实接口调用失败，将信息上抛由 agent 处理")
         raise RuntimeError(f"LLM 调用失败: {exc}") from exc
