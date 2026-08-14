@@ -1,5 +1,0 @@
-﻿[health] llm_mode= image_mode=
-[reset] {"ok":true,"user_id":"http_u1"}
-[turn1] stage= ui=dialog_options reply=æ¨å¥½ï¼å¾é«å´ä¸ºæ¨æå¡ ð¸ æçå°æ¨æ
-[turn2] stage= ui=dialog_options reply=æ¨å¥½ï¼å¨ä¸ºæ¨æ¨èè±æä¹åï¼æ³åç¡®è®
-SMOKE_OK
