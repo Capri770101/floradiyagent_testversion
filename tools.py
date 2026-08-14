@@ -296,6 +296,58 @@ def _get_style_full(style_id: str | None) -> tuple[dict | None, dict | None]:
     return None, None
 
 
+_STYLE_INDEX: tuple[dict, dict] | None = None
+
+
+def _get_style_index() -> tuple[dict, dict]:
+    """构建「风格名 -> 标识」的反查索引（顶层 + 子风格），模块级缓存。
+
+    返回 (top_map, sub_map)，value 为 (style_id, substyle_id, substyle_name)。
+    供 _match_style 把 LLM 自由生成的 style 名锚定回知识库一致 id。
+    """
+    global _STYLE_INDEX
+    if _STYLE_INDEX is None:
+        top, sub = {}, {}
+        for s in query_knowledge("style", "")["results"]:
+            top[s["name"]] = (s["id"], None, None)
+            for sub_style in s.get("substyles", []):
+                sub[sub_style["name"]] = (s["id"], sub_style["id"], sub_style["name"])
+        _STYLE_INDEX = (top, sub)
+    return _STYLE_INDEX
+
+
+def _match_style(style_name: str | None) -> tuple[str | None, str | None, str | None]:
+    """按风格名（容忍『北欧风/自然系』后缀差异）反查知识库，返回 (style_id, substyle_id, substyle_name)。
+
+    用途：LLM 自由生成 style 名（如『自然风』），需锚定回知识库一致的 style_id，
+    消除『style 名与 style_id 错位』。优先匹配顶层风格，再退到子风格。
+    """
+    if not style_name:
+        return None, None, None
+    raw = style_name.strip()
+    norm = raw.rstrip("风系感").strip()  # 容忍『北欧风』『自然系』等后缀
+    top, sub = _get_style_index()
+
+    def _lookup(mapping: dict) -> tuple | None:
+        if raw in mapping:
+            return mapping[raw]
+        if norm and norm in mapping:
+            return mapping[norm]
+        # 双向包含：『北欧』∈『北欧极简』 或 『北欧极简』∈『北欧』
+        for key, val in mapping.items():
+            if not key:
+                continue
+            if raw in key or key in raw or (norm and (norm in key or key in norm)):
+                return val
+        return None
+
+    hit = _lookup(top)
+    if hit:
+        return hit
+    hit = _lookup(sub)
+    return hit or (None, None, None)
+
+
 #: 全部花材名（反馈解析时用于识别「不要X花」）
 _ALL_FLOWER_NAMES: list[str] = [f["name"] for f in query_knowledge("flower", "")["results"]]
 
@@ -846,6 +898,29 @@ def _retrieve_for_design(requirements: str) -> str:
     return "\n\n".join(parts) if parts else "（知识库暂无相关召回）"
 
 
+def _anchor_style(plan: dict) -> None:
+    """就地把 plan['style'] 名反查锚定到一致的 style_id / substyle（修法 B）。
+
+    背景：baseline 用规则推导 style_id，LLM 又自由生成 style 名（如『自然风』），二者常错位
+    （style='自然风' 但 style_id='S_KOREAN'）。这里以最终 style 名为语义意图，反查知识库锚定
+    一致的 style_id（及 substyle）；找不到则保留 baseline 的 style_id，保证不引入错误映射。
+    若匹配到顶层风格但 baseline 带着属于旧风格的 substyle，则清掉以免错配。
+    """
+    final_style = plan.get("style")
+    if not final_style:
+        return
+    sid, sub_id, sub_name = _match_style(final_style)
+    if not sid:
+        return
+    plan["style_id"] = sid
+    if sub_id:
+        plan["substyle_id"] = sub_id
+        plan["substyle"] = sub_name
+    elif plan.get("substyle_id"):
+        plan["substyle_id"] = None
+        plan["substyle"] = None
+
+
 def _merge_plan(baseline: dict, llm_plan: dict) -> dict:
     """用 LLM 生成的语义字段覆盖 baseline；缺字段回落 baseline，保证 schema 完整不崩。
 
@@ -896,6 +971,8 @@ def _merge_plan(baseline: dict, llm_plan: dict) -> dict:
                 )
         if ld.get("card_message") not in (None, "", []):
             plan["card_message"] = ld["card_message"]
+    # ── 锚定 style 名与 style_id 一致（修法 B）──
+    _anchor_style(plan)
     return plan
 
 
