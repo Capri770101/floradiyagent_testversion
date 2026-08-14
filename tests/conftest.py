@@ -1,8 +1,21 @@
-"""pytest 公共配置：在任何项目模块导入前设定临时 DB + 强制 Mock 模式。"""
+"""pytest 公共配置：临时 DB + 默认离线（纯逻辑单测零成本）。
+
+双轨模式（去 Mock 后）：
+- 默认 `pytest`：纯逻辑单测（不调 LLM），强制 LLM_API_KEY 为空避免误烧真实额度；
+  带 @pytest.mark.live 的端到端测试在此模式自动 skip。
+- `pytest -m live`：真实 DeepSeek 端到端抽测；此时保留 .env 中的 LLM_API_KEY。
+  （代表性子集：`pytest -m "live and smoke"`。）
+生图统一 IMAGE_PROVIDER=mock（占位图不烧额度），与「去 Mock 测试大脑」不冲突：
+生图 provider 保留作线上降级，测试里需要可控生图时临时切 mock 即可。
+"""
 
 import os
 import sys
 import tempfile
+
+# 是否显式要求 live（pytest -m live / -m "live and smoke"）
+_M_IDX = sys.argv.index("-m") if "-m" in sys.argv else -1
+_LIVE = _M_IDX >= 0 and _M_IDX + 1 < len(sys.argv) and "live" in sys.argv[_M_IDX + 1]
 
 # 用系统临时目录下的独立 DB，避免污染开发库
 _TMP_DB = os.path.join(tempfile.gettempdir(), "flora_test_agent.db")
@@ -10,10 +23,25 @@ _TMP_DB = os.path.join(tempfile.gettempdir(), "flora_test_agent.db")
 if os.path.exists(_TMP_DB):
     os.remove(_TMP_DB)
 os.environ["DB_PATH"] = _TMP_DB
-os.environ["LLM_API_KEY"] = ""        # 强制走内置 Mock 引擎
-os.environ["IMAGE_PROVIDER"] = "mock"  # 生图用占位图
+os.environ["IMAGE_PROVIDER"] = "mock"  # 生图统一占位，不烧额度
+if not _LIVE:
+    os.environ["LLM_API_KEY"] = ""  # 默认纯逻辑模式，隔离真实密钥
 
 # 项目根目录加入 path，保证 import agent / api / tools 等可用
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+
+import pytest  # noqa: E402
+
+from config import settings  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _live_requires_key(request: pytest.FixtureRequest) -> None:
+    """live 测试需要真实 LLM：默认模式（key 被覆盖为空）下自动 skip。
+
+    提示：`pytest -m live` 跑真实 DeepSeek 抽测；`pytest -m "live and smoke"` 跑代表性子集。
+    """
+    if "live" in request.keywords and not settings.llm_enabled:
+        pytest.skip("live 测试需要 LLM_API_KEY（运行: pytest -m live）")

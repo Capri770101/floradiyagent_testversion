@@ -4,11 +4,12 @@
 1. 载入短期记忆（历史消息）+ 长期记忆（用户偏好），拼成 system prompt。
 2. 进入「思考-行动-观察」循环：call_llm → 解析工具调用 → 执行 → 回填 → 再思考，
    直到模型给出最终回复或达到 max_iterations。
-3. 根据「调用的工具」结合状态机推进会话阶段（VIEW_PLAN / DIY_DESIGN / ... / DONE）。
+3. 根据本轮工具产出推导 UI 焦点（focus，仅前端高亮）并产出结构化 UI（plan_card / shop_card / pay_jump ...）。
+   流程不再由状态机硬锁，用户可随时调用任一 skill（设计/改设计/生图/看店/下单）。
 4. 最终根据本轮工具产出结构化 UI（plan_card / shop_card / pay_jump ...）。
 
 说明：
-- call_llm 兼容 OpenAI / Mock 双轨；未配置密钥时自动走 Mock，保证零配置可跑通。
+- call_llm 为 OpenAI 兼容真实接口（live-only），必须配置 LLM_API_KEY，已弃用 Mock 引擎。
 - 同步存储操作通过 asyncio.to_thread 调用，避免阻塞事件循环。
 """
 
@@ -22,11 +23,31 @@ from typing import Any
 
 import skills  # noqa: F401  —— 触发技能自动注册（create_order 等），仅副作用，名字不直接引用
 from config import settings, setup_logging
-from engine.llm import _is_chitchat, call_llm
-from engine.state import STAGE_GUIDANCE, SessionStage, can_transition
+from engine.llm import call_llm
+from engine.state import SessionStage
 from engine.ui_protocol import ChatResponse, ToolCallRecord, UIType
 from storage import memory as mem_store
 from tools import execute_tool, extract_requirement, generate_tool_manual, to_openai_tools
+
+#: 闲聊/寒暄短句词（与花卉导购无关）
+_CHITCHAT_WORDS = (
+    "你好", "您好", "在吗", "在么", "嗨", "哈喽", "谢谢", "感谢",
+    "再见", "拜拜", "哈哈", "辛苦了", "赞", "呵呵",
+)
+
+
+def _is_chitchat(text: str) -> bool:
+    """判断消息是否与花卉导购无关（纯寒暄/感谢）。用于 DONE 后判断是否开启新会话。"""
+    t = text.strip().lower()
+    if not t:
+        return True
+    if any(k in t for k in (
+        "买", "送", "花", "束", "预算", "方案", "diy", "自己", "店铺",
+        "下单", "订单", "确认", "选", "要", "想要", "需要", "推荐",
+        "生图", "效果", "图",
+    )):
+        return False
+    return any(w in t for w in _CHITCHAT_WORDS)
 
 logger = logging.getLogger("agent")
 
@@ -201,9 +222,7 @@ class ReActAgent:
         # 与 else/mock 分支逻辑完全一致，保证 live/mock 行为统一、UI 与 stage 始终对齐。
         # LLM 填的 stage 字段在此被忽略（仅 ui/data/reply 仍取自 respond_args）。
         if respond_args is not None:
-            new_stage = self._derive_next_stage(incoming, message)
-            if not can_transition(incoming, new_stage):
-                new_stage = incoming
+            new_stage = self._derive_focus(tool_log, incoming, message)
             # DONE 一致性校正：仅当 create_order 真实产出后才允许到达 DONE，
             # 避免用户一句「确认」但店铺还没推荐过时直接结束流程。
             if new_stage == SessionStage.DONE:
@@ -246,9 +265,7 @@ class ReActAgent:
         else:
             # 仅依据「本轮用户消息意图 + 当前阶段」推导，不在循环内随工具跳变，
             # 避免同一轮里 Mock 误把 VIEW_PLAN 当成已确认而去调 search_shops。
-            new_stage = self._derive_next_stage(incoming, message)
-            if not can_transition(incoming, new_stage):
-                new_stage = incoming
+            new_stage = self._derive_focus(tool_log, incoming, message)
             # 一致性校正：阶段推进与实际工具产出对齐，杜绝「环节错乱」——
             # - DONE 只能在 create_order 真实产出后到达（用户刚说「确认」但店铺还没推荐过时，
             #   本轮产出的是 shop_card，阶段应停在 SHOP_RECOMMEND 而不是直接结束）；
@@ -323,13 +340,24 @@ class ReActAgent:
     # ------------------------------------------------------------------ #
 
     def _build_system(self, stage: SessionStage, long_term: dict[str, str]) -> str:
-        """构造 system prompt：身份 + 当前阶段指引 + 状态机约束 + 记忆 + 工具说明。"""
+        """构造 system prompt：身份 + skill 编排说明 + 记忆 + 工具说明。
+
+        skill 编排模式：不限制流程顺序，用户可随时调用任一 skill（设计/改设计/生图/
+        看店/下单），包括中途返回修改方案。stage 参数仅保留兼容，不再注入 prompt。
+        """
         parts = [
-            "你是「花卉导购智能体」，帮助用户在微信小程序里买花或送花。用简洁中文回复。",
-            f"## 当前会话阶段：{stage.value}",
-            "本阶段指引：" + STAGE_GUIDANCE.get(stage, ""),
-            "## 状态机约束：PLAN_CONFIRM 之前可在「现有方案」与「DIY」间切换；"
-            "确认方案后才进入店铺推荐，不得跳步；用户明确放弃可回退到模式选择。",
+            "你是「花卉 DIY 设计智能体」，帮助用户设计花艺方案、生成效果图、推荐店铺并下单。用简洁中文回复。",
+            "## 你的能力（skill，顺序不限、可重复、可中途返回修改）",
+            "- generate_diy_plan：根据需求设计一版花艺方案（花材/配比/色彩/寓意/包装/预算）。",
+            "- revise_diy_plan：在已有方案基础上修改（换花材、调预算、改风格等）。",
+            "- generate_effect_image：基于已设计方案生成效果图（需先有方案）。",
+            "- search_shops / search_plans：检索店铺或现有方案。",
+            "- create_order：选定店铺与方案后生成订单与支付跳转。",
+            "- respond_to_user：当无需再调工具、直接回复用户时调用，并给出 ui/data（卡片/按钮）。",
+            "## 原则",
+            "1. 用户随时可打断、改需求、回退；不要强推固定流程。",
+            "2. 生图前必须已有方案；无方案时先引导用户设计。",
+            "3. 下单前必须已推荐店铺且用户已选定。",
         ]
         if long_term:
             mem = "；".join(f"{k}={v}" for k, v in long_term.items())
@@ -345,69 +373,33 @@ class ReActAgent:
             return []
         calls: list[dict[str, Any]] = []
         for tc in raw:
-            if hasattr(tc, "function"):  # OpenAI 风格
-                name = tc.function.name
-                args = json.loads(tc.function.arguments or "{}")
-                tid = getattr(tc, "id", "")
-            else:  # Mock 风格
-                name = tc.name
-                args = tc.arguments
-                tid = ""
+            name = tc.function.name
+            args = json.loads(tc.function.arguments or "{}")
+            tid = getattr(tc, "id", "")
             calls.append({"id": tid, "name": name, "arguments": args})
         return calls
 
     @staticmethod
-    def _derive_next_stage(current: SessionStage, message: str) -> SessionStage:
-        """依据当前阶段 + 用户消息意图推导下一阶段（状态机业务骨架）。
+    def _derive_focus(
+        tool_log: list[ToolCallRecord], incoming: SessionStage, message: str
+    ) -> SessionStage:
+        """基于本轮工具产出推导 UI 焦点（focus），不再做状态机拦截。
 
-        阶段推进只由「用户消息意图」驱动，与具体调用了哪个工具解耦：
-        - 浏览/设计阶段只有「明确确认/选定」才前进，普通提问、描述、闲聊一律停留，
-          避免用户问一句「这个多少钱」就被推进到店铺推荐（环节错乱）。
-        - 生图意图把 DIY 设计引导到 IMAGE_GEN；生图确认后才进店铺推荐。
-        - 店铺推荐阶段选定店铺才结束，未选定不跳步。
+        skill 编排模式下，focus 仅用于前端高亮「用户当前在做什么」，不限制流程：
+        - 有订单 → done；有店铺 → shop_recommend；有生图 → image_gen；
+        - 有方案（generate_diy_plan / search_plans）→ diy_design；
+        - 否则保持进入时的焦点（incoming），避免无工具轮次焦点乱跳。
         """
-        from engine.llm import _intent, _is_chitchat
-
-        if _is_chitchat(message):
-            return current  # 闲聊不推进
-        intent = _intent(message)
-
-        if current == SessionStage.ANALYZE:
-            # 全新会话首句即可能带强意图（如「自己DIY设计一束粉色康乃馨」），
-            # 直接尊重 diy 意图进入 DIY_DESIGN；其余（浏览/模糊需求）先 SELECT_MODE
-            # 让用户确认「看方案 or 自己设计」，避免在还没弄清意图时被错误分支接管。
-            return SessionStage.DIY_DESIGN if intent["diy"] else SessionStage.SELECT_MODE
-        if current == SessionStage.SELECT_MODE:
-            return SessionStage.DIY_DESIGN if intent["diy"] else SessionStage.VIEW_PLAN
-        if current == SessionStage.VIEW_PLAN:
-            if intent["abandon"]:
-                return SessionStage.SELECT_MODE
-            if intent["diy"]:
-                return SessionStage.DIY_DESIGN
-            if intent["confirm"] or intent["pick_shop"]:
-                return SessionStage.SHOP_RECOMMEND
-            return current
-        if current == SessionStage.DIY_DESIGN:
-            if intent["abandon"]:
-                return SessionStage.SELECT_MODE
-            if intent["image"]:
-                return SessionStage.IMAGE_GEN
-            if intent["confirm"]:
-                return SessionStage.SHOP_RECOMMEND
-            return current
-        if current == SessionStage.IMAGE_GEN:
-            if intent["abandon"]:
-                return SessionStage.SELECT_MODE
-            if intent["confirm"]:
-                return SessionStage.SHOP_RECOMMEND
-            return current
-        if current == SessionStage.SHOP_RECOMMEND:
-            if intent["abandon"]:
-                return SessionStage.SELECT_MODE
-            if intent["confirm"] or intent["pick_shop"]:
-                return SessionStage.DONE
-            return current
-        return current
+        ordered = [tc.name for tc in tool_log if tc.status == "ok"]
+        if "create_order" in ordered:
+            return SessionStage.DONE
+        if "search_shops" in ordered:
+            return SessionStage.SHOP_RECOMMEND
+        if "generate_effect_image" in ordered:
+            return SessionStage.IMAGE_GEN
+        if "generate_diy_plan" in ordered or "search_plans" in ordered:
+            return SessionStage.DIY_DESIGN
+        return incoming
 
     @staticmethod
     def _last_ok_result(tool_log: list[ToolCallRecord], name: str) -> dict[str, Any]:

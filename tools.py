@@ -876,7 +876,7 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
     """提交生图异步任务，返回 task_id。基于最近设计方案生成精确 prompt。
 
     生图安全闸门（后端强约束，不依赖模型自觉）—— 融合自 111 的 session_flags 守卫：
-    - 仅在 IMAGE_GEN（生图确认）阶段可调用；
+    - skill 编排：只要有「已设计方案」即可生图，不再绑定 IMAGE_GEN 阶段；
     - 必须已获用户明确同意（image_confirmed 标记，由 agent 识别肯定意图写入）；
     - 同一轮确认只允许提交一次（image_submitted 标记）。
     """
@@ -884,16 +884,14 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
     sid = ctx.get("session_id", "")
     uid = ctx.get("user_id", "")
     if sid:
-        from engine.state import SessionStage
-
-        stage = memory.get_stage(sid)
-        if stage != SessionStage.IMAGE_GEN.value:
+        # skill 编排：只要有已设计方案即可生图，不再绑定 IMAGE_GEN 阶段
+        diy = memory.get_session_json(uid, sid, "latest_diy_plan")
+        if not diy:
             return json.dumps(
                 {
                     "error": (
-                        f"当前业务阶段（{stage or '无会话'}）不可直接生成效果图。"
-                        "若想生成效果图，请重新描述需求开启新的方案设计"
-                        "（进入生图阶段后我会先征求你的确认）。"
+                        "当前会话还没有设计方案，无法生成效果图。"
+                        "请先调用 generate_diy_plan 设计一版方案，再来生成效果图。"
                     )
                 },
                 ensure_ascii=False,
