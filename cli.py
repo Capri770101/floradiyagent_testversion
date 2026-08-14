@@ -66,7 +66,7 @@ def chat(
     user_id: str = typer.Option("cli-user", "--user-id"),
     session_id: str = typer.Option(None, "--session"),
 ) -> None:
-    """与智能体对话（需 LLM/生图，无 key 时走 Mock 引擎）。"""
+    """与智能体对话（需配置 LLM_API_KEY；未配置时 call_llm 直接报错，已无 Mock 引擎兜底）。"""
     from agent import ReActAgent
 
     agent = ReActAgent()

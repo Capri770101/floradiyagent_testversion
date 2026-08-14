@@ -2,7 +2,7 @@
 
 设计原则：
 - 密钥优先从环境变量 / .env 读取，代码里不出现密钥字面值。
-- 所有可调项都有默认值兜底，保证「零配置也能跑起来」（LLM 走 Mock，生图走 mock，数据走 Mock）。
+- 除 LLM 密钥外所有可调项都有默认值兜底（生图走 mock、数据走 Mock 即可零配置启动）；LLM 已移除 Mock 引擎，必须配置真实 LLM_API_KEY 才能跑通设计链路。
 - 其他模块统一通过 `from config import settings, setup_logging` 使用，避免散落硬编码。
 - 「真实小程序接入」所需的全部字段都集中在本文件，替换 .env 中对应值即可上线，
   微信 / JWT / 远程数据源字段均已集中于本文件，按 .env 填充即可上线。
@@ -117,7 +117,7 @@ class Settings(BaseSettings):
 
     @property
     def llm_enabled(self) -> bool:
-        """是否启用真实 LLM：仅当配置了 api_key 时。否则 call_llm 走 Mock。"""
+        """是否配置了真实 LLM 密钥。False 时 call_llm 会直接抛 RuntimeError（已弃用 Mock 引擎）。"""
         return bool(self.llm_api_key)
 
     @property
