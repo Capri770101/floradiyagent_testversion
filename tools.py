@@ -871,6 +871,31 @@ def _merge_plan(baseline: dict, llm_plan: dict) -> dict:
         ):
             if ld.get(key) not in (None, "", []):
                 bd[key] = ld[key]
+
+    # ── 顶层 diy_steps / budget_breakdown / card_message 对齐 design 内层真实花材 ──
+    # 背景：baseline 的顶层步骤/预算是用「规则花材」生成的，而 design 内层已被 LLM 语义
+    # 花材覆盖，于是出现「顶层写向日葵/玫瑰、design 内层却是非洲菊」的表里不一。这里用
+    # design 内层真实花材重建顶层（LLM 若在 design 内层给了语义版则优先采用），两层一致。
+    if isinstance(ld, dict):
+        real_main = [{"name": m["name"]} for m in ld.get("main_flowers", []) if isinstance(m, dict) and m.get("name")]
+        real_fill = [{"name": f["name"]} for f in ld.get("fillers", []) if isinstance(f, dict) and f.get("name")]
+        real_foli = [{"name": g["name"]} for g in ld.get("foliage", []) if isinstance(g, dict) and g.get("name")]
+        if real_main:
+            pk_name = ld.get("packaging") or plan.get("design", {}).get("packaging") or "花束"
+            pkg = {"name": pk_name, "id": "PK_BOX" if "礼盒" in pk_name else "PK_BOUQUET"}
+            if ld.get("diy_steps") not in (None, "", []):
+                plan["diy_steps"] = ld["diy_steps"]
+            else:
+                plan["diy_steps"] = _build_diy_steps(real_main, real_fill, real_foli, ld.get("color_scheme") or [], pkg)
+            if ld.get("budget_breakdown") not in (None, "", []):
+                plan["budget_breakdown"] = ld["budget_breakdown"]
+            else:
+                tier = _get_tier(plan.get("budget_num"), None)
+                plan["budget_breakdown"] = _build_budget_breakdown(
+                    real_main, real_fill, real_foli, pkg, tier, plan.get("budget_num")
+                )
+        if ld.get("card_message") not in (None, "", []):
+            plan["card_message"] = ld["card_message"]
     return plan
 
 
