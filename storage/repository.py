@@ -322,14 +322,30 @@ def build_repository() -> Repository:
     """按配置装配数据仓库。
 
     - DATA_SOURCE=remote 且配置了 REMOTE_API_BASE → RemoteRepository（对接真实后端）
-    - DATA_SOURCE=remote 但缺 base → 告警并回退 Mock，保证服务可启动
-    - 其余（含默认 mock）→ MockRepository
+    - DATA_SOURCE=remote 但缺 base → 告警并回退 Mock
+    - 其余（含默认 mock）→ DBCatalogRepository（DB 为唯一来源，init 时已种子化）；
+      仅在 DB 目录为空（种子未灌入）时回退 MockRepository，保证服务永远可启动。
     """
+    # 确保表结构就绪（幂等），使模块级 repo 在 import 期即可安全判定目录是否已种子化
+    from storage.db import init_db
+
+    try:
+        init_db()
+    except Exception:  # pragma: no cover
+        logger.warning("init_db 失败，将尝试回退 MockRepository", exc_info=True)
+
     if settings.data_source == "remote":
         if settings.remote_api_base:
             logger.info("数据仓库装配: RemoteRepository -> %s", settings.remote_api_base)
             return RemoteRepository()
         logger.warning("DATA_SOURCE=remote 但未配置 REMOTE_API_BASE，回退 MockRepository")
+    # 默认：DB 目录（交付级唯一来源）
+    from storage import catalog  # 延迟导入，避免与 db 循环依赖
+
+    if catalog.catalog_ready():
+        logger.info("数据仓库装配: DBCatalogRepository（SQLite 目录）")
+        return catalog.DBCatalogRepository()
+    logger.warning("DB 目录为空，回退 MockRepository（请确认 init_db 已执行 seed_catalog）")
     return MockRepository()
 
 

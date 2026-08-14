@@ -1,0 +1,9 @@
+# deps
+node_modules/
+# build
+dist/
+# logs
+*.log
+npm-debug.log*
+.DS_Store
+.vite/

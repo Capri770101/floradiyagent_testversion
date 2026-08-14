@@ -12,9 +12,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import secrets
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -104,13 +107,114 @@ async def get_current_user(request: Request) -> str | None:
     Returns:
         openid 字符串，或 None（dev 模式）。
     """
-    if not settings.auth_required:
-        return None
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
+    token = auth[len("Bearer "):].strip() if auth.startswith("Bearer ") else None
+    if token:
+        # 鉴权模式或 dev 模式，只要带有效令牌就以令牌身份为准（dev 下仍可被校验）
+        try:
+            return verify_token(token)
+        except Exception as exc:  # noqa: BLE001
+            if settings.auth_required:
+                raise HTTPException(status_code=401, detail="令牌无效或已过期") from exc
+            return None
+    # 无令牌
+    if settings.auth_required:
         raise HTTPException(status_code=401, detail="缺少 Authorization Bearer 令牌")
-    token = auth[len("Bearer "):].strip()
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# 账号密码体系（非微信场景：H5 本地注册/登录，用于验证期与自有小程序账号）
+# 密码使用 pbkdf2_hmac(SHA256) + 随机 salt 存储，不依赖任何第三方库；明文永不落库。
+# --------------------------------------------------------------------------- #
+
+
+def _hash_password(password: str) -> str:
+    """pbkdf2 哈希密码，返回 `pbkdf2$<salt_hex>$<dk_hex>` 格式的可存储串。"""
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 100_000)
+    return f"pbkdf2${salt}${dk.hex()}"
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    """校验明文密码与存储串是否匹配（恒定时间比较，防时序攻击）。"""
     try:
-        return verify_token(token)
-    except Exception as exc:  # noqa: BLE001  —— 统一成 401，不泄露具体错误
-        raise HTTPException(status_code=401, detail="令牌无效或已过期") from exc
+        algo, salt, expected = stored.split("$")
+    except ValueError:
+        return False
+    if algo != "pbkdf2":
+        return False
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 100_000)
+    return secrets.compare_digest(dk.hex(), expected)
+
+
+def register_user(username: str, password: str, nickname: str | None = None) -> tuple[str, str]:
+    """注册账号：创建 users 行并签发 JWT。
+
+    Args:
+        username: 登录名（唯一）。
+        password: 明文密码（仅在此次调用内哈希，不落库）。
+        nickname: 展示昵称（可选，默认同 username）。
+
+    Returns:
+        (user_id, token)。
+
+    Raises:
+        ValueError: 用户名/密码为空或用户名已存在。
+    """
+    from storage.db import get_conn, transaction
+
+    username = (username or "").strip()
+    if not username or not password:
+        raise ValueError("用户名和密码不能为空")
+    if len(password) < 6:
+        raise ValueError("密码至少 6 位")
+    conn = get_conn()
+    if conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone():
+        raise ValueError("用户名已存在")
+    uid = "u_" + uuid.uuid4().hex[:12]
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    # 明文密码只在本次调用内哈希，绝不落库（防拖库爆明文）
+    pw_hash = _hash_password(password)
+    with transaction() as c:
+        c.execute(
+            "INSERT INTO users(id, openid, username, nickname, password_hash, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (uid, uid, username, nickname or username, pw_hash, now, now),
+        )
+    return uid, create_token(uid)
+
+
+def login_user(username: str, password: str) -> str | None:
+    """账号登录：校验凭据并签发 JWT；失败返回 None。
+
+    Args:
+        username: 登录名。
+        password: 明文密码。
+
+    Returns:
+        JWT 字符串，或 None（用户名不存在 / 密码错误 / 未设密码）。
+    """
+    from storage.db import get_conn
+
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id, password_hash FROM users WHERE username = ?", (username.strip(),)
+    ).fetchone()
+    if not row or not row["password_hash"]:
+        return None
+    if not _verify_password(password, row["password_hash"]):
+        return None
+    return create_token(row["id"])
+
+
+def get_user_profile(user_id: str) -> dict[str, Any] | None:
+    """读取用户资料（不含敏感字段）。"""
+    from storage.db import get_conn
+
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id, username, nickname, avatar, phone, created_at FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+    return dict(row) if row else None

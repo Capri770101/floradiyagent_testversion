@@ -74,6 +74,20 @@ class Settings(BaseSettings):
     zhipu_size: str = "1024x1024"
     # 中转商返回 base64，需落盘后由本服务托管 URL（维持 result_url 契约）
     generated_dir: str = str(BASE_DIR / "data" / "generated")
+    # 生图下载白名单：仅允许从这些域名下载第三方生图服务返回的图片直链（防 SSRF）。
+    # 默认覆盖官方 dashscope / 智谱 hosts 及其图片 CDN（智谱出图落在 UCloud ufileos 对象存储，
+    # 形如 *.cn-wlcb.ufileos.com）；运行时还会自动并入已配置的 api2img/zhipu base 主机（见 image_download_hosts）。
+    # 若切换/接入新的生图中转商且其图片直链域不在下表，请在此补充对应后缀，否则会被 SSRF 闸门拦截并降级为占位图。
+    image_download_allowed_hosts: list[str] = Field(
+        default_factory=lambda: [
+            "aliyuncs.com",
+            "dashscope.aliyuncs.com",
+            "open.bigmodel.cn",
+            "bigmodel.cn",
+            "cn-wlcb.ufileos.com",
+            "ufileos.com",
+        ]
+    )
 
     # ---- 微信小程序登录 & JWT 鉴权 ----
     # 这三项填好即代表「接入真实小程序」：WECHAT_APPID/WECHAT_SECRET 在小程序后台获取，
@@ -98,6 +112,26 @@ class Settings(BaseSettings):
 
     # ---- 支付跳转页（小程序内页路径，随真实小程序调整）----
     pay_page_path: str = "/pages/order/confirm"
+
+    # ---- 支付网关（sandbox | wechat | alipay）----
+    # sandbox=演示（无需凭据，下单即标记支付成功，用于端到端验证，绝不真实扣款）；
+    # wechat=微信支付 v3 JSAPI（小程序 wx.requestPayment）；alipay=支付宝手机网站支付。
+    # 真实渠道凭据从环境变量注入，本文件不出现任何密钥字面值；缺凭据时 /pay 明确返回 400。
+    payment_provider: str = "sandbox"
+    # 微信支付 v3
+    wechatpay_mch_id: str = ""            # 商户号
+    wechatpay_appid: str = ""            # 小程序 appid（可留空，自动复用 WECHAT_APPID）
+    wechatpay_api_v3_key: str = ""       # 32 字节 APIv3 密钥（回调 AES-GCM 解密用）
+    wechatpay_serial_no: str = ""        # 商户 API 证书序列号
+    wechatpay_private_key: str = ""      # 商户私钥 PEM（内容或文件路径）
+    wechatpay_public_cert: str = ""      # 微信平台证书 PEM（回调验签用，强烈建议配置）
+    wechatpay_notify_url: str = ""       # 支付成功回调地址（如 https://api.xxx.com/pay/notify/wechat）
+    # 支付宝
+    alipay_app_id: str = ""
+    alipay_private_key: str = ""         # 应用私钥 PEM（内容或文件路径）
+    alipay_public_key: str = ""          # 支付宝公钥 PEM（回调验签用）
+    alipay_notify_url: str = ""          # 支付成功回调地址
+    alipay_gateway: str = "https://openapi.alipay.com/gateway.do"
 
     # ---- 存储 ----
     db_path: str = str(BASE_DIR / "data" / "agent_service.db")
@@ -139,6 +173,24 @@ class Settings(BaseSettings):
         return False
 
     @property
+    def image_download_hosts(self) -> list[str]:
+        """生图下载允许的 host 集合：白名单默认值 + 运行时从已配置 provider base 派生。
+
+        这样即使将来用户自定义了 api2img/zhipu 中转地址，其图片直链 host 也自动纳入管控，
+        无需手动维护白名单（仍受 _is_safe_image_url 的 IP 私网校验兜底）。
+        """
+        from urllib.parse import urlparse
+
+        hosts = list(self.image_download_allowed_hosts)
+        for base in (self.api2img_base_url, self.zhipu_base_url, self.image_base_url):
+            if not base:
+                continue
+            host = urlparse(base).hostname
+            if host and host not in hosts:
+                hosts.append(host)
+        return hosts
+
+    @property
     def auth_configured(self) -> bool:
         """微信登录所需的 appid/secret 是否齐备。"""
         return bool(self.wechat_appid) and bool(self.wechat_secret)
@@ -147,6 +199,21 @@ class Settings(BaseSettings):
     def data_remote_configured(self) -> bool:
         """remote 数据源的基址是否配置。"""
         return self.data_source == "remote" and bool(self.remote_api_base)
+
+    @property
+    def payment_configured(self) -> bool:
+        """当前支付渠道是否已配置完整凭据（sandbox 恒为 True）。"""
+        if self.payment_provider == "wechat":
+            return bool(
+                self.wechatpay_mch_id
+                and (self.wechatpay_appid or self.wechat_appid)
+                and self.wechatpay_api_v3_key
+                and self.wechatpay_serial_no
+                and self.wechatpay_private_key
+            )
+        if self.payment_provider == "alipay":
+            return bool(self.alipay_app_id and self.alipay_private_key and self.alipay_public_key)
+        return True  # sandbox 无需凭据
 
 
 @lru_cache

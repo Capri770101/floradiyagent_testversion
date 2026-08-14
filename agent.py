@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -34,6 +35,20 @@ _CHITCHAT_WORDS = (
     "你好", "您好", "在吗", "在么", "嗨", "哈喽", "谢谢", "感谢",
     "再见", "拜拜", "哈哈", "辛苦了", "赞", "呵呵",
 )
+
+
+def _clean_reply(text: str) -> str:
+    """清理智能体回复里的 markdown 噪声，让前端纯文本渲染更整洁。
+
+    前端不渲染 markdown，因此 ``**加粗**`` 会原样显示成 ``**``；这里统一去除
+    ``**`` 与行首 ``#`` 标题符，并把连续空行折叠为单空行，保留有序列表等可读结构。
+    """
+    if not text:
+        return text
+    text = text.replace("**", "")          # 去掉加粗符号
+    text = re.sub(r"(?m)^#{1,6}\s*", "", text)  # 去标题符
+    text = re.sub(r"\n{3,}", "\n\n", text)      # 折叠多余空行
+    return text.strip()
 
 
 def _is_chitchat(text: str) -> bool:
@@ -112,14 +127,13 @@ class ReActAgent:
         location: dict[str, float] | None,
     ) -> ChatResponse:
         t0 = time.perf_counter()
-        sid = mem_store.get_or_create_session(user_id)
+        # 透传前端/上轮给定的会话 ID；为空则 memory 层新建一个会话
+        sid = mem_store.get_or_create_session(user_id, session_id)
         stage = SessionStage(mem_store.get_stage(sid))
-        # 上一单已完成（DONE）且本轮是新的购买需求 → 自动开启全新会话。
-        # 会话是 user 1:1 复用：不清空的话用户会永远卡在「感谢您的选购」出不来，
-        # 且旧历史的工具调用会污染 Mock/LLM 上下文（环节错乱的一大来源）。
+        # 上一单已完成（DONE）且本轮是新的购买需求 → 开启全新会话（旧会话保留在
+        # 历史列表里，实现「多轮对话 / 多个对话」），避免旧历史工具调用污染新上下文。
         if stage == SessionStage.DONE and not _is_chitchat(message):
-            mem_store.reset_session(user_id)
-            sid = mem_store.get_or_create_session(user_id)
+            sid = mem_store.create_conversation(user_id, title=message[:20])
             stage = SessionStage.ANALYZE
         # 结构化需求状态：每轮从用户消息抽取并与历史累加，持久化到会话记忆，
         # 再注入工具上下文，供 search_plans / list_shops 按需求检索。
@@ -135,7 +149,7 @@ class ReActAgent:
         if stage == SessionStage.IMAGE_GEN and is_affirmative(message):
             mem_store.set_session_flag(user_id, sid, "image_confirmed", "1")
         long_term = mem_store.get_long_term(user_id)
-        history = mem_store.load_history(user_id, settings.history_limit)
+        history = mem_store.load_history(sid, settings.history_limit)
 
         system = self._build_system(stage, long_term)
         messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
@@ -205,7 +219,6 @@ class ReActAgent:
             else:
                 final_reply = getattr(msg, "content", "") or ""
                 messages.append({"role": "assistant", "content": final_reply})
-                new_msgs.append({"role": "assistant", "content": final_reply})
                 break
         else:
             # 超出 max_iterations：强制收尾，避免无限循环。
@@ -320,6 +333,10 @@ class ReActAgent:
                 logger.exception("[agent] 生图补调失败")
 
         # 持久化本轮新增消息 + 最新阶段
+        # 追加一条「展示用」助手消息（携带 ui/data），供前端会话回放直接渲染结构化卡片
+        # 回复文本统一清理 markdown 噪声（去除 ** / #，折叠空行），保证纯文本渲染整洁。
+        final_reply = _clean_reply(final_reply)
+        new_msgs.append({"role": "assistant", "content": final_reply, "ui": ui.value, "data": data})
         mem_store.save_messages(sid, new_msgs)
         mem_store.update_stage(sid, new_stage.value)
 
@@ -362,6 +379,13 @@ class ReActAgent:
         if long_term:
             mem = "；".join(f"{k}={v}" for k, v in long_term.items())
             parts.append("## 用户长期偏好（来自记忆，回复时参考）：" + mem)
+        parts.append(
+            "## 回复格式要求\n"
+            "- 用清晰的结构化中文表达：用「序号 / 短标题 / 换行」组织信息，一段话只讲一件事。\n"
+            "- 不要使用 ** 这种 markdown 加粗符号，也不要用 # 标题符；花材名、价格等靠换行与序号区分即可。\n"
+            "- 文案连贯、不堆砌：先给结论（如方案名/总价），再分点说明组成、寓意、养护；结尾一句行动建议。\n"
+            "- 术语准确、语气亲切，像一位专业花艺师在耐心讲解，而不是罗列参数。"
+        )
         parts.append("## 工具说明书\n" + generate_tool_manual())
         return "\n\n".join(parts)
 

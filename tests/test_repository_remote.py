@@ -6,6 +6,7 @@
 
 from unittest.mock import MagicMock
 
+from storage import catalog as catalog_mod
 from storage import repository as repo_mod
 
 FAKE_PLANS = [
@@ -81,15 +82,16 @@ def test_build_repository_remote(monkeypatch) -> None:  # noqa: ANN001
     assert isinstance(r, repo_mod.RemoteRepository)
 
 
-def test_build_repository_default_mock(monkeypatch) -> None:  # noqa: ANN001
+def test_build_repository_default_db_catalog(monkeypatch) -> None:  # noqa: ANN001
+    """默认（mock 配置）走 DB 目录仓储（唯一来源），而非内存 Mock。"""
     monkeypatch.setattr(repo_mod.settings, "data_source", "mock")
     r = repo_mod.build_repository()
-    assert isinstance(r, repo_mod.MockRepository)
+    assert isinstance(r, catalog_mod.DBCatalogRepository)
 
 
 def test_build_repository_remote_missing_base_falls_back(monkeypatch) -> None:  # noqa: ANN001
-    """DATA_SOURCE=remote 但缺 base：应告警并回退 Mock，保证服务可启动。"""
+    """DATA_SOURCE=remote 但缺 base：告警后回退到 DB 目录仓储（仍可用）。"""
     monkeypatch.setattr(repo_mod.settings, "data_source", "remote")
     monkeypatch.setattr(repo_mod.settings, "remote_api_base", "")
     r = repo_mod.build_repository()
-    assert isinstance(r, repo_mod.MockRepository)
+    assert isinstance(r, catalog_mod.DBCatalogRepository)

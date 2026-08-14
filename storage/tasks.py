@@ -14,13 +14,16 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import logging
 import mimetypes
+import socket
 import uuid
 import zlib
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -96,12 +99,106 @@ def _save_base64_image(b64: str, task_id: str, ext: str = "png") -> str:
     return f"/generated/{path.name}"
 
 
+def _is_safe_image_url(url: str) -> bool:
+    """SSRF 防护：校验第三方返回的图片直链是否可安全下载。
+
+    规则：
+    - 仅允许 http/https 协议；
+    - 主机名必须落在白名单（settings.image_download_hosts：官方 host + 已配置 provider base 派生）内；
+    - 解析出的所有 IP 不得为私网 / 回环 / 链路本地 / 保留 / 组播地址。
+
+    Args:
+        url: 待下载的图片直链。
+
+    Returns:
+        安全则为 True。
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:  # noqa: BLE001
+        return False
+    if parsed.scheme not in ("http", "https"):
+        logger.warning("[tasks] 拒绝非 http(s) 图片地址: %s", url)
+        return False
+    host = parsed.hostname
+    if not host:
+        return False
+    allowed = settings.image_download_hosts
+    if not any(host == h or host.endswith("." + h) for h in allowed):
+        logger.warning("[tasks] 拒绝白名单外图片 host: %s (allowed=%s)", host, allowed)
+        return False
+    # 解析 IP，阻断内网 / 回环 / 链路本地 / 保留地址（防 SSRF 打到元数据服务或内网）。
+    # 官方默认白名单域名受信任：无网络（沙箱/离线）且解析失败时仍放行；
+    # 自定义派生 host（如 api2img 中转）解析失败则 fail-closed 拒绝。
+    try:
+        infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80))
+    except Exception:  # noqa: BLE001
+        if any(host == h or host.endswith("." + h) for h in settings.image_download_allowed_hosts):
+            return True
+        logger.warning("[tasks] 自定义 host 解析失败，拒绝下载（fail-closed）: %s", host)
+        return False
+    for info in infos:
+        ip = info[4][0]
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            return False
+        if (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_multicast
+        ):
+            logger.warning("[tasks] 拒绝内网/保留 IP 图片地址: %s -> %s", url, ip)
+            return False
+    return True
+
+
+def _safe_get(url: str, max_redirects: int = 3) -> httpx.Response:
+    """带 SSRF 防护的 GET：不自动跟随重定向。
+
+    遇到 3xx 时手动取出 Location 并重新经 _is_safe_image_url 校验后再请求，
+    防止「首跳白名单安全、重定向跳到内网」的绕过。
+
+    Args:
+        url: 已校验安全的图片直链。
+        max_redirects: 最大手动跟随次数。
+
+    Returns:
+        最终响应（已 raise_for_status）。
+
+    Raises:
+        RuntimeError: 重定向目标不可信或请求失败时抛出。
+    """
+    current = url
+    for _ in range(max_redirects + 1):
+        resp = httpx.get(current, timeout=60.0, follow_redirects=False)
+        if resp.status_code in (301, 302, 303, 307, 308):
+            loc = resp.headers.get("location")
+            if not loc:
+                resp.raise_for_status()
+                return resp
+            if not loc.startswith("http"):
+                loc = urljoin(current, loc)
+            if not _is_safe_image_url(loc):
+                raise RuntimeError(f"重定向目标不可信，已拒绝: {loc}")
+            current = loc
+            continue
+        resp.raise_for_status()
+        return resp
+    raise RuntimeError("图片下载重定向次数过多")
+
+
 def _download_image_to_local(url: str, task_id: str) -> str:
     """把中转商直接返回的图片 URL 下载到本地，统一返回本地 URL。
 
     部分中转商（如 cc-vibe）生图接口返回的是图片直链而非 base64。为维持
     result_url 契约（本地稳定可托管，不依赖外部临时链接时效/访问限制），
     这里把远程图片拉取到 data/generated/{task_id}.{ext}。
+
+    安全闸门（SSRF）：先经 _is_safe_image_url 校验 host 白名单 + IP 非内网，
+    再经 _safe_get 手动逐跳校验重定向后才写入本地磁盘。
 
     Args:
         url: 中转商返回的图片直链。
@@ -111,14 +208,15 @@ def _download_image_to_local(url: str, task_id: str) -> str:
         /generated/{task_id}.{ext} 形式的本地 URL。
 
     Raises:
-        RuntimeError: 下载失败或返回非图片时抛出。
+        RuntimeError: URL 不可信或下载失败 / 返回非图片时抛出。
     """
+    if not _is_safe_image_url(url):
+        raise RuntimeError(f"图片地址不可信，已拒绝下载: {url}")
     try:
-        resp = httpx.get(url, timeout=60.0, follow_redirects=True)
-        resp.raise_for_status()
+        resp = _safe_get(url)
     except Exception as exc:  # noqa: BLE001
-        logger.exception("[tasks] api2img 图片下载失败")
-        raise RuntimeError(f"api2img 图片下载失败: {exc}") from exc
+        logger.exception("[tasks] 图片下载失败")
+        raise RuntimeError(f"图片下载失败: {exc}") from exc
     ct = resp.headers.get("content-type", "")
     if "png" in ct:
         ext = "png"

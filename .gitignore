@@ -25,3 +25,6 @@ _legacy/
 
 # WorkBuddy 运行时记忆/元数据（非源码）
 .workbuddy/
+
+# 浏览器自动化测试缓存（非源码）
+.playwright-mcp/

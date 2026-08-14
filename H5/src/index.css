@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* 375 基准 → 1px : 1rpx 思路，这里用 css 变量承载设计令牌 */
+  --c-bg: #f8f6f2;
+  --c-ink: #333333;
+  --c-sub: #999999;
+  --c-pink: #e88aa1;
+  --c-pink2: #f6dde3;
+  --c-line: #e8e2dc;
+  --c-dark: #343434;
+  /* 文艺衬线字体栈（系统自带，无需外部字体；中文回落到宋体类，英文回落到 Georgia） */
+  --font-serif: Georgia, 'Times New Roman', 'Songti SC', 'Noto Serif CJK SC',
+    'STSong', 'SimSun', serif;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--c-bg); /* 移动端页面底色；桌面端作为窄列两侧留白 */
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  color: var(--c-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+/* ===== 温柔文艺手作风：字体 / 纸感 / 装饰 ===== */
+
+/* 衬线标题：花艺手帐般的文艺感（仅用于标题，正文仍用无衬线保证可读性） */
+.font-serif-cn {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* 纸感底色：极淡暖色径向渐变，模拟纸张，替代纯平涂米白 */
+.paper {
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(246, 221, 227, 0.35), transparent 60%),
+    radial-gradient(120% 80% at 100% 0%, rgba(247, 201, 156, 0.16), transparent 55%),
+    var(--c-bg);
+}
+
+/* Hero 文艺封面背景：暖粉到奶油的上扬渐变 */
+.hero-flora {
+  background:
+    radial-gradient(140% 100% at 100% 0%, rgba(232, 138, 161, 0.20), transparent 55%),
+    linear-gradient(150deg, #f7e4de 0%, #f3d9d2 45%, #efd9c9 100%);
+}
+
+/* 柔和暖投影（替代生硬阴影，更贴合手作温度） */
+.shadow-soft {
+  box-shadow: 0 8px 30px rgba(180, 120, 120, 0.10);
+}
+
+/* 文艺分隔：标题前的细花卉点缀由组件提供，这里给一条轻分割线风格 */
+.hairline {
+  border-color: var(--c-line);
+}
+
+/* 真实 H5 移动端页面容器：移动端满屏铺开；桌面端居中收窄为移动阅读列（不再模拟手机外壳） */
+.app-shell {
+  width: 100%;
+  max-width: 420px;
+  height: 100dvh; /* 锁定为视口高度：让内部 flex 子项高度可确定，对话页才能正确内部滚动 */
+  min-height: 100dvh;
+  margin: 0 auto;
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(246, 221, 227, 0.30), transparent 60%),
+    radial-gradient(120% 80% at 100% 0%, rgba(247, 201, 156, 0.14), transparent 55%),
+    var(--c-bg);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* 整页不滚动，仅 .app-scroll 内部滚动 */
+}
+
+/* 页面滚动容器：仅此区域可滚动，TabBar 钉在底部 */
+.app-scroll {
+  flex: 1 1 auto;
+  min-height: 0; /* 关键：允许 flex 子项收缩，使内部 overflow 滚动生效 */
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+}
+
+/* 隐藏滚动条但保留滚动 */
+.app-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+.app-scroll {
+  scrollbar-width: none;
+}
+
+/* 底部 TabBar 适配 iPhone 安全区（home indicator 不被遮挡） */
+.tabbar {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* 入场动画（CSS-only，符合前端规范：仅 transform/opacity） */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fadeUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-fade-in {
+  animation: fadeIn 0.35s ease both;
+}
+
+/* 按钮按压反馈 */
+.press {
+  transition: transform 0.12s ease;
+}
+.press:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -17,6 +17,11 @@ COPY . .
 # 运行时需要落盘的目录
 RUN mkdir -p data/generated
 
+# 以非 root 用户运行，缩小容器逃逸攻击面（SSRF/提权防护）
+RUN useradd -m -u 1000 appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8000
 
 # 生产用多 worker；开发排查可改 --reload 或加 --workers 1

@@ -29,7 +29,7 @@ def test_mock_tool_calls_normalized_to_openai_schema() -> None:
             {"role": "tool", "content": "[]", "tool_call_id": ""},
         ],
     )
-    msgs = mem.load_history("h_normalize", 20)
+    msgs = mem.load_history(sid, 20)
     assert len(msgs) == 3
     assistant = msgs[1]
     call = assistant["tool_calls"][0]
@@ -49,7 +49,7 @@ def test_assistant_without_tool_reply_is_dropped() -> None:
             {"role": "assistant", "tool_calls": [{"id": "c1", "name": "search_plans", "arguments": {}}]},
         ],
     )
-    msgs = mem.load_history("h_missing", 20)
+    msgs = mem.load_history(sid, 20)
     assert len(msgs) == 1
     assert msgs[0]["role"] == "user"
 
@@ -61,7 +61,7 @@ def test_orphan_tool_reply_is_dropped() -> None:
         sid,
         [{"role": "tool", "content": "[]", "tool_call_id": "c9"}],
     )
-    assert mem.load_history("h_orphan", 20) == []
+    assert mem.load_history(sid, 20) == []
 
 
 def test_dirty_history_clean_pair_survives() -> None:
@@ -76,6 +76,6 @@ def test_dirty_history_clean_pair_survives() -> None:
             {"role": "assistant", "content": "已为您设计好"},
         ],
     )
-    msgs = mem.load_history("h_clean", 20)
+    msgs = mem.load_history(sid, 20)
     assert [m["role"] for m in msgs] == ["user", "assistant", "tool", "assistant"]
     assert msgs[1]["tool_calls"][0]["function"]["name"] == "generate_diy_plan"
