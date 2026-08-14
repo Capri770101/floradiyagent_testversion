@@ -31,7 +31,7 @@ export default function SmartImage({
     <img
       src={resolved}
       alt={alt || meta?.alt || ''}
-      className={className}
+      className={`${className} object-cover`}
       style={style}
       onError={() => setFailed(true)}
     />
