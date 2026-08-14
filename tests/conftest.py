@@ -14,8 +14,12 @@ import sys
 import tempfile
 
 # 是否显式要求 live（pytest -m live / -m "live and smoke"）
+# 注意：不能用「子串匹配 live」，否则 `-m "not live and not smoke"` 会被误判为 live，
+# 导致纯逻辑模式仍保留真实 LLM_API_KEY、调用真实 DeepSeek 而产生脆性失败。
+# 正确判定：表达式里出现「live」且未被 `not` 否定，才算显式开启 live。
 _M_IDX = sys.argv.index("-m") if "-m" in sys.argv else -1
-_LIVE = _M_IDX >= 0 and _M_IDX + 1 < len(sys.argv) and "live" in sys.argv[_M_IDX + 1]
+_M_MARKER = sys.argv[_M_IDX + 1] if (_M_IDX >= 0 and _M_IDX + 1 < len(sys.argv)) else ""
+_LIVE = bool(_M_MARKER) and "live" in _M_MARKER and "not live" not in _M_MARKER
 
 # 用系统临时目录下的独立 DB，避免污染开发库
 _TMP_DB = os.path.join(tempfile.gettempdir(), "flora_test_agent.db")

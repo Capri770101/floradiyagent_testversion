@@ -31,7 +31,8 @@ def test_christmas_picks_vintage_hk() -> None:
     """圣诞 → 复古港风子风格、红绿主色。"""
     p = _design("圣诞红火一点")
     assert p.get("substyle_id") == "S_VINTAGE_HK"
-    assert "红" in p["design"]["color_scheme"]
+    # color_scheme 是颜色名列表（如 ['酒红','墨绿','金色']），需按"子串"判断而非"列表成员"
+    assert any("红" in c for c in p["design"]["color_scheme"])
 
 
 def test_revision_cheaper_lowers_budget() -> None:
