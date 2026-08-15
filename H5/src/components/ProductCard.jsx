@@ -77,9 +77,9 @@ export default function ProductCard({ p, onOpen, onAdd }) {
               e.stopPropagation()
               onAdd ? onAdd(p) : onOpen()
             }}
-            className="flex items-center gap-1 rounded-[2px] border border-gold bg-sand px-3.5 py-2 text-[11px] font-medium tracking-[1px] text-gold-dark"
+            className="flex items-center gap-1.5 rounded-[2px] bg-dark px-4 py-2 text-[11px] font-medium tracking-[1px] text-[#FAF8F5]"
           >
-            <IconPlus width={11} height={11} strokeWidth={2} />
+            <IconPlus width={11} height={11} strokeWidth={2} className="text-gold" />
             加入购物车
           </button>
         </div>

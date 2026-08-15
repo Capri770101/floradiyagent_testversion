@@ -168,20 +168,20 @@ export default function OrderConfirm() {
             value={recipient.name}
             onChange={(e) => setRecipient({ ...recipient, name: e.target.value })}
             placeholder="收货人姓名"
-            className="w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
+            className="maison-field"
           />
           <input
             value={recipient.phone}
             onChange={(e) => setRecipient({ ...recipient, phone: e.target.value })}
             placeholder="手机号"
             inputMode="tel"
-            className="w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
+            className="maison-field"
           />
           <input
             value={recipient.address}
             onChange={(e) => setRecipient({ ...recipient, address: e.target.value })}
             placeholder="收货地址"
-            className="w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
+            className="maison-field"
           />
         </div>
 
@@ -203,12 +203,12 @@ export default function OrderConfirm() {
         </div>
 
         <SectionTitle title="订单备注" />
-        <div className="rounded-card bg-white p-4 border border-line">
+        <div className="field-shell rounded-card bg-white p-4 border border-line">
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="请填写您的备注（选填）"
-            className="w-full bg-transparent text-[11px] text-ink outline-none placeholder:text-sub"
+            className="maison-field-inline w-full"
           />
         </div>
 

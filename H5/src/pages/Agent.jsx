@@ -20,6 +20,7 @@ import DiyPlanCard from '../components/DiyPlanCard'
 import SmartImage from '../components/SmartImage'
 import { itemImagePath } from '../assets/imageMap'
 import { IconFlower, IconPlus, IconMenu, IconTrash } from '../components/icons'
+import { FloraBloom } from '../components/FloralDecor'
 import { PLACEHOLDER } from '../tokens'
 
 const GREETING = {
@@ -676,14 +677,15 @@ export default function Agent() {
       </div>
 
       <div className="flex shrink-0 items-center gap-2 border-t border-line bg-bg px-4 py-3">
-        <div className="flex h-[48px] flex-1 items-center rounded-[2px] border border-line bg-white px-4">
+        <div className="field-shell flex h-[48px] flex-1 items-center gap-2 rounded-[2px] border border-line bg-white px-4">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && send()}
             placeholder="说说你的想法…"
-            className="w-full bg-transparent text-[12px] text-ink outline-none placeholder:text-stone"
+            className="maison-field-inline w-full"
           />
+          <FloraBloom width={14} height={14} className="shrink-0 text-gold/40" />
         </div>
         <button
           onClick={() => send()}
@@ -716,7 +718,7 @@ export default function Agent() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="搜索对话…"
-                className="w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] text-ink outline-none placeholder:text-sub"
+                className="maison-field"
               />
             </div>
             <div className="flex-1 overflow-y-auto py-2">
@@ -740,7 +742,7 @@ export default function Agent() {
                         value={renameText}
                         onChange={(e) => setRenameText(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && submitRename(e)}
-                        className="w-full rounded-[2px] border border-pink bg-white px-2 py-1 text-[13px] text-ink outline-none"
+                        className="maison-field maison-field-sm"
                       />
                       <div className="mt-1 flex gap-2">
                         <button

@@ -52,7 +52,7 @@ function Field({ label, children }) {
 }
 
 const inputCls =
-  'mt-1 w-full rounded-[4px] border border-line bg-white px-3 py-2 text-[13px] text-ink outline-none placeholder:text-sub focus:border-pink'
+  'mt-1 w-full maison-field'
 
 function PlanForm({ initial, onDone, onCancel }) {
   const [f, setF] = useState(() => ({

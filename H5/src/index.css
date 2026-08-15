@@ -90,6 +90,71 @@ body {
   border-color: var(--c-line);
 }
 
+/* ===== 文本框（Maison 规范 §5）：白底 + 细描边 + 聚焦金色竖线 ===== */
+.maison-field,
+.maison-field-inline,
+.maison-textarea {
+  font-size: 13px;
+  color: var(--c-ink);
+  outline: none;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.maison-field::placeholder,
+.maison-field-inline::placeholder,
+.maison-textarea::placeholder {
+  color: var(--c-stone);
+}
+
+/* 独立输入框：白底 + 描边；聚焦左侧 2px 金色竖线（不放大边框） */
+.maison-field {
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--c-line);
+  border-radius: 2px;
+}
+.maison-field:focus {
+  border-color: var(--c-gold);
+  box-shadow: inset 2px 0 0 var(--c-gold);
+}
+
+/* 紧凑型输入框（内联编辑 / 搜索行） */
+.maison-field-sm {
+  height: 36px;
+  padding: 0 10px;
+}
+
+/* 内嵌输入框（用于已被外层描边包裹的搜索/对话输入）：聚焦同样出金色竖线 */
+.maison-field-inline {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+.maison-field-inline:focus {
+  box-shadow: none;
+}
+
+/* 多行文本域 */
+.maison-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid var(--c-line);
+  border-radius: 2px;
+  resize: none;
+}
+.maison-textarea:focus {
+  border-color: var(--c-gold);
+  box-shadow: inset 2px 0 0 var(--c-gold);
+}
+
+/* 输入框外壳：focus-within 时在左侧出金色竖线（用于内嵌输入的描边容器） */
+.field-shell:focus-within {
+  border-color: var(--c-gold);
+  box-shadow: inset 2px 0 0 var(--c-gold);
+}
+
 /* 真实 H5 移动端页面容器：移动端满屏铺开；桌面端居中收窄为移动阅读列（不再模拟手机外壳） */
 .app-shell {
   width: 100%;

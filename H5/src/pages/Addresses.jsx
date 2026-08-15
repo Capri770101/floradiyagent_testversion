@@ -135,20 +135,20 @@ export default function Addresses() {
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="收货人姓名"
-              className="mb-2 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
+              className="maison-field mb-2"
             />
             <input
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               placeholder="手机号"
               inputMode="tel"
-              className="mb-2 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
+              className="maison-field mb-2"
             />
             <input
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
               placeholder="详细地址（省市区 + 街道门牌）"
-              className="mb-2 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
+              className="maison-field mb-2"
             />
             <label className="mb-3 flex items-center gap-2 text-[12px] text-ink">
               <input

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconSearch } from '../components/icons'
+import { FloraBloom } from '../components/FloralDecor'
 import ProductCard from '../components/ProductCard'
 import { listPlans, addCart } from '../api/shop'
 import { getUserId } from '../api/chat'
@@ -47,15 +48,16 @@ export default function Category() {
         <p className="mt-1.5 text-[11px] text-sub">挑选心意，从一束花开始</p>
       </div>
 
-      {/* 搜索条 */}
-      <div className="mx-5 mt-5 flex h-[42px] items-center gap-2 rounded-[2px] border border-line bg-white px-4">
+      {/* 搜索条（聚焦出金色竖线 + 花饰点缀） */}
+      <div className="field-shell mx-5 mt-5 flex h-[42px] items-center gap-2 rounded-[2px] border border-line bg-white px-4">
         <IconSearch width={15} height={15} className="text-gold" />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索花束、花材或店铺"
-          className="flex-1 bg-transparent text-[12px] text-ink outline-none placeholder:text-stone"
+          className="maison-field-inline flex-1"
         />
+        <FloraBloom width={13} height={13} className="shrink-0 text-gold/40" />
       </div>
 
       {/* 精选花束 */}

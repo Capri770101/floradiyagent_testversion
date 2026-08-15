@@ -196,32 +196,43 @@ export default function Profile() {
       ) : (
         <form
           onSubmit={submit}
-          className="mx-5 mt-4 rounded-[4px] bg-white p-4 border border-line"
+          className="relative mx-5 mt-4 overflow-hidden rounded-[4px] bg-white p-4 border border-line"
         >
-          <div className="mb-3 flex gap-4">
-            {['login', 'register'].map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className={mode === m ? 'text-[14px] font-medium text-pink' : 'text-[14px] text-sub'}
-              >
-                {m === 'login' ? '登录' : '注册'}
-              </button>
-            ))}
+          <FloraSprig
+            className="pointer-events-none absolute -right-2 -bottom-3 text-gold/20"
+            style={{ width: 64, height: 64 }}
+          />
+          <div className="mb-4 flex items-baseline justify-between border-b border-line pb-2.5">
+            <p className="eyebrow">Atelier</p>
+            <div className="flex gap-4">
+              {['login', 'register'].map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  className={
+                    mode === m
+                      ? 'border-b border-gold pb-1 text-[14px] font-medium text-gold'
+                      : 'pb-1 text-[14px] text-sub'
+                  }
+                >
+                  {m === 'login' ? '登录' : '注册'}
+                </button>
+              ))}
+            </div>
           </div>
           <input
             placeholder="用户名"
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
-            className="mb-2 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[13px] outline-none"
+            className="maison-field mb-2"
           />
           {mode === 'register' && (
             <input
               placeholder="昵称（可选）"
               value={form.nickname}
               onChange={(e) => setForm({ ...form, nickname: e.target.value })}
-              className="mb-2 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[13px] outline-none"
+              className="maison-field mb-2"
             />
           )}
           <input
@@ -229,7 +240,7 @@ export default function Profile() {
             type="password"
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
-            className="mb-2 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[13px] outline-none"
+            className="maison-field mb-2"
           />
           {err && <p className="mb-2 text-[11px] text-pink">{err}</p>}
           <Button type="submit" className="w-full" disabled={busy}>

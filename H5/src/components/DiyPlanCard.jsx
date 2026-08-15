@@ -309,7 +309,7 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
                   onChange={(e) => setBudget(e.target.value.replace(/\D/g, ''))}
                   placeholder={p.price != null ? `当前 ¥${p.price}` : '输入预算'}
                   inputMode="numeric"
-                  className="w-24 rounded-[2px] border border-line bg-white px-2 py-1.5 text-[12px] text-ink outline-none placeholder:text-sub"
+                  className="maison-field maison-field-sm w-24"
                 />
                 <span className="text-[12px] text-sub">元</span>
               </div>
