@@ -1,10 +1,13 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import SmartImage from '../components/SmartImage'
 import { Button } from '../components/Button'
-import { IconArrow, IconFlower } from '../components/icons'
+import { IconArrow } from '../components/icons'
 import { FloraCorner, FloraSprig } from '../components/FloralDecor'
 import SectionTitle from '../components/SectionTitle'
+import { itemImagePath } from '../assets/imageMap'
+import { toast } from '../utils/toast'
+import { listOrders, orderAction, payOrder } from '../api/shop'
 import {
   isLoggedIn,
   getUserId,
@@ -15,7 +18,14 @@ import {
 } from '../api/auth'
 
 // 08 我的
-const ORDER_TABS = ['待付款', '待配送', '配送中', '已完成']
+const STATUS_META = {
+  created: { label: '待付款', color: 'text-pink' },
+  pending_payment: { label: '待付款', color: 'text-pink' },
+  paid: { label: '待发货', color: 'text-amber-600' },
+  shipped: { label: '配送中', color: 'text-blue-600' },
+  done: { label: '已完成', color: 'text-green-600' },
+  canceled: { label: '已取消', color: 'text-sub' },
+}
 
 // 本地静态展示数据（不再依赖 data/mock，避免 review 点名的「Profile 全 mock」）
 const STATS = [
@@ -33,6 +43,8 @@ export default function Profile() {
   const [form, setForm] = useState({ username: '', password: '', nickname: '' })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [orders, setOrders] = useState([])
+  const [expanded, setExpanded] = useState(null)
 
   useEffect(() => {
     if (isLoggedIn()) {
@@ -58,6 +70,44 @@ export default function Profile() {
     clearSession()
     setUser(null)
     setForm({ username: '', password: '', nickname: '' })
+  }
+
+  const loadOrders = useCallback(async () => {
+    if (!isLoggedIn()) return
+    try {
+      const orders = await listOrders()
+      setOrders(orders)
+    } catch (e) {
+      toast(e.message || '订单加载失败', 'error')
+    }
+  }, [])
+
+  useEffect(() => {
+    loadOrders()
+  }, [loadOrders])
+
+  const act = async (oid, action) => {
+    try {
+      await orderAction(oid, action)
+      toast(action === 'ship' ? '已模拟发货' : action === 'complete' ? '已确认收货' : '订单已取消')
+      loadOrders()
+    } catch (e) {
+      toast(e.message || '操作失败', 'error')
+    }
+  }
+
+  const goPay = async (oid) => {
+    try {
+      const { pay } = await payOrder(oid, 'wechat')
+      if (pay?.paid) {
+        toast('支付成功')
+        loadOrders()
+      } else {
+        nav('/pay?order_id=' + encodeURIComponent(oid))
+      }
+    } catch (e) {
+      toast(e.message || '支付发起失败', 'error')
+    }
   }
 
   return (
@@ -167,19 +217,127 @@ export default function Profile() {
         ))}
       </div>
 
-      {/* 我的订单 */}
+      {/* 我的订单（真实数据：状态流转 + 物流时间线） */}
       <div className="mt-8 px-5">
         <SectionTitle title="我的订单" />
-        <div className="mt-3 grid grid-cols-4">
-          {ORDER_TABS.map((t) => (
-            <div key={t} className="flex flex-col items-center gap-1.5">
-              <div className="flex h-[40px] w-[40px] items-center justify-center rounded-full bg-white text-pink shadow-card">
-                <IconFlower width={18} height={18} />
-              </div>
-              <span className="text-[10px] text-ink">{t}</span>
+        {isLoggedIn() ? (
+          orders.length === 0 ? (
+            <p className="mt-3 rounded-card bg-white p-4 text-center text-[12px] text-sub shadow-card">
+              还没有订单，去 Agent 页让花艺师帮你设计一束吧
+            </p>
+          ) : (
+            <div className="mt-3 space-y-3">
+              {orders.map((o) => {
+                const meta = STATUS_META[o.status] || { label: o.status, color: 'text-sub' }
+                const items = o.items || []
+                return (
+                  <div key={o.order_id} className="overflow-hidden rounded-card bg-white shadow-card">
+                    <div className="flex items-center justify-between border-b border-line px-4 py-3">
+                      <span className="text-[11px] text-sub">{o.order_id}</span>
+                      <span className={`text-[12px] font-medium ${meta.color}`}>{meta.label}</span>
+                    </div>
+                    {items.slice(0, 2).map((it) => (
+                      <div key={it.plan_id} className="flex items-center gap-3 px-4 py-2.5">
+                        <SmartImage
+                          src={itemImagePath('plans', it.plan_id)}
+                          imgKey="home_rec_1"
+                          className="h-[44px] w-[44px] shrink-0 rounded-[10px]"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] text-dark">{it.name}</p>
+                          <p className="text-[11px] text-sub">
+                            ¥{it.price} × {it.qty}
+                            {it.shop ? ` · ${it.shop}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between px-4 py-2.5">
+                      <button
+                        className="press text-[12px] text-pink"
+                        onClick={() => setExpanded(expanded === o.order_id ? null : o.order_id)}
+                      >
+                        {expanded === o.order_id ? '收起物流' : '查看物流'}
+                      </button>
+                      <p className="text-[13px] font-medium text-dark">
+                        共 ¥{Number(o.total_price || 0).toFixed(2)}
+                      </p>
+                    </div>
+
+                    {expanded === o.order_id && (
+                      <div className="border-t border-line px-4 py-3">
+                        {(o.logistics || []).map((e, i) => (
+                          <div key={e.seq} className="flex gap-3">
+                            <div className="flex flex-col items-center">
+                              <span
+                                className={`mt-1 h-2 w-2 rounded-full ${
+                                  i === 0 ? 'bg-pink' : 'bg-line'
+                                }`}
+                              />
+                              {i < (o.logistics || []).length - 1 && (
+                                <span className="w-px flex-1 bg-line" />
+                              )}
+                            </div>
+                            <div className="pb-3">
+                              <p
+                                className={`text-[12px] ${
+                                  i === 0 ? 'font-medium text-dark' : 'text-sub'
+                                }`}
+                              >
+                                {e.text}
+                              </p>
+                              <p className="text-[10px] text-sub/70">{e.created_at}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-2 border-t border-line px-4 py-3">
+                      {(o.status === 'created' || o.status === 'pending_payment') && (
+                        <>
+                          <Button
+                            variant="secondary"
+                            className="!h-[30px] !rounded-pill !text-[12px]"
+                            onClick={() => act(o.order_id, 'cancel')}
+                          >
+                            取消订单
+                          </Button>
+                          <Button className="!h-[30px] !rounded-pill !text-[12px]" onClick={() => goPay(o.order_id)}>
+                            去支付
+                          </Button>
+                        </>
+                      )}
+                      {o.status === 'paid' && (
+                        <>
+                          <Button
+                            variant="secondary"
+                            className="!h-[30px] !rounded-pill !text-[12px]"
+                            onClick={() => nav('/pay?order_id=' + encodeURIComponent(o.order_id))}
+                          >
+                            去支付
+                          </Button>
+                          <Button className="!h-[30px] !rounded-pill !text-[12px]" onClick={() => act(o.order_id, 'ship')}>
+                            模拟发货
+                          </Button>
+                        </>
+                      )}
+                      {o.status === 'shipped' && (
+                        <Button className="!h-[30px] !rounded-pill !text-[12px]" onClick={() => act(o.order_id, 'complete')}>
+                          确认收货
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
-          ))}
-        </div>
+          )
+        ) : (
+          <p className="mt-3 rounded-card bg-white p-4 text-center text-[12px] text-sub shadow-card">
+            登录后查看你的订单
+          </p>
+        )}
       </div>
 
       {/* 常用功能 */}

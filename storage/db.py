@@ -209,6 +209,15 @@ CREATE TABLE IF NOT EXISTS image_tasks (
     result_url TEXT,
     created_at TEXT NOT NULL
 );
+
+-- 订单物流轨迹（时间线事件，按 seq 顺序回放）
+CREATE TABLE IF NOT EXISTS order_logistics (
+    order_id   TEXT NOT NULL,                    -- -> orders.order_id
+    seq        INTEGER NOT NULL,                 -- 事件序号（0 起）
+    text       TEXT NOT NULL,                    -- 事件描述（如「包裹已揽收」）
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (order_id, seq)
+);
 """
 
 #: 索引（交付级查询性能）
@@ -220,6 +229,7 @@ CREATE INDEX IF NOT EXISTS idx_cart_user            ON cart_items(user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_user          ON orders(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_order_items_order    ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_payments_order       ON payments(order_id);
+CREATE INDEX IF NOT EXISTS idx_logistics_order      ON order_logistics(order_id);
 CREATE INDEX IF NOT EXISTS idx_shop_plans_plan      ON shop_plans(plan_id);
 CREATE INDEX IF NOT EXISTS idx_plans_category       ON plans(category_id);
 """

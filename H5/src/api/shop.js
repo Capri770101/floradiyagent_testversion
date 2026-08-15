@@ -94,6 +94,19 @@ export async function getOrder(orderId) {
   return data.order
 }
 
+export async function listOrders() {
+  const data = await api('/orders')
+  return data.orders
+}
+
+export async function orderAction(orderId, action) {
+  const data = await api(`/orders/${encodeURIComponent(orderId)}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ action }),
+  })
+  return data.order
+}
+
 export async function payOrder(orderId, method = 'wechat') {
   const data = await api('/pay', {
     method: 'POST',

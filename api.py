@@ -827,6 +827,16 @@ async def post_order(req: OrderCreateRequest, request: Request) -> dict[str, Any
     return {"order": order}
 
 
+@app.get("/orders")
+async def list_orders_endpoint(request: Request, user_id: str | None = None) -> dict[str, Any]:
+    """列出某用户全部订单（新→旧，含物流时间线）。"""
+    uid = await resolve_uid(request, user_id)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    orders = await asyncio.to_thread(commerce.list_orders, uid)
+    return {"orders": orders}
+
+
 @app.get("/orders/{order_id}")
 async def get_order_endpoint(order_id: str, request: Request, user_id: str | None = None) -> dict[str, Any]:
     uid = await resolve_uid(request, user_id)
@@ -845,6 +855,31 @@ async def patch_order(order_id: str, req: OrderPatchRequest, request: Request) -
     o = await asyncio.to_thread(
         commerce.update_order, order_id, req.recipient, req.delivery, req.note
     )
+    if not o:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    return {"order": o}
+
+
+class OrderActionRequest(BaseModel):
+    action: str = Field(..., description="ship | complete | cancel", pattern="^(ship|complete|cancel)$")
+
+
+@app.post("/orders/{order_id}/action")
+async def order_action_endpoint(
+    order_id: str, req: OrderActionRequest, request: Request
+) -> dict[str, Any]:
+    """订单状态流转（物流模拟）：发货 / 签收 / 取消，仅订单主人可操作。"""
+    uid = await resolve_uid(request, None)
+    await _assert_order_owner(order_id, uid)
+    try:
+        if req.action == "ship":
+            o = await asyncio.to_thread(commerce.ship_order, order_id)
+        elif req.action == "complete":
+            o = await asyncio.to_thread(commerce.complete_order, order_id)
+        else:
+            o = await asyncio.to_thread(commerce.cancel_order, order_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not o:
         raise HTTPException(status_code=404, detail="订单不存在")
     return {"order": o}

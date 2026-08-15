@@ -170,6 +170,7 @@ def create_order(
         iid = it.get("item_id")
         if iid:
             conn.execute("DELETE FROM cart_items WHERE item_id=?", (iid,))
+    _append_logistics(order_id, "订单已创建，等待支付")
     conn.commit()
     return get_order(order_id)
 
@@ -236,7 +237,99 @@ def get_order(order_id: str) -> dict[str, Any] | None:
         "phone": d.get("recipient_phone"),
         "address": d.get("recipient_address"),
     }
+    d["logistics"] = list_logistics(order_id)
     return d
+
+
+def list_orders(user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    """列出某用户全部订单（新→旧）。"""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM orders WHERE user_id=? ORDER BY created_at DESC LIMIT ?",
+        (user_id, limit),
+    ).fetchall()
+    return [get_order(r["order_id"]) for r in rows]
+
+
+# --------------------------------------------------------------------------- #
+# 订单状态流转 / 物流轨迹（模拟）
+# --------------------------------------------------------------------------- #
+# 状态机：created --(支付)--> paid --(发货)--> shipped --(签收)--> done
+#         created --(取消)--> canceled
+# 每步流转都会在 order_logistics 追加一条时间线事件，前端「物流跟踪」按 seq 回放。
+
+
+def list_logistics(order_id: str) -> list[dict[str, Any]]:
+    """读取订单物流时间线（事件新→旧，与主流物流 App 展示一致）。"""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT seq, text, created_at FROM order_logistics WHERE order_id=? ORDER BY seq DESC",
+        (order_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _append_logistics(order_id: str, text: str) -> None:
+    conn = get_conn()
+    nxt = conn.execute(
+        "SELECT COALESCE(MAX(seq), -1) + 1 FROM order_logistics WHERE order_id=?",
+        (order_id,),
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO order_logistics(order_id, seq, text, created_at) VALUES (?,?,?,?)",
+        (order_id, nxt, text, _now()),
+    )
+
+
+def ship_order(order_id: str) -> dict[str, Any] | None:
+    """模拟发货：paid -> shipped，并生成物流时间线。订单不存在返回 None。"""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
+    if not row:
+        return None
+    if row["status"] != "paid":
+        raise ValueError(f"当前状态 {row['status']} 不可发货")
+    conn.execute(
+        "UPDATE orders SET status='shipped' WHERE order_id=?", (order_id,)
+    )
+    _append_logistics(order_id, "商家已发货，包裹正在打包出库")
+    _append_logistics(order_id, "包裹已揽收，正在发往深圳转运中心")
+    _append_logistics(order_id, "包裹到达深圳转运中心，正在分拣")
+    conn.commit()
+    return get_order(order_id)
+
+
+def complete_order(order_id: str) -> dict[str, Any] | None:
+    """模拟签收：shipped -> done，追加签收时间线。订单不存在返回 None。"""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
+    if not row:
+        return None
+    if row["status"] != "shipped":
+        raise ValueError(f"当前状态 {row['status']} 不可签收")
+    conn.execute(
+        "UPDATE orders SET status='done' WHERE order_id=?", (order_id,)
+    )
+    _append_logistics(order_id, "包裹已到达配送网点，快递员正在派送")
+    _append_logistics(order_id, "已签收，感谢惠顾 FloraDIY")
+    conn.commit()
+    return get_order(order_id)
+
+
+def cancel_order(order_id: str) -> dict[str, Any] | None:
+    """取消订单：仅 created/pending_payment 可取消。订单不存在返回 None。"""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
+    if not row:
+        return None
+    if row["status"] not in ("created", "pending_payment"):
+        raise ValueError(f"当前状态 {row['status']} 不可取消")
+    conn.execute(
+        "UPDATE orders SET status='canceled' WHERE order_id=?", (order_id,)
+    )
+    _append_logistics(order_id, "订单已取消")
+    conn.commit()
+    return get_order(order_id)
 
 
 def pay_order(
@@ -291,6 +384,7 @@ def pay_order(
             "UPDATE orders SET paid=1, status='paid', paid_at=? WHERE order_id=?",
             (now, order_id),
         )
+        _append_logistics(order_id, "支付成功，商家备货中")
     else:
         conn.execute("UPDATE orders SET status='pending_payment' WHERE order_id=?", (order_id,))
     conn.commit()
