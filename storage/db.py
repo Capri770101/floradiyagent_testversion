@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS users (
     nickname    TEXT,
     avatar      TEXT,
     phone       TEXT,
+    role        TEXT NOT NULL DEFAULT 'user',  -- user | merchant | admin（权限模型）
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -291,6 +292,8 @@ _ALTERS = [
     # users: 账号密码体系（非微信注册/登录）
     ("users", "username", "ALTER TABLE users ADD COLUMN username TEXT"),
     ("users", "password_hash", "ALTER TABLE users ADD COLUMN password_hash TEXT"),
+    # users: 角色权限（user | merchant | admin）
+    ("users", "role", "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"),
     # sessions: 会话列表展示字段
     ("sessions", "title", "ALTER TABLE sessions ADD COLUMN title TEXT"),
     ("sessions", "preview", "ALTER TABLE sessions ADD COLUMN preview TEXT"),

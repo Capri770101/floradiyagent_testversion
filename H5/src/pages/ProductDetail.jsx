@@ -5,8 +5,9 @@ import { Pill } from '../components/Pill'
 import { Button } from '../components/Button'
 import { Placeholder } from '../components/Placeholder'
 import { IconHeart, IconStar } from '../components/icons'
-import { getPlan, addCart, createOrder, favoriteStatus, addFavorite, removeFavorite } from '../api/shop'
+import { getPlan, addCart, createOrder, favoriteStatus, addFavorite, removeFavorite, getReviews } from '../api/shop'
 import { getUserId } from '../api/chat'
+import { isLoggedIn } from '../api/auth'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
 import { itemImagePath } from '../assets/imageMap'
@@ -19,6 +20,15 @@ export default function ProductDetail() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [fav, setFav] = useState(false)
+  const [reviews, setReviews] = useState([])
+
+  const requireLogin = (action) => {
+    if (!isLoggedIn()) {
+      nav('/profile', { state: { from: `/product/${id}` } })
+      return false
+    }
+    return true
+  }
 
   useEffect(() => {
     let alive = true
@@ -29,12 +39,16 @@ export default function ProductDetail() {
     favoriteStatus(id)
       .then((f) => alive && setFav(f))
       .catch(() => {})
+    getReviews(id)
+      .then((r) => alive && setReviews(r))
+      .catch(() => {})
     return () => {
       alive = false
     }
   }, [id])
 
   const toggleFav = async () => {
+    if (!requireLogin()) return
     try {
       if (fav) {
         await removeFavorite(id)
@@ -50,6 +64,7 @@ export default function ProductDetail() {
 
   const onAddCart = async () => {
     if (!product || busy) return
+    if (!requireLogin()) return
     setBusy(true)
     try {
       await addCart(getUserId(), {
@@ -68,6 +83,7 @@ export default function ProductDetail() {
 
   const onBuyNow = async () => {
     if (!product || busy) return
+    if (!requireLogin()) return
     setBusy(true)
     try {
       const order = await createOrder(getUserId(), [
@@ -142,6 +158,31 @@ export default function ProductDetail() {
           <div className="mt-2 rounded-[16px] bg-white p-4 shadow-card">
             <p className="text-[11px] leading-relaxed text-ink">{product.aiReason}</p>
           </div>
+        </div>
+        <div className="mt-6 px-5 pb-6">
+          <h2 className="text-[16px] font-medium text-dark">
+            用户评价
+            {reviews.length > 0 && <span className="ml-1 text-[11px] text-sub">（{reviews.length}）</span>}
+          </h2>
+          {reviews.length === 0 ? (
+            <p className="mt-2 text-[11px] text-sub">暂无评价，快下单成为第一个评价的人吧</p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {reviews.map((r) => (
+                <div key={r.id} className="rounded-[16px] bg-white p-4 shadow-card">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] font-medium text-dark">{r.nickname || '匿名用户'}</span>
+                    <span className="flex items-center gap-0.5 text-cream">
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <IconStar key={s} width={10} height={10} filled={s <= r.rating} />
+                      ))}
+                    </span>
+                  </div>
+                  {r.content && <p className="mt-2 text-[11px] leading-relaxed text-ink">{r.content}</p>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       <div className="flex shrink-0 gap-3 border-t border-line bg-bg px-5 py-4">

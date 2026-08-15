@@ -399,6 +399,80 @@ def merchant_reviews(shop_id: str = "") -> list[dict[str, Any]]:
 
 
 # --------------------------------------------------------------------------- #
+# 评价
+# --------------------------------------------------------------------------- #
+
+
+def create_review(
+    user_id: str, order_id: str, rating: int, content: str = ""
+) -> dict[str, Any]:
+    """订单完成后写评价：仅订单主人 + 订单已 done；同一订单只能评一次（重复则更新）。
+
+    Returns:
+        评价 dict。
+
+    Raises:
+        ValueError: 订单不存在 / 非本人 / 未完成 / 评分越界。
+    """
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM orders WHERE order_id=?", (order_id,)
+    ).fetchone()
+    if not row:
+        raise ValueError("订单不存在")
+    if row["user_id"] != user_id:
+        raise ValueError("无权评价该订单")
+    if row["status"] != "done":
+        raise ValueError("订单完成后才能评价")
+    if rating < 1 or rating > 5:
+        raise ValueError("评分需在 1-5 星之间")
+    now = _now()
+    items = json.loads(row["items"]) if row["items"] else []
+    plan_id = items[0].get("plan_id") if items else None
+    exist = conn.execute(
+        "SELECT id FROM reviews WHERE user_id=? AND order_id=?", (user_id, order_id)
+    ).fetchone()
+    if exist:
+        conn.execute(
+            "UPDATE reviews SET rating=?, content=?, created_at=? WHERE id=?",
+            (rating, content, now, exist["id"]),
+        )
+        conn.commit()
+        rev = dict(conn.execute("SELECT * FROM reviews WHERE id=?", (exist["id"],)).fetchone())
+    else:
+        rev_id = "R_" + uuid.uuid4().hex[:10]
+        conn.execute(
+            """INSERT INTO reviews (id, user_id, plan_id, order_id, rating, content, created_at)
+               VALUES (?,?,?,?,?,?,?)""",
+            (rev_id, user_id, plan_id, order_id, rating, content, now),
+        )
+        conn.commit()
+        rev = dict(conn.execute("SELECT * FROM reviews WHERE id=?", (rev_id,)).fetchone())
+    rev["plan_id"] = plan_id
+    return rev
+
+
+def list_reviews(plan_id: str = "", limit: int = 50) -> list[dict[str, Any]]:
+    """列出某方案的评价（新→旧，含用户昵称）；plan_id 为空返回全部。"""
+    conn = get_conn()
+    if plan_id:
+        rows = conn.execute(
+            """SELECT r.*, u.nickname FROM reviews r
+               LEFT JOIN users u ON u.id = r.user_id
+               WHERE r.plan_id=? ORDER BY r.created_at DESC LIMIT ?""",
+            (plan_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT r.*, u.nickname FROM reviews r
+               LEFT JOIN users u ON u.id = r.user_id
+               ORDER BY r.created_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --------------------------------------------------------------------------- #
 # 购物车
 # --------------------------------------------------------------------------- #
 

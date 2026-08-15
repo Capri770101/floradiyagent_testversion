@@ -2,6 +2,7 @@ import React from 'react'
 import { Routes, Route, Outlet, useNavigate } from 'react-router-dom'
 import { TabBar } from './components/TabBar'
 import { Button } from './components/Button'
+import RequireAuth from './utils/RequireAuth'
 import Home from './pages/Home'
 import Agent from './pages/Agent'
 import DiyDetail from './pages/DiyDetail'
@@ -10,6 +11,9 @@ import ShopDetail from './pages/ShopDetail'
 import OrderConfirm from './pages/OrderConfirm'
 import Pay from './pages/Pay'
 import Profile from './pages/Profile'
+import Service from './pages/Service'
+import About from './pages/About'
+import Settings from './pages/Settings'
 import Category from './pages/Category'
 import Cart from './pages/Cart'
 import Admin from './pages/Admin'
@@ -47,18 +51,71 @@ export default function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<Home />} />
-        <Route path="/agent" element={<Agent />} />
-        <Route path="/diy/:id" element={<DiyDetail />} />
         <Route path="/product/:id" element={<ProductDetail />} />
         <Route path="/shop/:id" element={<ShopDetail />} />
-        <Route path="/order" element={<OrderConfirm />} />
-        <Route path="/pay" element={<Pay />} />
-        <Route path="/profile" element={<Profile />} />
         <Route path="/category" element={<Category />} />
-        <Route path="/cart" element={<Cart />} />
-        <Route path="/admin" element={<Admin />} />
-        <Route path="/addresses" element={<Addresses />} />
-        <Route path="/favorites" element={<Favorites />} />
+        {/* 涉及个人数据（对话/购物车/订单/收藏/地址/后台）：未登录先跳登录 */}
+        <Route
+          path="/agent"
+          element={
+            <RequireAuth>
+              <Agent />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/cart"
+          element={
+            <RequireAuth>
+              <Cart />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/order"
+          element={
+            <RequireAuth>
+              <OrderConfirm />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/pay"
+          element={
+            <RequireAuth>
+              <Pay />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/favorites"
+          element={
+            <RequireAuth>
+              <Favorites />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/addresses"
+          element={
+            <RequireAuth>
+              <Addresses />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <RequireAuth>
+              <Admin />
+            </RequireAuth>
+          }
+        />
+        <Route path="/diy/:id" element={<DiyDetail />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/service" element={<Service />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

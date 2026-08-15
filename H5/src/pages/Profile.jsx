@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import SmartImage from '../components/SmartImage'
 import { Button } from '../components/Button'
 import { IconArrow } from '../components/icons'
@@ -7,7 +7,8 @@ import { FloraCorner, FloraSprig } from '../components/FloralDecor'
 import SectionTitle from '../components/SectionTitle'
 import { itemImagePath } from '../assets/imageMap'
 import { toast } from '../utils/toast'
-import { listOrders, orderAction, listCoupons, getPoints, listFavorites } from '../api/shop'
+import { listOrders, orderAction, listCoupons, getPoints, listFavorites, postReview } from '../api/shop'
+import { IconStar } from '../components/icons'
 import {
   isLoggedIn,
   getUserId,
@@ -38,13 +39,14 @@ const FUNCTIONS = [
   { label: '管理后台', path: '/admin' },
   { label: '我的收藏', path: '/favorites' },
   { label: '我的地址', path: '/addresses' },
-  { label: '客服中心', path: null },
-  { label: '关于 FloraDIY', path: null },
-  { label: '设置', path: null },
+  { label: '客服中心', path: '/service' },
+  { label: '关于 FloraDIY', path: '/about' },
+  { label: '设置', path: '/settings' },
 ]
 
 export default function Profile() {
   const nav = useNavigate()
+  const location = useLocation()
   const [user, setUser] = useState(null) // { id, nickname }
   const [mode, setMode] = useState('login') // login | register
   const [form, setForm] = useState({ username: '', password: '', nickname: '' })
@@ -55,6 +57,10 @@ export default function Profile() {
   const [couponCount, setCouponCount] = useState(0)
   const [points, setPoints] = useState(0)
   const [favCount, setFavCount] = useState(0)
+  const [reviewTarget, setReviewTarget] = useState(null) // 待评价订单
+  const [reviewRating, setReviewRating] = useState(5)
+  const [reviewContent, setReviewContent] = useState('')
+  const [reviewBusy, setReviewBusy] = useState(false)
 
   useEffect(() => {
     if (isLoggedIn()) {
@@ -69,6 +75,9 @@ export default function Profile() {
     try {
       const data = await (mode === 'login' ? login : register)({ ...form })
       setUser({ id: data.user_id, nickname: data.nickname || form.username })
+      // 登录守卫场景：登录成功后跳回原来要访问的页面
+      const from = location.state?.from
+      if (from && from !== '/profile') nav(from, { replace: true })
     } catch (e) {
       setErr(e.message || '操作失败')
     } finally {
@@ -118,6 +127,31 @@ export default function Profile() {
   }
 
   const goPay = (oid) => nav('/pay', { state: { orderId: oid } })
+
+  const openReview = (o) => {
+    setReviewTarget(o)
+    setReviewRating(5)
+    setReviewContent('')
+  }
+
+  const submitReview = async () => {
+    if (reviewBusy || !reviewTarget) return
+    setReviewBusy(true)
+    try {
+      await postReview({
+        order_id: reviewTarget.order_id,
+        rating: reviewRating,
+        content: reviewContent.trim(),
+      })
+      toast('评价成功，感谢你的反馈')
+      setReviewTarget(null)
+      loadOrders()
+    } catch (e) {
+      toast(e.message || '评价失败', 'error')
+    } finally {
+      setReviewBusy(false)
+    }
+  }
 
   return (
     <div className="min-h-full bg-bg pb-8">
@@ -337,6 +371,11 @@ export default function Profile() {
                           确认收货
                         </Button>
                       )}
+                      {o.status === 'done' && (
+                        <Button className="!h-[30px] !rounded-pill !text-[12px]" onClick={() => openReview(o)}>
+                          评价
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )
@@ -373,6 +412,52 @@ export default function Profile() {
           ))}
         </div>
       </div>
+
+      {/* 评价弹窗 */}
+      {reviewTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+          onClick={() => setReviewTarget(null)}
+        >
+          <div
+            className="w-full max-w-[430px] rounded-t-[20px] bg-white p-5 pb-7"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-center text-[16px] font-medium text-dark">评价订单</h3>
+            <p className="mt-1 text-center text-[11px] text-sub">
+              订单 {reviewTarget.order_id} · 已完成，欢迎分享你的体验
+            </p>
+            <div className="mt-4 flex justify-center gap-2">
+              {[1, 2, 3, 4, 5].map((s) => (
+                <button
+                  key={s}
+                  aria-label={`${s} 星`}
+                  onClick={() => setReviewRating(s)}
+                  className="p-1"
+                >
+                  <IconStar
+                    width={26}
+                    height={26}
+                    filled={s <= reviewRating}
+                    className={s <= reviewRating ? 'text-pink' : 'text-line'}
+                  />
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={reviewContent}
+              onChange={(e) => setReviewContent(e.target.value)}
+              placeholder="说说这束花的体验吧（选填）"
+              maxLength={500}
+              rows={3}
+              className="mt-4 w-full resize-none rounded-[12px] border border-line bg-bg p-3 text-[12px] text-ink outline-none placeholder:text-sub/60 focus:border-pink"
+            />
+            <Button className="mt-4 w-full" onClick={submitReview} disabled={reviewBusy}>
+              {reviewBusy ? '提交中…' : '提交评价'}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -74,5 +74,47 @@ def chat(
     _dump(result.model_dump())
 
 
+@app.command("make-admin")
+def make_admin(
+    username: str = typer.Argument(..., help="要授予管理员角色的用户名"),
+) -> None:
+    """把指定用户名提升为 admin（管理后台 / 系统信息编辑权限）。"""
+    from security import set_user_role
+    from storage.db import get_conn
+
+    conn = get_conn()
+    row = conn.execute("SELECT id, nickname, role FROM users WHERE username=?", (username,)).fetchone()
+    if not row:
+        typer.secho(f"用户不存在: {username}（先注册再授权）", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if set_user_role(row["id"], "admin"):
+        typer.secho(f"已授予 admin: {username}（{row['nickname'] or row['id']}）", fg=typer.colors.GREEN)
+    else:
+        typer.secho("授权失败", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
+@app.command("set-role")
+def set_role(
+    username: str = typer.Argument(..., help="用户名"),
+    role: str = typer.Argument(..., help="user | merchant | admin"),
+) -> None:
+    """设置用户角色（user / merchant / admin）。"""
+    from security import set_user_role
+    from storage.db import get_conn
+
+    conn = get_conn()
+    row = conn.execute("SELECT id, nickname FROM users WHERE username=?", (username,)).fetchone()
+    if not row:
+        typer.secho(f"用户不存在: {username}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    try:
+        set_user_role(row["id"], role)
+    except ValueError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED)
+        raise typer.Exit(1) from exc
+    typer.secho(f"{username} 角色已设为 {role}", fg=typer.colors.GREEN)
+
+
 if __name__ == "__main__":
     app()

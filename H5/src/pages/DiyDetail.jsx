@@ -8,6 +8,7 @@ import { normalizePlan } from '../components/DiyPlanCard'
 import { createOrder, getPlan } from '../api/shop'
 import { generateEffectImage, pollImageTask, API_BASE } from '../api/image'
 import { getUserId } from '../api/chat'
+import { isLoggedIn } from '../api/auth'
 import { toast } from '../utils/toast'
 import SmartImage from '../components/SmartImage'
 
@@ -50,6 +51,10 @@ export default function DiyDetail() {
 
   const onConfirm = async () => {
     if (busy || !plan) return
+    if (!isLoggedIn()) {
+      nav('/profile', { state: { from: `/diy/${id}` } })
+      return
+    }
     setBusy(true)
     try {
       const order = await createOrder(getUserId(), [

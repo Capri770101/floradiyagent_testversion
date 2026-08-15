@@ -183,6 +183,22 @@ export async function favoriteStatus(planId) {
   return data.favorited
 }
 
+// ---------------- 评价 ----------------
+
+export async function getReviews(planId) {
+  const q = planId ? `?plan_id=${encodeURIComponent(planId)}` : ''
+  const data = await api(`/reviews${q}`)
+  return data.reviews
+}
+
+export async function postReview({ order_id, rating, content }) {
+  const data = await api('/reviews', {
+    method: 'POST',
+    body: JSON.stringify({ order_id, rating, content }),
+  })
+  return data.review
+}
+
 // ---------------- 管理后台（方案 / 店铺 CRUD） ----------------
 
 export async function adminListPlans() {

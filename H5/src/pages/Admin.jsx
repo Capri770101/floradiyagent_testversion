@@ -233,14 +233,21 @@ export default function Admin() {
   const [editing, setEditing] = useState(null)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState(null)
+  const [forbidden, setForbidden] = useState(false)
 
   const load = useCallback(async () => {
     try {
       const [ps, ss] = await Promise.all([adminListPlans(), adminListShops()])
       setPlans(ps)
       setShops(ss)
+      setForbidden(false)
     } catch (e) {
-      setError(e.message || '加载失败')
+      if (/403/.test(e.message)) {
+        setForbidden(true)
+        setError('当前账号没有管理员权限，请联系管理员授权')
+      } else {
+        setError(e.message || '加载失败')
+      }
     }
   }, [])
 
@@ -272,7 +279,17 @@ export default function Admin() {
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {error && <p className="mb-3 text-[12px] text-pink">{error}</p>}
 
-        <div className="mb-4 flex gap-2">
+        {forbidden ? (
+          <p className="mt-10 rounded-card bg-white p-8 text-center text-[13px] text-sub shadow-card">
+            无管理员权限
+            <br />
+            <span className="mt-1 block text-[11px] text-sub/70">
+              仅 admin 角色可管理方案与店铺信息，请联系系统管理员授权
+            </span>
+          </p>
+        ) : (
+          <>
+            <div className="mb-4 flex gap-2">
           <Button
             variant={tab === 'plans' ? 'primary' : 'secondary'}
             className="flex-1"
@@ -377,6 +394,8 @@ export default function Admin() {
               </div>
             ))}
         </div>
+          </>
+        )}
       </div>
     </div>
   )

@@ -671,19 +671,19 @@ async def shop_detail_endpoint(shop_id: str) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# 简易管理后台（方案 / 店铺 CRUD）
-# 注意：dev 模式（AUTH_REQUIRED=false）直接放行，便于演示；生产部署需接入
-# 管理员角色校验（见 _require_admin 注释）。
+# 管理后台（方案 / 店铺 CRUD）
+# 权限：仅 admin 角色可访问；未登录 401，非管理员 403（users.role 字段，
+# 用 `python cli.py make-admin <username>` 授予管理员角色）。
 # --------------------------------------------------------------------------- #
 
 
-async def _require_admin(request: Request) -> None:
-    """管理员校验占位：dev 模式（无令牌）放行，便于演示。
-
-    生产部署时应在此校验令牌身份的角色（users 表接入 role 字段后），
-    未登录 / 非管理员一律 403，杜绝匿名写入商品目录。
-    """
-    return  # 当前为演示实现：仅注释说明生产加固方式
+async def _require_admin(request: Request) -> str:
+    """管理员校验：必须携带有效 JWT 且用户角色为 admin，否则 401/403。"""
+    uid = security.resolve_strict(request)
+    role = await asyncio.to_thread(security.get_user_role, uid)
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return uid
 
 
 class PlanWriteRequest(BaseModel):
@@ -969,14 +969,17 @@ async def favorite_status(plan_id: str, request: Request, user_id: str | None = 
 
 # --------------------------------------------------------------------------- #
 # 商家端（店铺维度经营数据 / 代发货）
-# 注意：dev 模式（AUTH_REQUIRED=false）直接放行，便于演示；生产部署需校验
-# 令牌身份的角色为 merchant（见 _require_admin 同款注释）。
+# 权限：仅 merchant / admin 角色可访问（users.role 字段）。
 # --------------------------------------------------------------------------- #
 
 
-async def _require_merchant(request: Request) -> None:
-    """商家角色校验占位：dev 模式放行。生产应校验 JWT 携带的 user_role=merchant。"""
-    return
+async def _require_merchant(request: Request) -> str:
+    """商家校验：必须携带有效 JWT 且角色为 merchant 或 admin，否则 401/403。"""
+    uid = security.resolve_strict(request)
+    role = await asyncio.to_thread(security.get_user_role, uid)
+    if role not in ("merchant", "admin"):
+        raise HTTPException(status_code=403, detail="需要商家权限")
+    return uid
 
 
 @app.get("/merchant/stats")
@@ -1135,6 +1138,36 @@ async def pay_status(order_id: str, request: Request, user_id: str | None = None
     if not st:
         raise HTTPException(status_code=404, detail="订单不存在")
     return st
+
+
+# --------------------------------------------------------------------------- #
+# 评价
+# --------------------------------------------------------------------------- #
+
+
+class ReviewRequest(BaseModel):
+    order_id: str = Field(..., min_length=1, max_length=64)
+    rating: int = Field(..., ge=1, le=5, description="1-5 星")
+    content: str = Field("", max_length=500, description="评价内容（选填）")
+
+
+@app.post("/reviews")
+async def post_review(req: ReviewRequest, request: Request) -> dict[str, Any]:
+    """订单完成后写评价：仅订单主人 + 已签收订单；同单重复评价即更新。"""
+    uid = await resolve_uid(request, None)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    try:
+        rev = await asyncio.to_thread(commerce.create_review, uid, req.order_id, req.rating, req.content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"review": rev}
+
+
+@app.get("/reviews")
+async def list_reviews_endpoint(plan_id: str = "") -> dict[str, Any]:
+    """公开查询方案评价列表（商品详情页展示）。"""
+    return {"reviews": await asyncio.to_thread(commerce.list_reviews, plan_id)}
 
 
 if __name__ == "__main__":

@@ -123,6 +123,43 @@ async def get_current_user(request: Request) -> str | None:
     return None
 
 
+def resolve_strict(request: Request) -> str:
+    """严格身份解析：必须携带有效 JWT，否则 401。
+
+    用于管理/商家等需要「真实身份」的端点——不随 AUTH_REQUIRED 开关放行，
+    杜绝匿名/占位身份写入或读取管理数据。
+    """
+    auth = request.headers.get("Authorization", "")
+    token = auth[len("Bearer "):].strip() if auth.startswith("Bearer ") else None
+    if not token:
+        raise HTTPException(status_code=401, detail="需要登录")
+    try:
+        return verify_token(token)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=401, detail="令牌无效或已过期") from exc
+
+
+def get_user_role(user_id: str) -> str:
+    """读取用户角色（默认 user）。"""
+    from storage.db import get_conn
+
+    conn = get_conn()
+    row = conn.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
+    return str(row["role"]) if row and row["role"] else "user"
+
+
+def set_user_role(user_id: str, role: str) -> bool:
+    """设置用户角色（user | merchant | admin）；用户不存在返回 False。"""
+    from storage.db import get_conn
+
+    if role not in ("user", "merchant", "admin"):
+        raise ValueError(f"非法角色: {role}")
+    conn = get_conn()
+    cur = conn.execute("UPDATE users SET role=? WHERE id=?", (role, user_id))
+    conn.commit()
+    return cur.rowcount > 0
+
+
 # --------------------------------------------------------------------------- #
 # 账号密码体系（非微信场景：H5 本地注册/登录，用于验证期与自有小程序账号）
 # 密码使用 pbkdf2_hmac(SHA256) + 随机 salt 存储，不依赖任何第三方库；明文永不落库。
