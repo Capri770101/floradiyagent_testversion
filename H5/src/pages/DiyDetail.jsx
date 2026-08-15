@@ -40,6 +40,13 @@ export default function DiyDetail() {
   }, [id, plan])
 
   const p = normalizePlan(plan)
+  const parseNum = (v) => {
+    const n = Number(v)
+    if (!Number.isNaN(n)) return n
+    const m = String(v || '').match(/\d+(?:\.\d+)?/)
+    return m ? Number(m[0]) : 0
+  }
+  const estPrice = parseNum(p?.price ?? plan?.budget_num ?? plan?.estimated_price)
 
   const onConfirm = async () => {
     if (busy || !plan) return
@@ -49,7 +56,7 @@ export default function DiyDetail() {
         {
           plan_id: plan.plan_id,
           name: p?.name || plan.name,
-          price: p?.price ?? plan.price,
+          price: estPrice,
           qty: 1,
           shop: plan.merchant || 'FloraDIY 定制',
         },
