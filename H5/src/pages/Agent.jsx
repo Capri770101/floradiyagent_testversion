@@ -28,6 +28,25 @@ const GREETING = {
   lead: '告诉我你想送给谁、什么场合、预算多少，我来为你设计专属花束。',
 }
 
+// 每一条助手回复都保证有文字：清理空行、纯空白/空回复时按 ui 类型给兜底文案，
+// 避免出现只有卡片没有文字的「哑消息」或空白气泡。
+const REPLY_FALLBACK = {
+  plan_card: '为你找到了一个方案，看看下面的卡片吧～',
+  image_task: '效果图已生成，展开卡片查看吧～',
+  shop_card: '为你推荐了几家不错的店铺，选一家下单吧～',
+  order_card: '订单已创建，去支付完成下单吧～',
+  pay_jump: '订单已创建，去支付完成下单吧～',
+  dialog_options: '请选择你想要的方案类型～',
+  text: '好的，收到你的想法啦，请稍等～',
+}
+
+function bubbleText(m) {
+  const raw = String(m.content || '')
+    .replace(/\n{2,}/g, '\n')
+    .trim()
+  return raw || REPLY_FALLBACK[m.ui] || REPLY_FALLBACK.text
+}
+
 function flowersOf(plan) {
   const list = []
   if (plan.main_flowers) list.push(plan.main_flowers)
@@ -504,6 +523,7 @@ export default function Agent() {
         </div>
       )
     }
+    const content = bubbleText(m)
     return (
       <div key={idx} className="px-4 pb-3">
         <div className="flex items-start gap-2">
@@ -511,20 +531,16 @@ export default function Agent() {
             <IconFlower width={16} height={16} />
           </div>
           <div className="max-w-[285px]">
-            {m.content && (
-              <div className="rounded-[16px] bg-white px-3.5 py-2.5">
-                {m.lead ? (
-                  <>
-                    <p className="mb-1 font-medium text-dark">{m.content}</p>
-                    <p className="text-[11px] text-sub">{m.lead}</p>
-                  </>
-                ) : (
-                  <p className="text-[13px] leading-relaxed text-ink">
-                    {m.content}
-                  </p>
-                )}
-              </div>
-            )}
+            <div className="rounded-[16px] bg-white px-3.5 py-2.5">
+              {m.lead ? (
+                <>
+                  <p className="mb-1 font-medium text-dark">{content}</p>
+                  <p className="text-[11px] text-sub">{m.lead}</p>
+                </>
+              ) : (
+                <p className="text-[13px] leading-relaxed text-ink">{content}</p>
+              )}
+            </div>
             {m.ui === 'plan_card' &&
               extractPlans(m.data).map((p, i) =>
                 p._type === 'diy' ? (

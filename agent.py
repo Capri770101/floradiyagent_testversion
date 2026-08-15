@@ -20,6 +20,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Callable
 from typing import Any
 
 import skills  # noqa: F401  —— 触发技能自动注册（create_order 等），仅副作用，名字不直接引用
@@ -302,7 +303,8 @@ class ReActAgent:
             final_reply = str(respond_args.get("reply", final_reply) or final_reply)
             # 空回复兜底：LLM 偶尔调 respond_to_user 时 reply 为空字符串，导致前端
             # 看似没有回复。有工具成果 → 引导查看卡片；否则给出通用的收到提示。
-            if not final_reply:
+            # 注意用 strip() 判断：仅空白（如 "\n\n"）同样视为空回复。
+            if not final_reply.strip():
                 if tool_log:
                     final_reply = "我已经为你整理好相关结果啦，请查看下方卡片～"
                 else:
@@ -399,6 +401,13 @@ class ReActAgent:
         # 追加一条「展示用」助手消息（携带 ui/data），供前端会话回放直接渲染结构化卡片
         # 回复文本统一清理 markdown 噪声（去除 ** / #，折叠空行），保证纯文本渲染整洁。
         final_reply = _clean_reply(final_reply)
+        # 清理后再兜底一次：保证任何路径下回复都非空（_clean_reply 会 strip，
+        # 纯空白文本在此被归一为通用提示，杜绝「空回复 / 空行气泡」）。
+        if not final_reply:
+            final_reply = (
+                "我已经为你整理好相关结果啦，请查看下方卡片～" if tool_log
+                else "好的，收到你的想法啦，请稍等～"
+            )
         new_msgs.append({"role": "assistant", "content": final_reply, "ui": ui.value, "data": data})
         mem_store.save_messages(sid, new_msgs)
         mem_store.update_stage(sid, new_stage.value)
@@ -491,47 +500,45 @@ class ReActAgent:
             return SessionStage.DIY_DESIGN
         return incoming
 
-    @staticmethod
-    def _last_ok_result(tool_log: list[ToolCallRecord], name: str) -> dict[str, Any]:
-        for tc in reversed(tool_log):
-            if tc.name == name and tc.status == "ok":
-                try:
-                    return json.loads(tc.result)
-                except (json.JSONDecodeError, TypeError):
-                    return {}
-        return {}
-
     def _derive_ui(
         self, tool_log: list[ToolCallRecord], stage: SessionStage, reply: str
     ) -> tuple[UIType, dict[str, Any]]:
-        """根据本轮工具产出决定 ui 类型与 data。"""
-        last = None
+        """根据本轮工具产出决定 ui 类型与 data。
+
+        注意：不能只看「最后一个成功工具」——live LLM 常在设计/生图之后追加
+        save_memory / retrieve_knowledge 落库偏好，若只取 last 会漏掉方案卡/生图卡/
+        店铺卡（已复现：generate_diy_plan > save_memory 时 ui 退化为 text）。
+        这里从最近一次成功工具回溯，跳过不产出卡片的辅助工具，命中即返回。
+        """
+        renderers: dict[str, Callable[[dict[str, Any]], tuple[UIType, dict[str, Any]]]] = {
+            "search_plans": lambda r: (UIType.PLAN_CARD, {"plans": r}),
+            "get_plan_detail": lambda r: (UIType.PLAN_CARD, {"plans": r}),
+            "generate_diy_plan": lambda r: (UIType.PLAN_CARD, {"plans": [r]}),
+            "revise_diy_plan": lambda r: (UIType.PLAN_CARD, {"plans": [r]}),
+            "search_shops": lambda r: (UIType.SHOP_CARD, {"shops": r}),
+            "generate_effect_image": lambda r: (
+                UIType.IMAGE_TASK,
+                {
+                    "task_id": r.get("task_id"),
+                    "poll": r.get("poll"),
+                    **({"result_url": r["result_url"]} if r.get("result_url") else {}),
+                },
+            ),
+            "create_order": lambda r: (UIType.PAY_JUMP, r.get("pay_jump", {})),
+        }
         for tc in reversed(tool_log):
-            if tc.status == "ok":
-                last = tc.name
-                break
+            if tc.status != "ok":
+                continue
+            render = renderers.get(tc.name)
+            if not render:
+                continue  # 辅助工具（save_memory 等）不产出卡片，跳过继续回溯
+            try:
+                result = json.loads(tc.result) if isinstance(tc.result, str) else (tc.result or {})
+            except (json.JSONDecodeError, TypeError):
+                result = {}
+            return render(result)
 
-        if last in ("search_plans", "get_plan_detail"):
-            return UIType.PLAN_CARD, {"plans": self._last_ok_result(tool_log, last)}
-        if last in ("generate_diy_plan", "revise_diy_plan"):
-            return UIType.PLAN_CARD, {"plans": [self._last_ok_result(tool_log, last)]}
-        if last == "search_shops":
-            return UIType.SHOP_CARD, {"shops": self._last_ok_result(tool_log, last)}
-        if last == "generate_effect_image":
-            r = self._last_ok_result(tool_log, last)
-            data: dict[str, Any] = {
-                "task_id": r.get("task_id"),
-                "poll": r.get("poll"),
-            }
-            if r.get("result_url"):
-                data["result_url"] = r["result_url"]
-            return UIType.IMAGE_TASK, data
-        if last == "create_order":
-            r = self._last_ok_result(tool_log, last)
-            pay_jump = r.get("pay_jump", {})
-            return UIType.PAY_JUMP, pay_jump
-
-        # 无工具：按阶段给 UI
+        # 无可渲染工具：按阶段给 UI
         if stage == SessionStage.SELECT_MODE:
             return UIType.DIALOG_OPTIONS, {
                 "options": [

@@ -1340,6 +1340,16 @@ def execute_tool(name: str, arguments: dict[str, Any] | None, context: dict[str,
         result = spec.func(**kwargs)
         if not isinstance(result, str):
             result = json.dumps(result, ensure_ascii=False)
+        # 工具以 JSON 返回 {"error": ...} 视为业务失败（如生图闸门拦截、下单缺店铺/方案），
+        # 状态标 error——否则 _derive_ui / _derive_focus / 「成功工具」判定会把它当成功结果，
+        # 导致失败的生图任务被误判为「已生成」而阻止兜底补调（已复现：chat 生图无 task_id、
+        # 店铺卡被失败的 image 结果覆盖成 text）。观测文本仍原样回填给 LLM，仅影响状态判定。
+        try:
+            parsed = json.loads(result)
+            if isinstance(parsed, dict) and "error" in parsed:
+                return result, "error"
+        except (json.JSONDecodeError, TypeError):
+            pass
         return result, "ok"
     except Exception as exc:  # noqa: BLE001
         logger.exception("[tools] 执行 %s 失败", name)
