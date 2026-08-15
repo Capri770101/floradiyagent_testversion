@@ -23,13 +23,13 @@ def test_seed_catalog_idempotent():
     # 再次 seed 不应报错或重复插入
     catalog.seed_catalog()
     plans = catalog.DBCatalogRepository().search_plans("")
-    assert len(plans) == 3
+    assert len(plans) == 6
 
 
 def test_search_plans_keyword():
     repo = catalog.DBCatalogRepository()
     # 空关键词 = 全部
-    assert len(repo.search_plans("")) == 3
+    assert len(repo.search_plans("")) == 6
     # 关键词命中（名称）
     hit = repo.search_plans("康乃馨")
     assert len(hit) == 1 and hit[0]["plan_id"] == "P001"
@@ -49,7 +49,7 @@ def test_get_plan_shape():
 def test_list_shops_sorted_and_plan_ids():
     repo = catalog.DBCatalogRepository()
     shops = repo.list_shops(None)
-    assert len(shops) == 3
+    assert len(shops) == 5
     s1 = repo.get_shop("S001")
     assert set(s1["plan_ids"]) == {"P001", "P002"}
     # 真实定位下，含目标方案的店铺应优先且按距离排序

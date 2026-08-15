@@ -37,6 +37,7 @@ import security
 from agent import ReActAgent, is_allowed
 from config import settings, setup_logging
 from security import create_token, get_current_user, wx_code2session
+from storage import catalog as catalog_store
 from storage import commerce, repository, tasks
 from storage import memory as mem_store
 from storage import payment as payment_module
@@ -666,6 +667,113 @@ async def shop_detail_endpoint(shop_id: str) -> dict[str, Any]:
     if not s:
         raise HTTPException(status_code=404, detail="店铺不存在")
     return {"shop": _shop_full(s)}
+
+
+# --------------------------------------------------------------------------- #
+# 简易管理后台（方案 / 店铺 CRUD）
+# 注意：dev 模式（AUTH_REQUIRED=false）直接放行，便于演示；生产部署需接入
+# 管理员角色校验（见 _require_admin 注释）。
+# --------------------------------------------------------------------------- #
+
+
+async def _require_admin(request: Request) -> None:
+    """管理员校验占位：dev 模式（无令牌）放行，便于演示。
+
+    生产部署时应在此校验令牌身份的角色（users 表接入 role 字段后），
+    未登录 / 非管理员一律 403，杜绝匿名写入商品目录。
+    """
+    return  # 当前为演示实现：仅注释说明生产加固方式
+
+
+class PlanWriteRequest(BaseModel):
+    plan_id: str | None = Field(None, max_length=30)
+    name: str | None = Field(None, max_length=60)
+    price: float | None = Field(None, ge=0)
+    desc: str | None = Field(None, max_length=200)
+    merchant_name: str | None = Field(None, max_length=30)
+    style: str | None = Field(None, max_length=20)
+    category_id: str | None = Field(None, max_length=30)
+    tags: list[str] | str | None = None
+    effect_image_url: str | None = None
+
+
+class ShopWriteRequest(BaseModel):
+    shop_id: str | None = Field(None, max_length=30)
+    name: str | None = Field(None, max_length=40)
+    rating: float | None = Field(None, ge=0, le=5)
+    distance_km: float | None = Field(None, ge=0)
+    price_range: str | None = Field(None, max_length=30)
+    lat: float | None = None
+    lng: float | None = None
+    status: str | None = Field(None, max_length=10)
+    intro: str | None = Field(None, max_length=120)
+    plan_ids: list[str] | str | None = None
+
+
+@app.get("/admin/plans")
+async def admin_list_plans(request: Request) -> dict[str, Any]:
+    """后台管理列表：返回全字段方案（含 style/category_id）。"""
+    await _require_admin(request)
+    return {"plans": await asyncio.to_thread(catalog_store.list_plans)}
+
+
+@app.post("/admin/plans")
+async def admin_create_plan(req: PlanWriteRequest, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    p = await asyncio.to_thread(catalog_store.create_plan, req.model_dump(exclude_none=True))
+    return {"plan": p}
+
+
+@app.put("/admin/plans/{plan_id}")
+async def admin_update_plan(plan_id: str, req: PlanWriteRequest, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    p = await asyncio.to_thread(
+        catalog_store.update_plan, plan_id, req.model_dump(exclude_none=True)
+    )
+    if not p:
+        raise HTTPException(status_code=404, detail="方案不存在")
+    return {"plan": p}
+
+
+@app.delete("/admin/plans/{plan_id}")
+async def admin_delete_plan(plan_id: str, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    if not await asyncio.to_thread(catalog_store.delete_plan, plan_id):
+        raise HTTPException(status_code=404, detail="方案不存在")
+    return {"ok": True}
+
+
+@app.get("/admin/shops")
+async def admin_list_shops(request: Request) -> dict[str, Any]:
+    """后台管理列表：返回全字段店铺（含 plan_ids 关联）。"""
+    await _require_admin(request)
+    return {"shops": await asyncio.to_thread(catalog_store.list_shops)}
+
+
+@app.post("/admin/shops")
+async def admin_create_shop(req: ShopWriteRequest, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    s = await asyncio.to_thread(catalog_store.create_shop, req.model_dump(exclude_none=True))
+    return {"shop": s}
+
+
+@app.put("/admin/shops/{shop_id}")
+async def admin_update_shop(shop_id: str, req: ShopWriteRequest, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    s = await asyncio.to_thread(
+        catalog_store.update_shop, shop_id, req.model_dump(exclude_none=True)
+    )
+    if not s:
+        raise HTTPException(status_code=404, detail="店铺不存在")
+    return {"shop": s}
+
+
+@app.delete("/admin/shops/{shop_id}")
+async def admin_delete_shop(shop_id: str, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    if not await asyncio.to_thread(catalog_store.delete_shop, shop_id):
+        raise HTTPException(status_code=404, detail="店铺不存在")
+    return {"ok": True}
 
 
 @app.get("/cart")

@@ -24,7 +24,7 @@ const STATS = [
   { label: '优惠券', value: 0 },
   { label: '积分', value: 0 },
 ]
-const FUNCTIONS = ['我的地址', '客服中心', '关于 FloraDIY', '设置']
+const FUNCTIONS = ['管理后台', '我的地址', '客服中心', '关于 FloraDIY', '设置']
 
 export default function Profile() {
   const nav = useNavigate()
@@ -191,7 +191,7 @@ export default function Profile() {
               key={f}
               role="button"
               tabIndex={0}
-              onClick={() => {}}
+              onClick={() => (f === '管理后台' ? nav('/admin') : undefined)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') e.preventDefault()
               }}

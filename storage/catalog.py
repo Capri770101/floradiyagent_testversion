@@ -20,7 +20,7 @@ import re
 import sqlite3
 from typing import Any
 
-from storage.db import get_conn
+from storage.db import get_conn, transaction
 
 logger = logging.getLogger("catalog")
 
@@ -116,6 +116,39 @@ _PLANS = [
         "style": "田园",
         "category_id": "cat_daily",
     },
+    {
+        "plan_id": "P004",
+        "name": "满天星小清新花束",
+        "price": 99.0,
+        "desc": "白绿满天星点缀尤加利，清爽治愈，日常陪伴首选。",
+        "effect_image_url": "/generated/plan_P004.png",
+        "merchant_name": "巷陌花集",
+        "tags": ["满天星", "小清新", "平价"],
+        "style": "自然",
+        "category_id": "cat_daily",
+    },
+    {
+        "plan_id": "P005",
+        "name": "郁金香春日花束",
+        "price": 189.0,
+        "desc": "进口郁金香混搭洋桔梗，春日气息，告白送礼两相宜。",
+        "effect_image_url": "/generated/plan_P005.png",
+        "merchant_name": "兰庭花礼",
+        "tags": ["郁金香", "春日", "告白"],
+        "style": "浪漫",
+        "category_id": "cat_love",
+    },
+    {
+        "plan_id": "P006",
+        "name": "牡丹雅韵礼盒",
+        "price": 399.0,
+        "desc": "重瓣牡丹礼盒装，华贵大气，适合商务馈赠与重要场合。",
+        "effect_image_url": "/generated/plan_P006.png",
+        "merchant_name": "兰庭花礼",
+        "tags": ["牡丹", "礼盒", "高端"],
+        "style": "中式",
+        "category_id": "cat_holiday",
+    },
 ]
 
 _SHOPS = [
@@ -152,6 +185,28 @@ _SHOPS = [
         "lng": 114.255,
         "intro": "高端花艺空间，节日礼盒与商务花艺俱佳。",
     },
+    {
+        "shop_id": "S004",
+        "name": "巷陌花集",
+        "distance_km": 0.8,
+        "price_range": "50-150",
+        "rating": 4.5,
+        "plan_ids": ["P004"],
+        "lat": 22.565,
+        "lng": 114.238,
+        "intro": "街角平价花铺，日常随手一束，治愈每一天。",
+    },
+    {
+        "shop_id": "S005",
+        "name": "兰庭花礼",
+        "distance_km": 2.1,
+        "price_range": "150-500",
+        "rating": 4.7,
+        "plan_ids": ["P005", "P006"],
+        "lat": 22.553,
+        "lng": 114.248,
+        "intro": "中高端花礼定制，名品花材与雅致包装。",
+    },
 ]
 
 # 生成占位效果图的方案（与 MockRepository 保持一致）
@@ -174,9 +229,7 @@ def catalog_ready() -> bool:
 
 
 def seed_catalog() -> None:
-    """若 plans 为空，则灌入种子数据（幂等）。"""
-    if catalog_ready():
-        return
+    """灌入种子数据（幂等：全部 INSERT OR IGNORE，可增量补种新增条目）。"""
     from storage import tasks  # 延迟导入，避免循环依赖
 
     conn = get_conn()
@@ -249,6 +302,185 @@ def _row_to_shop(row: Any, plan_ids: list[str]) -> dict[str, Any]:
     d["shop_id"] = d.pop("id")
     d["plan_ids"] = plan_ids
     return d
+
+
+# --------------------------------------------------------------------------- #
+# 后台管理 CRUD（简易管理后台：方案 / 店铺的新增、编辑、删除）
+# --------------------------------------------------------------------------- #
+
+
+def create_plan(data: dict[str, Any]) -> dict[str, Any]:
+    """新增方案，返回完整方案对象。plan_id 缺失时自动生成。"""
+    import uuid as _uuid
+
+    plan_id = (data.get("plan_id") or "").strip() or f"P{_uuid.uuid4().hex[:6]}"
+    tags = data.get("tags") or []
+    if isinstance(tags, str):
+        tags = [t.strip() for t in tags.replace("，", ",").split(",") if t.strip()]
+    with transaction() as c:
+        c.execute(
+            """INSERT INTO plans
+               (id, name, price, desc, effect_image_url, merchant_name, tags, style, category_id, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (
+                plan_id,
+                (data.get("name") or "未命名方案")[:60],
+                float(data.get("price") or 0),
+                (data.get("desc") or "")[:200],
+                data.get("effect_image_url") or f"/generated/plan_{plan_id}.png",
+                (data.get("merchant_name") or "")[:30],
+                json.dumps(tags, ensure_ascii=False),
+                (data.get("style") or "")[:20],
+                data.get("category_id") or "cat_daily",
+                _now(),
+            ),
+        )
+    plan = get_conn().execute("SELECT * FROM plans WHERE id=?", (plan_id,)).fetchone()
+    return _row_to_plan(plan)
+
+
+def update_plan(plan_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    """更新方案字段（仅传入的字段），方案不存在返回 None。"""
+    sets, vals = [], []
+    if "name" in data:
+        sets.append("name=?")
+        vals.append((data["name"] or "")[:60])
+    if "price" in data:
+        sets.append("price=?")
+        vals.append(float(data["price"] or 0))
+    if "desc" in data:
+        sets.append("desc=?")
+        vals.append((data["desc"] or "")[:200])
+    if "merchant_name" in data:
+        sets.append("merchant_name=?")
+        vals.append((data["merchant_name"] or "")[:30])
+    if "style" in data:
+        sets.append("style=?")
+        vals.append((data["style"] or "")[:20])
+    if "category_id" in data:
+        sets.append("category_id=?")
+        vals.append(data["category_id"] or "cat_daily")
+    if "tags" in data:
+        tags = data["tags"]
+        if isinstance(tags, str):
+            tags = [t.strip() for t in tags.replace("，", ",").split(",") if t.strip()]
+        sets.append("tags=?")
+        vals.append(json.dumps(tags, ensure_ascii=False))
+    if "effect_image_url" in data:
+        sets.append("effect_image_url=?")
+        vals.append(data["effect_image_url"] or "")
+    if not sets:
+        return DBCatalogRepository().get_plan(plan_id)
+    with transaction() as c:
+        c.execute(f"UPDATE plans SET {', '.join(sets)} WHERE id=?", vals + [plan_id])
+    return DBCatalogRepository().get_plan(plan_id)
+
+
+def delete_plan(plan_id: str) -> bool:
+    """删除方案（连带清 shop_plans 关联）。返回是否真的删到了。"""
+    conn = get_conn()
+    if not conn.execute("SELECT id FROM plans WHERE id=?", (plan_id,)).fetchone():
+        return False
+    with transaction() as c:
+        c.execute("DELETE FROM shop_plans WHERE plan_id=?", (plan_id,))
+        c.execute("DELETE FROM plans WHERE id=?", (plan_id,))
+    return True
+
+
+def create_shop(data: dict[str, Any]) -> dict[str, Any]:
+    """新增店铺，返回完整店铺对象。shop_id 缺失时自动生成。"""
+    import uuid as _uuid
+
+    shop_id = (data.get("shop_id") or "").strip() or f"S{_uuid.uuid4().hex[:6]}"
+    plan_ids = data.get("plan_ids") or []
+    if isinstance(plan_ids, str):
+        plan_ids = [p.strip() for p in plan_ids.replace("，", ",").split(",") if p.strip()]
+    with transaction() as c:
+        c.execute(
+            """INSERT INTO shops
+               (id, name, rating, distance_km, price_range, lat, lng, status, intro, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (
+                shop_id,
+                (data.get("name") or "未命名店铺")[:40],
+                float(data.get("rating") or 4.5),
+                float(data.get("distance_km") or 1.0),
+                str(data.get("price_range") or "50-200"),
+                float(data.get("lat") or 22.55),
+                float(data.get("lng") or 114.24),
+                (data.get("status") or "营业中")[:10],
+                (data.get("intro") or "")[:120],
+                _now(),
+            ),
+        )
+        for pid in plan_ids:
+            c.execute(
+                "INSERT OR IGNORE INTO shop_plans(shop_id, plan_id) VALUES (?,?)",
+                (shop_id, pid),
+            )
+    return DBCatalogRepository().get_shop(shop_id)
+
+
+def update_shop(shop_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    """更新店铺字段（仅传入的字段），店铺不存在返回 None。"""
+    sets, vals = [], []
+    if "name" in data:
+        sets.append("name=?")
+        vals.append((data["name"] or "")[:40])
+    if "rating" in data:
+        sets.append("rating=?")
+        vals.append(float(data["rating"] or 0))
+    if "distance_km" in data:
+        sets.append("distance_km=?")
+        vals.append(float(data["distance_km"] or 0))
+    if "price_range" in data:
+        sets.append("price_range=?")
+        vals.append(str(data["price_range"] or ""))
+    if "intro" in data:
+        sets.append("intro=?")
+        vals.append((data["intro"] or "")[:120])
+    if "status" in data:
+        sets.append("status=?")
+        vals.append((data["status"] or "营业中")[:10])
+    if "plan_ids" in data:
+        plan_ids = data["plan_ids"]
+        if isinstance(plan_ids, str):
+            plan_ids = [p.strip() for p in plan_ids.replace("，", ",").split(",") if p.strip()]
+        with transaction() as c:
+            c.execute("DELETE FROM shop_plans WHERE shop_id=?", (shop_id,))
+            for pid in plan_ids:
+                c.execute(
+                    "INSERT OR IGNORE INTO shop_plans(shop_id, plan_id) VALUES (?,?)",
+                    (shop_id, pid),
+                )
+    if sets:
+        with transaction() as c:
+            c.execute(f"UPDATE shops SET {', '.join(sets)} WHERE id=?", vals + [shop_id])
+    return DBCatalogRepository().get_shop(shop_id)
+
+
+def delete_shop(shop_id: str) -> bool:
+    """删除店铺（连带清 shop_plans 关联）。返回是否真的删到了。"""
+    conn = get_conn()
+    if not conn.execute("SELECT id FROM shops WHERE id=?", (shop_id,)).fetchone():
+        return False
+    with transaction() as c:
+        c.execute("DELETE FROM shop_plans WHERE shop_id=?", (shop_id,))
+        c.execute("DELETE FROM shops WHERE id=?", (shop_id,))
+    return True
+
+
+def list_plans() -> list[dict[str, Any]]:
+    """后台管理用：返回全字段方案列表（含 style / category_id）。"""
+    rows = get_conn().execute("SELECT * FROM plans ORDER BY created_at").fetchall()
+    return [_row_to_plan(r) for r in rows]
+
+
+def list_shops() -> list[dict[str, Any]]:
+    """后台管理用：返回全字段店铺列表（含 plan_ids 关联）。"""
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM shops ORDER BY created_at").fetchall()
+    return [_row_to_shop(r, _shop_plan_ids(conn, r["id"])) for r in rows]
 
 
 class DBCatalogRepository:

@@ -110,3 +110,55 @@ export async function updateOrder(orderId, patch) {
   })
   return data.order
 }
+
+// ---------------- 管理后台（方案 / 店铺 CRUD） ----------------
+
+export async function adminListPlans() {
+  const data = await api('/admin/plans')
+  return data.plans
+}
+
+export async function adminListShops() {
+  const data = await api('/admin/shops')
+  return data.shops
+}
+
+export async function adminCreatePlan(payload) {
+  const data = await api('/admin/plans', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return data.plan
+}
+
+export async function adminUpdatePlan(planId, payload) {
+  const data = await api(`/admin/plans/${encodeURIComponent(planId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+  return data.plan
+}
+
+export async function adminDeletePlan(planId) {
+  await api(`/admin/plans/${encodeURIComponent(planId)}`, { method: 'DELETE' })
+}
+
+export async function adminCreateShop(payload) {
+  const data = await api('/admin/shops', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return data.shop
+}
+
+export async function adminUpdateShop(shopId, payload) {
+  const data = await api(`/admin/shops/${encodeURIComponent(shopId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+  return data.shop
+}
+
+export async function adminDeleteShop(shopId) {
+  await api(`/admin/shops/${encodeURIComponent(shopId)}`, { method: 'DELETE' })
+}

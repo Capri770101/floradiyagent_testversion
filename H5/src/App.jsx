@@ -12,6 +12,7 @@ import Pay from './pages/Pay'
 import Profile from './pages/Profile'
 import Category from './pages/Category'
 import Cart from './pages/Cart'
+import Admin from './pages/Admin'
 
 // 404 兜底页：路由未命中时给出明确反馈与返回入口（review 点名缺失）
 function NotFound() {
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="/profile" element={<Profile />} />
         <Route path="/category" element={<Category />} />
         <Route path="/cart" element={<Cart />} />
+        <Route path="/admin" element={<Admin />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
