@@ -152,7 +152,7 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
               这里只保留进行中 / 失败的状态文案，避免出现两处图片 */}
           {imgState.status === 'pending' && (
             <div className="mb-2">
-              <div className="h-1 w-full overflow-hidden rounded-full bg-pink2">
+              <div className="h-1 w-full overflow-hidden rounded-full bg-pink-2">
                 <div className="h-full w-1/3 animate-pulse rounded-full bg-pink" />
               </div>
               <p className="mt-1.5 text-[11px] text-sub">

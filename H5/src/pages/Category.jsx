@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Placeholder } from '../components/Placeholder'
 import { Pill } from '../components/Pill'
 import { IconSearch, IconArrow } from '../components/icons'
+import SectionTitle from '../components/SectionTitle'
 import { listPlans } from '../api/shop'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
@@ -105,7 +106,7 @@ export default function Category() {
   return (
     <div className="min-h-full bg-bg pb-8">
       <div className="px-5 pt-7">
-        <h1 className="text-[20px] font-medium text-dark">发现好花</h1>
+        <h1 className="font-serif-cn text-[22px] font-medium text-dark">发现好花</h1>
         <p className="mt-1 text-[11px] text-sub">挑选心意，从一束花开始</p>
       </div>
 
@@ -122,7 +123,7 @@ export default function Category() {
 
       {/* 热门分类 */}
       <div className="mt-7 px-5">
-        <h2 className="text-[16px] font-medium text-dark">热门分类</h2>
+        <SectionTitle title="热门分类" />
         <div className="mt-3 grid grid-cols-3 gap-y-4">
           {CATEGORIES.map((c, i) => (
             <button
@@ -145,7 +146,7 @@ export default function Category() {
 
       {/* 按场景 */}
       <div className="mt-7 px-5">
-        <h2 className="text-[16px] font-medium text-dark">按场景</h2>
+        <SectionTitle title="按场景" />
         <div className="mt-3 grid grid-cols-3 gap-2.5">
           {SCENES.map((s, i) => (
             <Pill
@@ -161,7 +162,7 @@ export default function Category() {
 
       {/* 精选花束（真实接口） */}
       <div className="mt-9 px-5">
-        <h2 className="text-[16px] font-medium text-dark">精选花束</h2>
+        <SectionTitle title="精选花束" />
         <div className="mt-3 space-y-3">
           {featured.map((f) => (
             <div

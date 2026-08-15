@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Placeholder } from '../components/Placeholder'
 import { IconCheck } from '../components/icons'
+import { TopBar } from '../components/TopBar'
 import { getCart, updateCart, removeCart, createOrder } from '../api/shop'
 import { getUserId } from '../api/chat'
 import { imgColor } from '../utils/color'
@@ -75,10 +76,10 @@ export default function Cart() {
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      <div className="flex h-[56px] shrink-0 items-center justify-between border-b border-line px-5">
-        <h1 className="text-[20px] font-medium text-dark">购物车</h1>
-        <span className="text-[11px] text-sub">{loading ? '加载中…' : `${items.length} 件`}</span>
-      </div>
+      <TopBar
+        title="购物车"
+        right={<span className="text-[11px] text-sub">{loading ? '加载中…' : `${items.length} 件`}</span>}
+      />
       <div className="flex-1 overflow-y-auto">
         <div className="space-y-3 p-4">
           {items.map((it) => (

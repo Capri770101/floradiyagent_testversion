@@ -140,7 +140,7 @@ function ImageTaskCard({ data }) {
 
   if (state.status === 'failed') {
     return (
-      <p className="mt-2 rounded-[12px] bg-pink2 px-3 py-2 text-[11px] text-pink">
+      <p className="mt-2 rounded-[12px] bg-pink-2 px-3 py-2 text-[11px] text-pink">
         效果图生成失败了，可以让我重新生成试试。
       </p>
     )
@@ -149,7 +149,7 @@ function ImageTaskCard({ data }) {
     <div className="mt-2 rounded-card-lg bg-white p-3 shadow-card">
       {state.status === 'pending' && (
         <div className="mb-2">
-          <div className="h-1 w-full overflow-hidden rounded-full bg-pink2">
+          <div className="h-1 w-full overflow-hidden rounded-full bg-pink-2">
             <div className="h-full w-1/3 animate-pulse rounded-full bg-pink" />
           </div>
           <p className="mt-1.5 text-[12px] text-sub">
@@ -729,7 +729,7 @@ export default function Agent() {
                   key={c.id}
                   onClick={() => switchTo(c.id)}
                   className={`flex cursor-pointer items-center px-4 py-3 ${
-                    c.id === activeId ? 'bg-pink2' : ''
+                    c.id === activeId ? 'bg-pink-2' : ''
                   }`}
                 >
                   {renamingId === c.id ? (
