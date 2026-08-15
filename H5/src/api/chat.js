@@ -67,6 +67,19 @@ export async function deleteConversation(convId, userId) {
   return true
 }
 
+export async function renameConversation(convId, title, userId) {
+  const res = await fetch(
+    `${API_BASE}/conversations/${encodeURIComponent(convId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ user_id: userId, title }),
+    }
+  )
+  if (!res.ok) throw new Error(`重命名失败 ${res.status}`)
+  return true
+}
+
 // 生图任务轮询（后端契约：{task_id, status: pending|done|failed, result_url}）
 export async function getImageTask(taskId) {
   const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, {

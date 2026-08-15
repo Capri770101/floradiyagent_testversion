@@ -79,6 +79,11 @@ class CreateConvRequest(BaseModel):
     title: str | None = Field(None, description="会话标题（留空则由首条消息自动生成）")
 
 
+class RenameConvRequest(BaseModel):
+    user_id: str | None = Field(None, min_length=1, max_length=64, description="鉴权模式下以 JWT 为准，可不传")
+    title: str = Field(..., min_length=1, max_length=50, description="新会话标题")
+
+
 class WxLoginRequest(BaseModel):
     code: str = Field(..., min_length=1, max_length=128, description="wx.login() 返回的一次性登录凭证 code")
 
@@ -501,6 +506,20 @@ async def get_conversation_messages(conv_id: str, request: Request, user_id: str
             raise HTTPException(status_code=404, detail="会话不存在")
     msgs = await asyncio.to_thread(mem_store.load_display_messages, conv_id)
     return {"messages": msgs}
+
+
+@app.patch("/conversations/{conv_id}")
+async def rename_conversation(conv_id: str, req: RenameConvRequest, request: Request) -> dict[str, Any]:
+    """重命名会话标题。"""
+    uid = await resolve_uid(request, req.user_id)
+    if uid:
+        conv = await asyncio.to_thread(mem_store.get_conversation, conv_id)
+        if not conv or conv.get("user_id") != uid:
+            raise HTTPException(status_code=404, detail="会话不存在")
+    ok = await asyncio.to_thread(mem_store.rename_conversation, conv_id, req.title)
+    if not ok:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return {"ok": True}
 
 
 @app.delete("/conversations/{conv_id}")

@@ -7,6 +7,7 @@ import {
   createConversation,
   getMessages,
   deleteConversation,
+  renameConversation,
   getImageTask,
   withApiUrl,
 } from '../api/chat'
@@ -86,6 +87,8 @@ function ChatPlanCard({ plan, onConfirm, onAdjust }) {
 // 生图结果卡片：同步任务带 result_url 直接渲染；异步任务轮询 /tasks/{id} 至 done
 // 仅在无前置方案卡时独立展示（通常效果图会并入方案卡片）
 function ImageTaskCard({ data }) {
+  // 防御：无 task_id 也无 result_url 的空生图卡片（LLM 幻觉）不渲染
+  if (!data?.task_id && !data?.result_url && !data?.image_url) return null
   // 后端 result_url 为 /generated/{id}.jpg 形式，经 Vite 代理需补 /api 前缀
   const doneUrl = withApiUrl(data?.result_url || data?.image_url)
   const [state, setState] = useState(() =>
@@ -126,9 +129,14 @@ function ImageTaskCard({ data }) {
   return (
     <div className="mt-2 rounded-card-lg bg-white p-3 shadow-card">
       {state.status === 'pending' && (
-        <p className="mb-2 text-[12px] text-sub">
-          效果图生成中，请稍候…
-        </p>
+        <div className="mb-2">
+          <div className="h-1 w-full overflow-hidden rounded-full bg-pink2">
+            <div className="h-full w-1/3 animate-pulse rounded-full bg-pink" />
+          </div>
+          <p className="mt-1.5 text-[12px] text-sub">
+            效果图生成中，约需 30 秒…
+          </p>
+        </div>
       )}
       {state.status === 'done' && state.result_url && (
         <SmartImage
@@ -236,6 +244,9 @@ export default function Agent() {
   const [activeId, setActiveId] = useState(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [input, setInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [renamingId, setRenamingId] = useState(null)
+  const [renameText, setRenameText] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const scrollRef = useRef(null)
@@ -317,6 +328,40 @@ export default function Agent() {
     },
     [activeId, refreshConversations]
   )
+
+  const startRename = useCallback(
+    (c, e) => {
+      e.stopPropagation()
+      setRenamingId(c.id)
+      setRenameText(c.title || '')
+    },
+    []
+  )
+
+  const submitRename = useCallback(
+    async (e) => {
+      e?.stopPropagation()
+      const title = renameText.trim()
+      if (!title || !renamingId) return
+      try {
+        await renameConversation(renamingId, title, getUserId())
+        setRenamingId(null)
+        await refreshConversations()
+      } catch (err) {
+        setError(err.message || '重命名失败')
+      }
+    },
+    [renamingId, renameText, refreshConversations]
+  )
+
+  const visibleConvs = conversations.filter((c) => {
+    const q = search.trim().toLowerCase()
+    if (!q) return true
+    return (
+      (c.title || '').toLowerCase().includes(q) ||
+      (c.preview || '').toLowerCase().includes(q)
+    )
+  })
 
   // 现成方案「立即购买」：先落单拿到 orderId，再带单号跳订单确认页
   const handleBuyShop = useCallback(
@@ -429,11 +474,13 @@ export default function Agent() {
           poll: m.data.poll,
         }
         let attached = false
-        for (let j = out.length - 1; j >= 0; j--) {
-          if (out[j].ui === 'plan_card') {
-            out[j] = { ...out[j], _img: img }
-            attached = true
-            break
+        if (img.task_id || img.result_url) {
+          for (let j = out.length - 1; j >= 0; j--) {
+            if (out[j].ui === 'plan_card') {
+              out[j] = { ...out[j], _img: img }
+              attached = true
+              break
+            }
           }
         }
         if (!attached) out.push(m)
@@ -486,7 +533,7 @@ export default function Agent() {
                   onConfirm={() =>
                     nav(`/diy/${p.plan_id || 'demo'}`, { state: { plan: p } })
                   }
-                  onAdjust={() => send('调整方案')}
+                  onAdjust={(d) => send(d || '调整方案')}
                 />
                 ) : (
                 <ChatPlanCard
@@ -634,11 +681,21 @@ export default function Agent() {
                 + 新对话
               </button>
             </div>
+            <div className="px-3 pt-3">
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="搜索对话…"
+                className="w-full rounded-[10px] border border-line bg-bg px-3 py-2 text-[12px] text-ink outline-none placeholder:text-sub"
+              />
+            </div>
             <div className="flex-1 overflow-y-auto py-2">
-              {conversations.length === 0 && (
-                <p className="px-4 pt-4 text-[12px] text-sub">暂无历史对话</p>
+              {visibleConvs.length === 0 && (
+                <p className="px-4 pt-4 text-[12px] text-sub">
+                  {search ? '没有匹配的对话' : '暂无历史对话'}
+                </p>
               )}
-              {conversations.map((c) => (
+              {visibleConvs.map((c) => (
                 <div
                   key={c.id}
                   onClick={() => switchTo(c.id)}
@@ -646,14 +703,52 @@ export default function Agent() {
                     c.id === activeId ? 'bg-pink2' : ''
                   }`}
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] text-ink">
-                      {c.title || '新对话'}
-                    </p>
-                    <p className="truncate text-[11px] text-sub">
-                      {c.preview || ''}
-                    </p>
-                  </div>
+                  {renamingId === c.id ? (
+                    <div className="min-w-0 flex-1" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        autoFocus
+                        value={renameText}
+                        onChange={(e) => setRenameText(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && submitRename(e)}
+                        className="w-full rounded-[8px] border border-pink bg-white px-2 py-1 text-[13px] text-ink outline-none"
+                      />
+                      <div className="mt-1 flex gap-2">
+                        <button
+                          onClick={submitRename}
+                          className="text-[12px] text-pink"
+                        >
+                          保存
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setRenamingId(null)
+                          }}
+                          className="text-[12px] text-sub"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] text-ink">
+                        {c.title || '新对话'}
+                      </p>
+                      <p className="truncate text-[11px] text-sub">
+                        {c.preview || ''}
+                      </p>
+                    </div>
+                  )}
+                  {renamingId !== c.id && (
+                    <button
+                      onClick={(e) => startRename(c, e)}
+                      className="press ml-2 text-[12px] text-sub"
+                      aria-label="重命名会话"
+                    >
+                      改名
+                    </button>
+                  )}
                   <button
                     onClick={(e) => removeConv(c.id, e)}
                     className="press ml-2 text-sub"

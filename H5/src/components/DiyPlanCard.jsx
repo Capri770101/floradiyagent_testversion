@@ -6,6 +6,8 @@ import { PLACEHOLDER } from '../tokens'
 import SmartImage from './SmartImage'
 import { getImageTask, withApiUrl } from '../api/chat'
 
+const STYLE_CHOICES = ['北欧', '浪漫', '自然', '复古', '治愈', '简约', '奢华']
+
 // 花材列表归一化：LLM 可能给数组（{name, role, ...}）或字符串（"洋桔梗、郁金香"）
 function toFlowerList(v) {
   if (!v) return []
@@ -75,8 +77,13 @@ function Chevron({ open }) {
   )
 }
 
-export default function DiyPlanCard({ plan, onConfirm, onAdjust, img }) {
+export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) {
   const [open, setOpen] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [budget, setBudget] = useState('')
+  const [style, setStyle] = useState('')
+  const [addFlower, setAddFlower] = useState('')
+  const [removed, setRemoved] = useState([])
   const p = normalizePlan(plan)
   const [imgState, setImgState] = useState({ status: 'none', url: null })
   if (!p) return null
@@ -144,7 +151,14 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, img }) {
           {/* 效果图状态提示：生图完成后的图片渲染在下方「方案效果图」占位符位置，
               这里只保留进行中 / 失败的状态文案，避免出现两处图片 */}
           {imgState.status === 'pending' && (
-            <p className="mb-2 text-[11px] text-sub">效果图生成中，请稍候…</p>
+            <div className="mb-2">
+              <div className="h-1 w-full overflow-hidden rounded-full bg-pink2">
+                <div className="h-full w-1/3 animate-pulse rounded-full bg-pink" />
+              </div>
+              <p className="mt-1.5 text-[11px] text-sub">
+                效果图生成中，约需 30 秒…
+              </p>
+            </div>
           )}
           {imgState.status === 'failed' && (
             <p className="mb-2 text-[11px] text-pink">
@@ -235,17 +249,129 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, img }) {
           )}
 
           <div className="mt-3 flex gap-3">
-            {onAdjust && (
-              <Button variant="secondary" className="flex-1" onClick={onAdjust}>
+            {!editMode && onAdjust && (
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => setEditMode(true)}
+              >
                 调整方案
               </Button>
             )}
-            {onConfirm && (
+            {!editMode && onConfirm && (
               <Button variant="primary" className="flex-1" onClick={onConfirm}>
                 确认方案
               </Button>
             )}
+            {editMode && (
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => {
+                  setEditMode(false)
+                  setRemoved([])
+                  setAddFlower('')
+                  setBudget('')
+                  setStyle('')
+                }}
+              >
+                取消
+              </Button>
+            )}
+            {editMode && (
+              <Button
+                variant="primary"
+                className="flex-1"
+                disabled={!budget && !style && !addFlower && !removed.length}
+                onClick={() => {
+                  const parts = []
+                  if (budget) parts.push(`预算改为 ${budget} 元`)
+                  if (style) parts.push(`风格换成 ${style}`)
+                  if (removed.length) parts.push(`去掉 ${removed.join('、')}`)
+                  if (addFlower.trim())
+                    parts.push(`加上 ${addFlower.trim().replace(/[、，,;；/\s]+/g, '、')}`)
+                  setEditMode(false)
+                  onAdjust?.(`调整方案：${parts.join('，')}`)
+                }}
+              >
+                提交调整
+              </Button>
+            )}
           </div>
+
+          {/* 内联调整面板：预算 / 风格 / 花材增删，直接改方案不走打字 */}
+          {editMode && (
+            <div className="mt-3 rounded-[12px] bg-bg p-3">
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-[12px] text-sub">预算</span>
+                <input
+                  value={budget}
+                  onChange={(e) => setBudget(e.target.value.replace(/\D/g, ''))}
+                  placeholder={p.price != null ? `当前 ¥${p.price}` : '输入预算'}
+                  inputMode="numeric"
+                  className="w-24 rounded-[8px] border border-line bg-white px-2 py-1.5 text-[12px] text-ink outline-none placeholder:text-sub"
+                />
+                <span className="text-[12px] text-sub">元</span>
+              </div>
+
+              <div className="mt-2.5">
+                <p className="text-[12px] text-sub">风格</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {STYLE_CHOICES.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setStyle(style === s ? '' : s)}
+                      className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                        style === s
+                          ? 'border-pink bg-pink text-white'
+                          : 'border-line bg-white text-ink'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-2.5">
+                <p className="text-[12px] text-sub">花材</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {p.flowers.map((f, i) => (
+                    <span
+                      key={i}
+                      className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${
+                        removed.includes(f.name)
+                          ? 'border-line text-sub line-through'
+                          : 'border-line bg-white text-ink'
+                      }`}
+                    >
+                      {f.name}
+                      <button
+                        onClick={() =>
+                          setRemoved((r) =>
+                            r.includes(f.name)
+                              ? r.filter((x) => x !== f.name)
+                              : [...r, f.name]
+                          )
+                        }
+                        className="text-sub"
+                        aria-label={`移除 ${f.name}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <input
+                  value={addFlower}
+                  onChange={(e) => setAddFlower(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && setAddFlower('')}
+                  placeholder="添加花材，如：洋桔梗、郁金香"
+                  className="mt-1.5 w-full rounded-[8px] border border-line bg-white px-2 py-1.5 text-[12px] text-ink outline-none placeholder:text-sub"
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

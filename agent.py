@@ -266,7 +266,13 @@ class ReActAgent:
             # 仅当 LLM 完全未提供结构化数据（data 为空）时，才用 _derive_ui 依据工具成果
             # 推导的卡片/按钮覆盖：解决「按钮不下发」与「空 dialog_options 无按钮」；若 LLM 已带
             # 有效 data（哪怕 ui=text），则尊重 LLM，不强行覆盖成其它 ui。
-            if not data:
+            # image_task 特判：LLM 幻觉的「生图卡片」常带 task_id=null / 空 data（生图工具实际
+            # 被闸门拒绝），视为无效卡片，交给 _derive_ui 依据真实工具成果重新推导。
+            _data_effective = bool(data) and not (
+                ui == UIType.IMAGE_TASK
+                and not (data.get("task_id") or data.get("result_url"))
+            )
+            if not _data_effective:
                 if inferred_ui in _card_types and inferred_data:
                     ui = inferred_ui
                     data = inferred_data
@@ -507,7 +513,7 @@ class ReActAgent:
 
         if last in ("search_plans", "get_plan_detail"):
             return UIType.PLAN_CARD, {"plans": self._last_ok_result(tool_log, last)}
-        if last == "generate_diy_plan":
+        if last in ("generate_diy_plan", "revise_diy_plan"):
             return UIType.PLAN_CARD, {"plans": [self._last_ok_result(tool_log, last)]}
         if last == "search_shops":
             return UIType.SHOP_CARD, {"shops": self._last_ok_result(tool_log, last)}

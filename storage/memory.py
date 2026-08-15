@@ -288,6 +288,22 @@ def update_conversation_preview(conversation_id: str, preview: str) -> None:
         )
 
 
+def rename_conversation(conversation_id: str, title: str) -> bool:
+    """重命名会话标题，返回是否真的改到了。"""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT session_id FROM sessions WHERE session_id = ?", (conversation_id,)
+    ).fetchone()
+    if not row:
+        return False
+    with transaction() as c:
+        c.execute(
+            "UPDATE sessions SET title = ?, updated_at = ? WHERE session_id = ?",
+            ((title or "新对话")[:50], _now(), conversation_id),
+        )
+    return True
+
+
 def delete_conversation(conversation_id: str) -> bool:
     """删除会话（级联清消息与控制标记）。返回是否真的删到了。"""
     conn = get_conn()
