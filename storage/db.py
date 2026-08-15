@@ -219,6 +219,26 @@ CREATE TABLE IF NOT EXISTS order_logistics (
     PRIMARY KEY (order_id, seq)
 );
 
+-- 收货地址（按用户隔离；仅一个默认地址）
+CREATE TABLE IF NOT EXISTS addresses (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    name       TEXT NOT NULL,                 -- 收货人
+    phone      TEXT NOT NULL,
+    address    TEXT NOT NULL,
+    is_default INTEGER NOT NULL DEFAULT 0,    -- 1=默认（同用户仅一条）
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- 收藏（方案收藏，按用户隔离；user+plan 唯一）
+CREATE TABLE IF NOT EXISTS favorites (
+    user_id    TEXT NOT NULL,
+    plan_id    TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, plan_id)
+);
+
 -- 优惠券（按用户隔离；下单时抵扣，status: unused|used）
 CREATE TABLE IF NOT EXISTS coupons (
     id         TEXT PRIMARY KEY,
@@ -261,6 +281,7 @@ CREATE INDEX IF NOT EXISTS idx_payments_order       ON payments(order_id);
 CREATE INDEX IF NOT EXISTS idx_logistics_order      ON order_logistics(order_id);
 CREATE INDEX IF NOT EXISTS idx_coupons_user          ON coupons(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_point_records_user    ON point_records(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_addresses_user        ON addresses(user_id, is_default);
 CREATE INDEX IF NOT EXISTS idx_shop_plans_plan      ON shop_plans(plan_id);
 CREATE INDEX IF NOT EXISTS idx_plans_category       ON plans(category_id);
 """

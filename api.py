@@ -133,6 +133,7 @@ class OrderCreateRequest(BaseModel):
     recipient: dict[str, Any] | None = None
     delivery: str | None = None
     note: str | None = None
+    address_id: str | None = Field(None, description="已存收货地址 id；传了则忽略 recipient 字段")
 
 
 class PayRequest(BaseModel):
@@ -823,6 +824,7 @@ async def post_order(req: OrderCreateRequest, request: Request) -> dict[str, Any
         req.recipient,
         req.delivery,
         req.note,
+        req.address_id,
     )
     return {"order": order}
 
@@ -855,6 +857,162 @@ async def points_endpoint(request: Request, user_id: str | None = None) -> dict[
         raise HTTPException(status_code=401, detail="缺少用户身份")
     points = await asyncio.to_thread(commerce.get_points, uid)
     return points
+
+
+# --------------------------------------------------------------------------- #
+# 收货地址
+# --------------------------------------------------------------------------- #
+
+
+class AddressWriteRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=32, description="收货人")
+    phone: str = Field(..., min_length=5, max_length=20, description="手机号")
+    address: str = Field(..., min_length=1, max_length=120, description="详细地址")
+    is_default: bool = False
+
+
+class AddressPatchRequest(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=32)
+    phone: str | None = Field(None, min_length=5, max_length=20)
+    address: str | None = Field(None, min_length=1, max_length=120)
+    is_default: bool | None = None
+
+
+@app.get("/addresses")
+async def list_addresses_endpoint(request: Request, user_id: str | None = None) -> dict[str, Any]:
+    """列出用户收货地址（默认排前）。"""
+    uid = await resolve_uid(request, user_id)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    return {"addresses": await asyncio.to_thread(commerce.list_addresses, uid)}
+
+
+@app.post("/addresses")
+async def post_address(req: AddressWriteRequest, request: Request) -> dict[str, Any]:
+    uid = await resolve_uid(request, None)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    a = await asyncio.to_thread(
+        commerce.add_address, uid, req.name, req.phone, req.address, req.is_default
+    )
+    return {"address": a}
+
+
+@app.put("/addresses/{addr_id}")
+async def put_address(addr_id: str, req: AddressPatchRequest, request: Request) -> dict[str, Any]:
+    uid = await resolve_uid(request, None)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    a = await asyncio.to_thread(
+        commerce.update_address, addr_id, uid, req.name, req.phone, req.address, req.is_default
+    )
+    if not a:
+        raise HTTPException(status_code=404, detail="地址不存在")
+    return {"address": a}
+
+
+@app.delete("/addresses/{addr_id}")
+async def del_address(addr_id: str, request: Request) -> dict[str, Any]:
+    uid = await resolve_uid(request, None)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    if not await asyncio.to_thread(commerce.delete_address, addr_id, uid):
+        raise HTTPException(status_code=404, detail="地址不存在")
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# 收藏
+# --------------------------------------------------------------------------- #
+
+
+class FavoriteRequest(BaseModel):
+    plan_id: str = Field(..., min_length=1, max_length=64)
+
+
+@app.get("/favorites")
+async def list_favorites_endpoint(request: Request, user_id: str | None = None) -> dict[str, Any]:
+    """列出收藏（含方案信息，新→旧）。"""
+    uid = await resolve_uid(request, user_id)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    items = await asyncio.to_thread(commerce.list_favorites, uid)
+    return {"favorites": items, "count": len(items)}
+
+
+@app.post("/favorites")
+async def post_favorite(req: FavoriteRequest, request: Request) -> dict[str, Any]:
+    uid = await resolve_uid(request, None)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    await asyncio.to_thread(commerce.add_favorite, uid, req.plan_id)
+    return {"ok": True, "favorited": True}
+
+
+@app.delete("/favorites/{plan_id}")
+async def del_favorite(plan_id: str, request: Request) -> dict[str, Any]:
+    uid = await resolve_uid(request, None)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    await asyncio.to_thread(commerce.remove_favorite, uid, plan_id)
+    return {"ok": True, "favorited": False}
+
+
+@app.get("/favorites/{plan_id}/status")
+async def favorite_status(plan_id: str, request: Request, user_id: str | None = None) -> dict[str, Any]:
+    """查询某方案是否已收藏（商品详情页心形按钮状态）。"""
+    uid = await resolve_uid(request, user_id)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    return {"plan_id": plan_id, "favorited": await asyncio.to_thread(commerce.is_favorite, uid, plan_id)}
+
+
+# --------------------------------------------------------------------------- #
+# 商家端（店铺维度经营数据 / 代发货）
+# 注意：dev 模式（AUTH_REQUIRED=false）直接放行，便于演示；生产部署需校验
+# 令牌身份的角色为 merchant（见 _require_admin 同款注释）。
+# --------------------------------------------------------------------------- #
+
+
+async def _require_merchant(request: Request) -> None:
+    """商家角色校验占位：dev 模式放行。生产应校验 JWT 携带的 user_role=merchant。"""
+    return
+
+
+@app.get("/merchant/stats")
+async def merchant_stats_endpoint(request: Request, shop_id: str = "") -> dict[str, Any]:
+    """店铺维度经营统计（订单 / GMV / 待发货 / 已完成 / 评价）。"""
+    await _require_merchant(request)
+    return await asyncio.to_thread(commerce.merchant_stats, shop_id)
+
+
+@app.get("/merchant/orders")
+async def merchant_orders_endpoint(
+    request: Request, shop_id: str = "", status: str = "", limit: int = 50
+) -> dict[str, Any]:
+    """商家视角订单列表（任意用户，可按店铺 / 状态过滤）。"""
+    await _require_merchant(request)
+    return {"orders": await asyncio.to_thread(commerce.merchant_orders, shop_id, status, limit)}
+
+
+@app.post("/merchant/orders/{order_id}/ship")
+async def merchant_ship_endpoint(order_id: str, request: Request) -> dict[str, Any]:
+    """商家代发货（不受订单归属限制）：paid -> shipped。"""
+    await _require_merchant(request)
+    try:
+        o = await asyncio.to_thread(commerce.merchant_ship, order_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not o:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    return {"order": o}
+
+
+@app.get("/merchant/reviews")
+async def merchant_reviews_endpoint(request: Request, shop_id: str = "") -> dict[str, Any]:
+    """店铺维度评价列表。"""
+    await _require_merchant(request)
+    return {"reviews": await asyncio.to_thread(commerce.merchant_reviews, shop_id)}
 
 
 @app.get("/orders/{order_id}")

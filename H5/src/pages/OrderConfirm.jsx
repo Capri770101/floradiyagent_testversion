@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
-import { getOrder, updateOrder } from '../api/shop'
+import { getOrder, updateOrder, listAddresses } from '../api/shop'
 import { calcPayable } from '../utils/price'
 import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
@@ -35,6 +35,21 @@ export default function OrderConfirm() {
   const [delivery, setDelivery] = useState(DELIVERY_OPTIONS[0])
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const [addresses, setAddresses] = useState([])
+  const [selectedAddr, setSelectedAddr] = useState(null)
+
+  useEffect(() => {
+    listAddresses()
+      .then((list) => {
+        setAddresses(list)
+        if (list.length > 0) {
+          setSelectedAddr(list[0].id)
+          const d = list[0]
+          setRecipient({ name: d.name, phone: d.phone, address: d.address })
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!orderId) {
@@ -80,6 +95,11 @@ export default function OrderConfirm() {
 
   const total = calcPayable(order.total_price, order.discount)
 
+  const pickAddr = (a) => {
+    setSelectedAddr(a.id)
+    setRecipient({ name: a.name, phone: a.phone, address: a.address })
+  }
+
   const onPay = async () => {
     if (saving) return
     setSaving(true)
@@ -116,6 +136,33 @@ export default function OrderConfirm() {
         ))}
 
         <SectionTitle title="收货人" />
+        {addresses.length > 0 && (
+          <div className="mb-2 space-y-2">
+            {addresses.map((a) => (
+              <button
+                key={a.id}
+                onClick={() => pickAddr(a)}
+                className={`w-full rounded-card p-3 text-left shadow-card transition ${
+                  selectedAddr === a.id ? 'border border-pink bg-pink/5' : 'bg-white'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] font-medium text-dark">{a.name}</span>
+                  <span className="text-[11px] text-sub">{a.phone}</span>
+                  {a.is_default ? (
+                    <span className="rounded-full bg-pink/10 px-2 py-0.5 text-[10px] text-pink">
+                      默认
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-[11px] text-ink">{a.address}</p>
+              </button>
+            ))}
+            <p className="text-[10px] text-sub">
+              选中地址已自动填入下方，也可手动修改；去「我的地址」管理
+            </p>
+          </div>
+        )}
         <div className="space-y-2 rounded-card bg-white p-4 shadow-card">
           <input
             value={recipient.name}

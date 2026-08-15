@@ -5,7 +5,7 @@ import { Pill } from '../components/Pill'
 import { Button } from '../components/Button'
 import { Placeholder } from '../components/Placeholder'
 import { IconHeart, IconStar } from '../components/icons'
-import { getPlan, addCart, createOrder } from '../api/shop'
+import { getPlan, addCart, createOrder, favoriteStatus, addFavorite, removeFavorite } from '../api/shop'
 import { getUserId } from '../api/chat'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
@@ -18,6 +18,7 @@ export default function ProductDetail() {
   const [product, setProduct] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [fav, setFav] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -25,10 +26,27 @@ export default function ProductDetail() {
       .then((p) => alive && setProduct(p))
       .catch((e) => alive && console.error('商品加载失败', e))
       .finally(() => alive && setLoading(false))
+    favoriteStatus(id)
+      .then((f) => alive && setFav(f))
+      .catch(() => {})
     return () => {
       alive = false
     }
   }, [id])
+
+  const toggleFav = async () => {
+    try {
+      if (fav) {
+        await removeFavorite(id)
+        setFav(false)
+      } else {
+        await addFavorite(id)
+        setFav(true)
+      }
+    } catch (e) {
+      alert('收藏操作失败：' + e.message)
+    }
+  }
 
   const onAddCart = async () => {
     if (!product || busy) return
@@ -86,8 +104,13 @@ export default function ProductDetail() {
       <TopBar
         title="商品详情"
         right={
-          <button className="text-dark" aria-label="收藏">
-            <IconHeart width={20} height={20} />
+          <button className="text-dark" aria-label="收藏" onClick={toggleFav}>
+            <IconHeart
+              width={20}
+              height={20}
+              filled={fav}
+              className={fav ? 'text-pink' : 'text-dark'}
+            />
           </button>
         }
       />

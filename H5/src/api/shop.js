@@ -133,6 +133,56 @@ export async function updateOrder(orderId, patch) {
   return data.order
 }
 
+// ---------------- 收货地址 ----------------
+
+export async function listAddresses() {
+  const data = await api('/addresses')
+  return data.addresses
+}
+
+export async function addAddress(payload) {
+  const data = await api('/addresses', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return data.address
+}
+
+export async function updateAddress(addrId, patch) {
+  const data = await api(`/addresses/${encodeURIComponent(addrId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  })
+  return data.address
+}
+
+export async function deleteAddress(addrId) {
+  await api(`/addresses/${encodeURIComponent(addrId)}`, { method: 'DELETE' })
+}
+
+// ---------------- 收藏 ----------------
+
+export async function listFavorites() {
+  const data = await api('/favorites')
+  return data
+}
+
+export async function addFavorite(planId) {
+  await api('/favorites', {
+    method: 'POST',
+    body: JSON.stringify({ plan_id: planId }),
+  })
+}
+
+export async function removeFavorite(planId) {
+  await api(`/favorites/${encodeURIComponent(planId)}`, { method: 'DELETE' })
+}
+
+export async function favoriteStatus(planId) {
+  const data = await api(`/favorites/${encodeURIComponent(planId)}/status`)
+  return data.favorited
+}
+
 // ---------------- 管理后台（方案 / 店铺 CRUD） ----------------
 
 export async function adminListPlans() {

@@ -7,7 +7,7 @@ import { FloraCorner, FloraSprig } from '../components/FloralDecor'
 import SectionTitle from '../components/SectionTitle'
 import { itemImagePath } from '../assets/imageMap'
 import { toast } from '../utils/toast'
-import { listOrders, orderAction, listCoupons, getPoints } from '../api/shop'
+import { listOrders, orderAction, listCoupons, getPoints, listFavorites } from '../api/shop'
 import {
   isLoggedIn,
   getUserId,
@@ -34,7 +34,14 @@ const STATS = [
   { label: '优惠券', value: 0 },
   { label: '积分', value: 0 },
 ]
-const FUNCTIONS = ['管理后台', '我的地址', '客服中心', '关于 FloraDIY', '设置']
+const FUNCTIONS = [
+  { label: '管理后台', path: '/admin' },
+  { label: '我的收藏', path: '/favorites' },
+  { label: '我的地址', path: '/addresses' },
+  { label: '客服中心', path: null },
+  { label: '关于 FloraDIY', path: null },
+  { label: '设置', path: null },
+]
 
 export default function Profile() {
   const nav = useNavigate()
@@ -47,6 +54,7 @@ export default function Profile() {
   const [expanded, setExpanded] = useState(null)
   const [couponCount, setCouponCount] = useState(0)
   const [points, setPoints] = useState(0)
+  const [favCount, setFavCount] = useState(0)
 
   useEffect(() => {
     if (isLoggedIn()) {
@@ -90,10 +98,11 @@ export default function Profile() {
 
   useEffect(() => {
     if (!isLoggedIn()) return
-    Promise.all([listCoupons(), getPoints()])
-      .then(([cs, ps]) => {
+    Promise.all([listCoupons(), getPoints(), listFavorites()])
+      .then(([cs, ps, favs]) => {
         setCouponCount(cs.filter((c) => c.status === 'unused').length)
         setPoints(ps.balance)
+        setFavCount(favs.count || 0)
       })
       .catch(() => {})
   }, [])
@@ -212,7 +221,15 @@ export default function Profile() {
         {STATS.map((s) => (
           <div key={s.label} className="flex flex-col items-center">
             <span className="text-[16px] font-medium text-dark">
-              {s.label === '订单' ? orders.length : s.label === '优惠券' ? couponCount : s.label === '积分' ? points : s.value}
+              {s.label === '订单'
+                ? orders.length
+                : s.label === '优惠券'
+                  ? couponCount
+                  : s.label === '积分'
+                    ? points
+                    : s.label === '收藏'
+                      ? favCount
+                      : s.value}
             </span>
             <span className="mt-1 text-[10px] text-sub">{s.label}</span>
           </div>
@@ -339,10 +356,10 @@ export default function Profile() {
         <div className="mt-3 overflow-hidden rounded-[12px] bg-white shadow-card">
           {FUNCTIONS.map((f, i) => (
             <div
-              key={f}
+              key={f.label}
               role="button"
               tabIndex={0}
-              onClick={() => (f === '管理后台' ? nav('/admin') : undefined)}
+              onClick={() => (f.path ? nav(f.path) : undefined)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') e.preventDefault()
               }}
@@ -350,7 +367,7 @@ export default function Profile() {
                 i < FUNCTIONS.length - 1 ? 'border-b border-line' : ''
               }`}
             >
-              <span className="text-[12px] text-ink">{f}</span>
+              <span className="text-[12px] text-ink">{f.label}</span>
               <IconArrow width={16} height={16} className="text-sub" />
             </div>
           ))}

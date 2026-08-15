@@ -159,6 +159,246 @@ def add_points(user_id: str, delta: int, reason: str, order_id: str = "") -> int
 
 
 # --------------------------------------------------------------------------- #
+# 收货地址
+# --------------------------------------------------------------------------- #
+
+
+def list_addresses(user_id: str) -> list[dict[str, Any]]:
+    """列出用户收货地址（默认地址排最前）。"""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM addresses WHERE user_id=? ORDER BY is_default DESC, created_at DESC",
+        (user_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_address(
+    user_id: str, name: str, phone: str, address: str, is_default: bool = False
+) -> dict[str, Any]:
+    """新增地址：首个地址自动设为默认；is_default=True 时清除其他默认。"""
+    conn = get_conn()
+    addr_id = "A_" + uuid.uuid4().hex[:10]
+    now = _now()
+    first = not conn.execute("SELECT 1 FROM addresses WHERE user_id=?", (user_id,)).fetchone()
+    if is_default or first:
+        conn.execute("UPDATE addresses SET is_default=0 WHERE user_id=?", (user_id,))
+    conn.execute(
+        """INSERT INTO addresses (id, user_id, name, phone, address, is_default, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (addr_id, user_id, name, phone, address, 1 if (is_default or first) else 0, now, now),
+    )
+    conn.commit()
+    return dict(conn.execute("SELECT * FROM addresses WHERE id=?", (addr_id,)).fetchone())
+
+
+def update_address(
+    addr_id: str, user_id: str,
+    name: str | None = None, phone: str | None = None,
+    address: str | None = None, is_default: bool | None = None,
+) -> dict[str, Any] | None:
+    """更新地址（仅本人）；is_default=True 时清除该用户其他默认。"""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM addresses WHERE id=? AND user_id=?", (addr_id, user_id)
+    ).fetchone()
+    if not row:
+        return None
+    sets: list[str] = []
+    vals: list[Any] = []
+    for col, val in (("name", name), ("phone", phone), ("address", address)):
+        if val is not None:
+            sets.append(f"{col}=?")
+            vals.append(val)
+    if is_default is True:
+        conn.execute("UPDATE addresses SET is_default=0 WHERE user_id=?", (row["user_id"],))
+        sets.append("is_default=1")
+    elif is_default is False:
+        sets.append("is_default=0")
+    sets.append("updated_at=?")
+    vals.append(_now())
+    if sets:
+        conn.execute(
+            f"UPDATE addresses SET {', '.join(sets)} WHERE id=? AND user_id=?",
+            vals + [addr_id, user_id],
+        )
+        conn.commit()
+    return dict(conn.execute("SELECT * FROM addresses WHERE id=?", (addr_id,)).fetchone())
+
+
+def delete_address(addr_id: str, user_id: str) -> bool:
+    """删除地址（仅本人）；被删的是默认地址时，自动把最新一条设为默认。"""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM addresses WHERE id=? AND user_id=?", (addr_id, user_id)
+    ).fetchone()
+    if not row:
+        return False
+    conn.execute("DELETE FROM addresses WHERE id=?", (addr_id,))
+    if row["is_default"]:
+        nxt = conn.execute(
+            "SELECT id FROM addresses WHERE user_id=? ORDER BY created_at DESC LIMIT 1",
+            (row["user_id"],),
+        ).fetchone()
+        if nxt:
+            conn.execute("UPDATE addresses SET is_default=1 WHERE id=?", (nxt["id"],))
+    conn.commit()
+    return True
+
+
+def get_default_address(user_id: str) -> dict[str, Any] | None:
+    """读取默认地址（无默认则取最新一条，用于下单预填）。"""
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT * FROM addresses WHERE user_id=?
+           ORDER BY is_default DESC, created_at DESC LIMIT 1""",
+        (user_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+# --------------------------------------------------------------------------- #
+# 收藏
+# --------------------------------------------------------------------------- #
+
+
+def add_favorite(user_id: str, plan_id: str) -> bool:
+    """收藏方案（幂等：已收藏不报错），返回是否新增。"""
+    conn = get_conn()
+    cur = conn.execute(
+        """INSERT OR IGNORE INTO favorites (user_id, plan_id, created_at) VALUES (?,?,?)""",
+        (user_id, plan_id, _now()),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def remove_favorite(user_id: str, plan_id: str) -> bool:
+    """取消收藏，返回是否删到了。"""
+    conn = get_conn()
+    cur = conn.execute(
+        "DELETE FROM favorites WHERE user_id=? AND plan_id=?", (user_id, plan_id)
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def list_favorites(user_id: str) -> list[dict[str, Any]]:
+    """列出收藏（新→旧，附方案详情供前端直接渲染）。"""
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT f.plan_id, f.created_at, p.name, p.price, p.effect_image_url,
+                  p.merchant_name, p.desc
+           FROM favorites f LEFT JOIN plans p ON p.id = f.plan_id
+           WHERE f.user_id=? ORDER BY f.created_at DESC""",
+        (user_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def is_favorite(user_id: str, plan_id: str) -> bool:
+    conn = get_conn()
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM favorites WHERE user_id=? AND plan_id=?", (user_id, plan_id)
+        ).fetchone()
+    )
+
+
+def count_favorites(user_id: str) -> int:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT COUNT(*) FROM favorites WHERE user_id=?", (user_id,)
+    ).fetchone()
+    return int(row[0])
+
+
+# --------------------------------------------------------------------------- #
+# 商家端（店铺维度经营数据）
+# --------------------------------------------------------------------------- #
+
+
+def merchant_stats(shop_id: str = "") -> dict[str, Any]:
+    """店铺维度经营统计：订单数 / GMV / 待发货 / 已完成 / 评价数。
+
+    Args:
+        shop_id: 店铺名或店铺 id（orders.shop_id 存的是商家名快照），空则汇总全部店铺。
+    """
+    conn = get_conn()
+    where = "WHERE shop_id=?" if shop_id else ""
+    args: tuple[Any, ...] = (shop_id,) if shop_id else ()
+    total = conn.execute(f"SELECT COUNT(*), COALESCE(SUM(total_price),0) FROM orders {where}", args).fetchone()
+    and_sql = " AND status='paid'" if shop_id else " WHERE status='paid'"
+    pending = conn.execute(
+        f"SELECT COUNT(*) FROM orders {where}{and_sql}", args
+    ).fetchone()[0]
+    and_sql = " AND status='done'" if shop_id else " WHERE status='done'"
+    done = conn.execute(
+        f"SELECT COUNT(*) FROM orders {where}{and_sql}", args
+    ).fetchone()[0]
+    and_sql = " AND status='canceled'" if shop_id else " WHERE status='canceled'"
+    canceled = conn.execute(
+        f"SELECT COUNT(*) FROM orders {where}{and_sql}", args
+    ).fetchone()[0]
+    rev = conn.execute(
+        """SELECT COUNT(*), COALESCE(AVG(r.rating),0) FROM reviews r
+           LEFT JOIN orders o ON o.order_id = r.order_id
+           WHERE o.shop_id = COALESCE(?, o.shop_id)""",
+        (shop_id or None,),
+    ).fetchone()
+    shops = conn.execute("SELECT id, name FROM shops ORDER BY created_at").fetchall()
+    return {
+        "order_count": int(total[0]),
+        "gmv": float(total[1] or 0),
+        "pending_ship": int(pending),
+        "done_count": int(done),
+        "canceled_count": int(canceled),
+        "review_count": int(rev[0]),
+        "avg_rating": float(rev[1] or 0),
+        "shops": [dict(s) for s in shops],
+    }
+
+
+def merchant_orders(shop_id: str = "", status: str = "", limit: int = 50) -> list[dict[str, Any]]:
+    """商家视角订单列表（任意用户，可按店铺/状态过滤）。"""
+    conn = get_conn()
+    sql = "SELECT order_id FROM orders WHERE 1=1"
+    args: list[Any] = []
+    if shop_id:
+        sql += " AND shop_id=?"
+        args.append(shop_id)
+    if status:
+        sql += " AND status=?"
+        args.append(status)
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    args.append(limit)
+    rows = conn.execute(sql, args).fetchall()
+    return [get_order(r["order_id"]) for r in rows]
+
+
+def merchant_ship(order_id: str) -> dict[str, Any] | None:
+    """商家代发货（不受订单归属限制）：paid -> shipped。"""
+    return ship_order(order_id)
+
+
+def merchant_reviews(shop_id: str = "") -> list[dict[str, Any]]:
+    """店铺维度评价列表（关联订单取收货信息；空 shop_id 返回全部）。"""
+    conn = get_conn()
+    if shop_id:
+        rows = conn.execute(
+            """SELECT r.* FROM reviews r
+               JOIN orders o ON o.order_id = r.order_id
+               WHERE o.shop_id=? ORDER BY r.created_at DESC LIMIT 100""",
+            (shop_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM reviews ORDER BY created_at DESC LIMIT 100"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --------------------------------------------------------------------------- #
 # 购物车
 # --------------------------------------------------------------------------- #
 
@@ -255,8 +495,13 @@ def create_order(
     recipient: dict[str, Any] | None = None,
     delivery: str | None = None,
     note: str | None = None,
+    address_id: str | None = None,
 ) -> dict[str, Any]:
-    """创建订单：计算总额、自动抵扣最优优惠券、落库（含收货信息），并从购物车移除带 item_id 的项。"""
+    """创建订单：计算总额、自动抵扣最优优惠券、落库（含收货信息），并从购物车移除带 item_id 的项。
+
+    Args:
+        address_id: 收货地址 id（用户已存地址时传此即可）；未传或找不到时回退 recipient 手填。
+    """
     conn = get_conn()
     total = sum(float(it.get("price", 0)) * int(it.get("qty", 1)) for it in items)
     order_id = "O_" + uuid.uuid4().hex[:10]
@@ -266,11 +511,19 @@ def create_order(
     rname = r.get("name") or r.get("recipient_name")
     rphone = r.get("phone") or r.get("recipient_phone")
     raddr = r.get("address") or r.get("recipient_address")
+    saved_addr = None
+    if address_id:
+        saved_addr = conn.execute(
+            "SELECT * FROM addresses WHERE id=? AND user_id=?", (address_id, user_id)
+        ).fetchone()
+    if saved_addr:
+        rname, rphone, raddr = saved_addr["name"], saved_addr["phone"], saved_addr["address"]
     conn.execute(
         """INSERT INTO orders
            (order_id, user_id, plan_id, plan_type, shop_id, items, total_price,
-            paid, status, recipient_name, recipient_phone, recipient_address, delivery_time, note, created_at)
-           VALUES (?,?,?,?,?,?,?,0,'created',?,?,?,?,?,?)""",
+            paid, status, address_id, recipient_name, recipient_phone, recipient_address,
+            delivery_time, note, created_at)
+           VALUES (?,?,?,?,?,?,?,0,'created',?,?,?,?,?,?,?)""",
         (
             order_id,
             user_id,
@@ -279,6 +532,7 @@ def create_order(
             first.get("shop"),
             json.dumps(items, ensure_ascii=False),
             total,
+            saved_addr["id"] if saved_addr else None,
             rname,
             rphone,
             raddr,
