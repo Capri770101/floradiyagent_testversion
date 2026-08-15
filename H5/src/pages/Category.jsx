@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Placeholder } from '../components/Placeholder'
 import { Pill } from '../components/Pill'
-import { IconSearch, IconArrow } from '../components/icons'
+import { IconSearch, IconArrow, IconStore } from '../components/icons'
 import SectionTitle from '../components/SectionTitle'
 import { listPlans } from '../api/shop'
 import { imgColor } from '../utils/color'
@@ -111,7 +111,7 @@ export default function Category() {
       </div>
 
       {/* 搜索条（实时过滤精选） */}
-      <div className="mx-5 mt-4 flex h-[44px] items-center gap-2 rounded-[22px] bg-white px-4">
+      <div className="mx-5 mt-4 flex h-[44px] items-center gap-2 rounded-[4px] bg-white px-4">
         <IconSearch width={16} height={16} className="text-sub" />
         <input
           value={query}
@@ -132,7 +132,7 @@ export default function Category() {
               className="flex flex-col items-center gap-1.5"
             >
               <div
-                className={`flex h-[44px] w-[44px] items-center justify-center rounded-[12px] bg-white transition ${
+                className={`flex h-[44px] w-[44px] items-center justify-center rounded-[4px] bg-white transition ${
                   cat === i ? 'ring-2 ring-pink' : ''
                 }`}
               >
@@ -176,12 +176,12 @@ export default function Category() {
                   nav(`/product/${f.id}`)
                 }
               }}
-              className="press flex cursor-pointer items-center gap-3 rounded-card bg-white p-3 shadow-card"
+              className="press flex cursor-pointer items-center gap-3 rounded-card bg-white p-3 border border-line"
             >
               <SmartImage
                 src={itemImagePath('category', f.id)}
                 color={imgColor(f.id)}
-                className="h-[60px] w-[78px] rounded-[12px]"
+                className="h-[60px] w-[78px] rounded-[4px]"
               />
               <div className="flex-1">
                 <p className="text-[13px] font-medium text-ink">{f.name}</p>
@@ -193,9 +193,10 @@ export default function Category() {
                       e.stopPropagation()
                       nav(`/shop/${f.shop_id}`)
                     }}
-                    className="mt-1 flex items-center gap-0.5 text-[10px] text-pink"
+                    className="mt-1 flex items-center gap-0.5 text-[10px] text-gold"
                   >
-                    🏪 {f.merchant_name || '花店'}
+                    <IconStore width={11} height={11} />
+                    {f.merchant_name || '花店'}
                     <IconArrow width={9} height={9} />
                   </button>
                 )}

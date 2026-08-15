@@ -123,7 +123,7 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
   }, [img?.task_id, img?.result_url])
 
   return (
-    <div className="animate-fade-up mt-2 overflow-hidden rounded-card-lg bg-white shadow-card">
+    <div className="animate-fade-up mt-2 overflow-hidden rounded-card-lg bg-white border border-line">
       {/* 头部：方案名 + 价格，点击展开/收起 */}
       <button
         onClick={() => setOpen((v) => !v)}
@@ -170,7 +170,7 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
             <SmartImage
               src={imgState.status === 'done' ? imgState.url : null}
               imgKey="diy_main"
-              className="h-[104px] w-[92px] shrink-0 rounded-[14px]"
+              className="h-[104px] w-[92px] shrink-0 rounded-[4px]"
               alt="方案效果图"
             />
             <div className="flex-1">
@@ -301,7 +301,7 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
 
           {/* 内联调整面板：预算 / 风格 / 花材增删，直接改方案不走打字 */}
           {editMode && (
-            <div className="mt-3 rounded-[12px] bg-bg p-3">
+            <div className="mt-3 rounded-[4px] bg-bg p-3">
               <div className="flex items-center gap-2">
                 <span className="shrink-0 text-[12px] text-sub">预算</span>
                 <input
@@ -309,7 +309,7 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
                   onChange={(e) => setBudget(e.target.value.replace(/\D/g, ''))}
                   placeholder={p.price != null ? `当前 ¥${p.price}` : '输入预算'}
                   inputMode="numeric"
-                  className="w-24 rounded-[8px] border border-line bg-white px-2 py-1.5 text-[12px] text-ink outline-none placeholder:text-sub"
+                  className="w-24 rounded-[2px] border border-line bg-white px-2 py-1.5 text-[12px] text-ink outline-none placeholder:text-sub"
                 />
                 <span className="text-[12px] text-sub">元</span>
               </div>
@@ -367,7 +367,7 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
                   onChange={(e) => setAddFlower(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && setAddFlower('')}
                   placeholder="添加花材，如：洋桔梗、郁金香"
-                  className="mt-1.5 w-full rounded-[8px] border border-line bg-white px-2 py-1.5 text-[12px] text-ink outline-none placeholder:text-sub"
+                  className="mt-1.5 w-full rounded-[2px] border border-line bg-white px-2 py-1.5 text-[12px] text-ink outline-none placeholder:text-sub"
                 />
               </div>
             </div>

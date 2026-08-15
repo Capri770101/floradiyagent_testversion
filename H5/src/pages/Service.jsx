@@ -17,13 +17,13 @@ export default function Service() {
         <h2 className="text-[16px] font-medium text-dark">常见问题</h2>
         <div className="mt-3 space-y-3">
           {FAQS.map((f) => (
-            <div key={f.q} className="rounded-card bg-white p-4 shadow-card">
+            <div key={f.q} className="rounded-card bg-white p-4 border border-line">
               <p className="text-[13px] font-medium text-dark">Q：{f.q}</p>
               <p className="mt-1.5 text-[12px] leading-relaxed text-sub">A：{f.a}</p>
             </div>
           ))}
         </div>
-        <div className="mt-6 rounded-card bg-white p-4 shadow-card">
+        <div className="mt-6 rounded-card bg-white p-4 border border-line">
           <p className="text-[13px] font-medium text-dark">联系客服</p>
           <p className="mt-1.5 text-[12px] leading-relaxed text-sub">
             服务时间：每日 9:00 - 21:00

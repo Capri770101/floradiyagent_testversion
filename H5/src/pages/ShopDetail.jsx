@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
-import { IconStar, IconCart, IconPlus, IconArrow } from '../components/icons'
+import { IconStar, IconCart, IconPlus, IconArrow, IconClock, IconPin } from '../components/icons'
 import { getShop, getCart, addCart, updateCart, removeCart } from '../api/shop'
 import { getUserId } from '../api/chat'
 import { PLACEHOLDER } from '../tokens'
@@ -69,9 +69,15 @@ function ShopHeader({ shop, noticeOpen, onToggleNotice }) {
           </p>
         )}
         {/* 营业时间 / 地址 */}
-        <div className="mt-2 flex items-center gap-2 border-t border-line pt-2 text-[11px] text-sub">
-          <span>🕘 {shop.hours}</span>
-          <span className="truncate">📍 {shop.address}</span>
+        <div className="mt-2 flex items-center gap-3 border-t border-line pt-2 text-[11px] text-sub">
+          <span className="flex items-center gap-1">
+            <IconClock width={12} height={12} className="text-gold" />
+            {shop.hours}
+          </span>
+          <span className="flex min-w-0 items-center gap-1 truncate">
+            <IconPin width={12} height={12} className="shrink-0 text-gold" />
+            <span className="truncate">{shop.address}</span>
+          </span>
         </div>
       </div>
     </div>
@@ -84,7 +90,7 @@ function ProductRow({ item, qty, onAdd, onDec, onInc }) {
       <SmartImage
         src={itemImagePath('plans', item.id)}
         color={imgColor(item.id)}
-        className="h-[76px] w-[76px] shrink-0 rounded-[12px]"
+        className="h-[76px] w-[76px] shrink-0 rounded-[4px]"
       />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[14px] font-medium text-dark">{item.name}</p>
@@ -269,8 +275,8 @@ export default function ShopDetail() {
       <div className="flex h-full flex-col bg-bg">
         <TopBar title="店铺" />
         <div className="flex-1 p-5">
-          <div className="h-[132px] animate-pulse rounded-[16px] bg-line" />
-          <div className="mt-3 h-[120px] animate-pulse rounded-[16px] bg-line" />
+          <div className="h-[132px] animate-pulse rounded-[4px] bg-line" />
+          <div className="mt-3 h-[120px] animate-pulse rounded-[4px] bg-line" />
         </div>
       </div>
     )
@@ -335,12 +341,12 @@ export default function ShopDetail() {
         </div>
       </div>
 
-      {/* 底部悬浮购物车条 */}
+      {/* 底部吸底结算栏（Maison：墨黑底 + 香槟金 CTA） */}
       <div className="shrink-0 bg-white px-4 pb-3 pt-2">
-        <div className="flex items-center justify-between rounded-full bg-dark py-1.5 pl-3 pr-1.5 shadow-card">
+        <div className="flex items-center justify-between rounded-[2px] bg-dark py-2 pl-3 pr-1.5">
           <div className="flex items-center gap-2">
             <div className="relative">
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-pink text-white">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gold text-white">
                 <IconCart width={19} height={19} />
               </span>
               {count > 0 && (
@@ -368,8 +374,8 @@ export default function ShopDetail() {
           <button
             onClick={() => nav('/cart')}
             disabled={count === 0}
-            className={`flex h-9 items-center rounded-full px-5 text-[13px] font-medium ${
-              count > 0 ? 'bg-pink text-white' : 'bg-line text-sub'
+            className={`flex h-9 items-center rounded-[2px] px-5 text-[13px] font-medium tracking-wide ${
+              count > 0 ? 'bg-gold text-[#FAF8F5]' : 'bg-line text-sub'
             }`}
           >
             去结算

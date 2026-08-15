@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IconArrow, IconStar } from '../components/icons'
-import { FloraCorner, FloraSprig } from '../components/FloralDecor'
+import { IconArrow, IconStar, IconPin, IconStore } from '../components/icons'
 import SectionTitle from '../components/SectionTitle'
 import LocationPicker from '../components/LocationPicker'
 import { listPlans, listShops } from '../api/shop'
@@ -47,45 +46,47 @@ export default function Home() {
 
   return (
     <div className="min-h-full bg-bg pb-8">
-      <div className="px-5 pt-7">
-        <h1 className="font-serif-cn text-[25px] font-medium text-dark">FloraDIY</h1>
-        <p className="mt-1 text-[12px] text-sub">AI帮你设计专属花束</p>
+      {/* 品牌头：MAISON·FLORA 衬线 logo + 法文副标 */}
+      <div className="px-5 pt-8">
+        <p className="eyebrow">Atelier de Fleurs</p>
+        <h1 className="mt-1 font-serif-cn text-[30px] font-normal leading-none tracking-wide text-ink">
+          MAISON·FLORA
+        </h1>
+        <p className="mt-2 text-[12px] text-sub">轻奢花艺 · AI 专属设计</p>
       </div>
 
       {/* 定位栏：显示当前位置，点击重新选择 */}
       <button
         onClick={() => setPickerOpen(true)}
-        className="press mx-5 mt-3 flex h-[34px] w-fit items-center gap-1 rounded-full bg-white px-3 text-[11px] text-ink shadow-card"
+        className="press mx-5 mt-4 flex h-[36px] w-fit items-center gap-1.5 rounded-[2px] border border-line bg-white px-3 text-[11px] text-ink"
       >
-        <span className="text-[12px]">📍</span>
+        <IconPin width={13} height={13} className="text-gold" />
         <span className="max-w-[130px] truncate font-medium">{locationName() || '选择位置'}</span>
         <IconArrow width={10} height={10} className="rotate-90 text-sub" />
       </button>
 
-      {/* Hero Banner —— 文艺封面：暖渐变 + 角落花枝 + 衬线标题 */}
-      <div className="hero-flora relative mx-5 mt-3 overflow-hidden rounded-[24px] p-4 shadow-soft">
-        <FloraCorner
-          className="pointer-events-none absolute -right-3 -top-2 text-white/55"
-          style={{ width: 110, height: 110 }}
-        />
-        <FloraSprig
-          className="pointer-events-none absolute bottom-2 right-3 text-pink/30"
-          style={{ width: 64, height: 64 }}
-        />
-        <p className="font-serif-cn text-[22px] font-medium leading-tight text-dark">为生活</p>
-        <p className="font-serif-cn text-[22px] font-medium leading-tight text-dark">增添一束浪漫</p>
-        <p className="mt-2 text-[12px] text-sub">智能推荐 · 专属设计 · 送花无忧</p>
+      {/* Hero —— Maison 主视觉：象牙白 + 衬线大字 + 金色短线 */}
+      <div className="hero-flora relative mx-5 mt-4 overflow-hidden rounded-[4px] p-6">
+        <p className="eyebrow">Signature Bouquets</p>
+        <p className="mt-3 font-serif-cn text-[26px] font-normal leading-snug text-ink">
+          把时间，温柔地
+          <br />
+          交还给一朵花
+        </p>
+        <div className="mt-4 h-[2px] w-10 bg-gold" />
+        <p className="mt-3 text-[12px] text-sub">智能推荐 · 专属设计 · 送花无忧</p>
         <button
           onClick={() => nav('/agent')}
-          className="press mt-4 inline-flex h-[42px] w-[118px] items-center justify-center rounded-btn bg-pink text-[14px] font-medium text-white"
+          className="press mt-5 inline-flex h-[44px] w-[132px] items-center justify-center rounded-[2px] bg-dark text-[14px] font-medium tracking-wide text-[#FAF8F5]"
         >
           开始对话
         </button>
       </div>
 
       {/* 今日推荐 */}
-      <div className="mt-7 px-5">
+      <div className="mt-12 px-5">
         <SectionTitle
+          eyebrow="Curation"
           title="今日推荐"
           action={
             <button
@@ -96,10 +97,10 @@ export default function Home() {
             </button>
           }
         />
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-5 grid grid-cols-3 gap-2">
           {loading
             ? Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-[120px] animate-pulse rounded-[10px] bg-line" />
+                <div key={i} className="h-[120px] animate-pulse rounded-[2px] bg-line" />
               ))
             : plans.slice(0, 3).map((p) => (
                 <div
@@ -113,12 +114,12 @@ export default function Home() {
                       nav(`/product/${p.id}`)
                     }
                   }}
-                  className="press cursor-pointer rounded-[12px] bg-white p-2 shadow-card"
+                  className="press cursor-pointer rounded-[2px] bg-white p-2 border border-line"
                 >
                   <SmartImage
                     src={itemImagePath('plans', p.id)}
                     color={imgColor(p.id)}
-                    className="h-[68px] w-full rounded-[10px]"
+                    className="h-[68px] w-full rounded-[4px]"
                   />
                   <p className="mt-2 truncate text-[11px] text-ink">{p.name}</p>
                   <p className="text-[12px] font-medium text-pink">¥{p.price}</p>
@@ -131,7 +132,7 @@ export default function Home() {
                       }}
                       className="mt-1 flex w-full items-center gap-0.5 truncate text-[9px] text-sub"
                     >
-                      <span className="shrink-0">🏪</span>
+                      <IconStore width={9} height={9} className="shrink-0 text-gold" />
                       <span className="truncate">{p.merchant_name || '花店'}</span>
                       <IconArrow width={8} height={8} className="shrink-0" />
                     </button>
@@ -142,9 +143,9 @@ export default function Home() {
       </div>
 
       {/* 热门商家 */}
-      <div className="mt-8 px-5">
-        <SectionTitle title="热门商家" />
-        <div className="mt-3 space-y-3">
+      <div className="mt-12 px-5">
+        <SectionTitle eyebrow="Maisons" title="热门商家" />
+        <div className="mt-5 space-y-3">
           {loading
             ? Array.from({ length: 2 }).map((_, i) => (
                 <div key={i} className="h-[60px] animate-pulse rounded-card bg-line" />
@@ -161,12 +162,12 @@ export default function Home() {
                       nav(`/shop/${s.id}`)
                     }
                   }}
-                  className="press flex cursor-pointer items-center gap-3 rounded-card bg-white p-3 shadow-card"
+                  className="press flex cursor-pointer items-center gap-3 rounded-card bg-white p-3 border border-line"
                 >
                   <SmartImage
                     src={itemImagePath('shops', s.id)}
                     color={imgColor(s.id)}
-                    className="h-[44px] w-[54px] rounded-[10px]"
+                    className="h-[44px] w-[54px] rounded-[4px]"
                   />
                   <div className="flex-1">
                     <p className="text-[13px] font-medium text-ink">{s.name}</p>

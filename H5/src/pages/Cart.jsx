@@ -85,11 +85,11 @@ export default function Cart() {
           {items.map((it) => (
             <div
               key={it.item_id}
-              className="flex items-center gap-3 rounded-card bg-white p-3 shadow-card"
+              className="flex items-center gap-3 rounded-card bg-white p-3 border border-line"
             >
               <button
                 onClick={() => toggle(it)}
-                className={`flex h-[18px] w-[18px] items-center justify-center rounded-[5px] ${
+                className={`flex h-[18px] w-[18px] items-center justify-center rounded-[2px] ${
                   it.selected ? 'bg-pink text-white' : 'border border-sub text-transparent'
                 }`}
                 aria-label="选择"
@@ -99,7 +99,7 @@ export default function Cart() {
               <SmartImage
                 src={itemImagePath('plans', it.plan_id)}
                 color={imgColor(it.plan_id)}
-                className="h-[62px] w-[62px] rounded-[10px]"
+                className="h-[62px] w-[62px] rounded-[4px]"
               />
               <div className="flex-1">
                 <p className="text-[11px] text-sub">{it.shop || '精选花店'}</p>

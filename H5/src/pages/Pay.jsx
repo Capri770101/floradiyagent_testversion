@@ -103,7 +103,7 @@ export default function Pay() {
             </div>
 
             <h2 className="mt-8 px-1 text-[15px] font-medium text-dark">金额明细</h2>
-            <div className="mt-2 rounded-card bg-white p-4 text-[12px] shadow-card">
+            <div className="mt-2 rounded-card bg-white p-4 text-[12px] border border-line">
               <div className="flex justify-between py-1 text-sub">
                 <span>商品金额</span>
                 <span className="text-ink">¥{Number(order.total_price || 0).toFixed(2)}</span>
@@ -136,10 +136,10 @@ export default function Pay() {
             {recipient.address ? ` · ${recipient.address}` : ''}
           </p>
         )}
-        <p className="mt-1 px-1 text-[12px] text-sub">收款方 FloraDIY</p>
+        <p className="mt-1 px-1 text-[12px] text-sub">收款方 MAISON·FLORA</p>
 
         <h2 className="mt-7 px-1 text-[15px] font-medium text-dark">支付方式</h2>
-        <div className="mt-2 overflow-hidden rounded-card bg-white shadow-card">
+        <div className="mt-2 overflow-hidden rounded-card bg-white border border-line">
           {PAY_METHODS.map((m, i) => (
             <button
               key={m.id}

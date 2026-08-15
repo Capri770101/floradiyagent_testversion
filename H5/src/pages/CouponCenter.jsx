@@ -79,14 +79,14 @@ export default function CouponCenter() {
       <div className="flex-1 overflow-y-auto px-4 pt-3 pb-6">
         {tab === 'offers' ? (
           offers.length === 0 ? (
-            <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub shadow-card">
+            <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
               暂无可领取的优惠券
             </p>
           ) : (
             offers.map((o) => {
               const soldOut = o.stock === 0
               return (
-                <div key={o.id} className="mb-3 flex items-center gap-3 rounded-card bg-white p-4 shadow-card">
+                <div key={o.id} className="mb-3 flex items-center gap-3 rounded-card bg-white p-4 border border-line">
                   <div className="min-w-0 flex-1">
                     <p className="text-[14px] font-medium text-dark">{o.title}</p>
                     <p className="mt-0.5 text-[11px] text-sub">
@@ -109,12 +109,12 @@ export default function CouponCenter() {
           )
         ) : loggedIn ? (
           coupons.length === 0 ? (
-            <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub shadow-card">
+            <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
               还没有优惠券，去领券中心看看吧
             </p>
           ) : (
             coupons.map((c) => (
-              <div key={c.id} className="mb-3 flex items-center justify-between rounded-card bg-white p-4 shadow-card">
+              <div key={c.id} className="mb-3 flex items-center justify-between rounded-card bg-white p-4 border border-line">
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-medium text-dark">{c.title}</p>
                   <p className="mt-0.5 text-[11px] text-sub">
@@ -134,7 +134,7 @@ export default function CouponCenter() {
             ))
           )
         ) : (
-          <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub shadow-card">
+          <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
             登录后查看我的券
           </p>
         )}

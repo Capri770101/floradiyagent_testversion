@@ -120,12 +120,12 @@ export default function OrderConfirm() {
         {order.items.map((it, i) => (
           <div
             key={i}
-            className="flex items-center gap-3 rounded-card bg-white p-3 shadow-card"
+            className="flex items-center gap-3 rounded-card bg-white p-3 border border-line"
           >
             <SmartImage
               src={itemImagePath('plans', it.plan_id)}
               color={imgColor(it.plan_id || it.name)}
-              className="h-[62px] w-[62px] rounded-[10px]"
+              className="h-[62px] w-[62px] rounded-[4px]"
             />
             <div className="flex-1">
               <p className="text-[13px] font-medium text-ink">{it.name}</p>
@@ -142,7 +142,7 @@ export default function OrderConfirm() {
               <button
                 key={a.id}
                 onClick={() => pickAddr(a)}
-                className={`w-full rounded-card p-3 text-left shadow-card transition ${
+                className={`w-full rounded-card p-3 text-left border border-line transition ${
                   selectedAddr === a.id ? 'border border-pink bg-pink/5' : 'bg-white'
                 }`}
               >
@@ -163,25 +163,25 @@ export default function OrderConfirm() {
             </p>
           </div>
         )}
-        <div className="space-y-2 rounded-card bg-white p-4 shadow-card">
+        <div className="space-y-2 rounded-card bg-white p-4 border border-line">
           <input
             value={recipient.name}
             onChange={(e) => setRecipient({ ...recipient, name: e.target.value })}
             placeholder="收货人姓名"
-            className="w-full rounded-[10px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
+            className="w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
           />
           <input
             value={recipient.phone}
             onChange={(e) => setRecipient({ ...recipient, phone: e.target.value })}
             placeholder="手机号"
             inputMode="tel"
-            className="w-full rounded-[10px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
+            className="w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
           />
           <input
             value={recipient.address}
             onChange={(e) => setRecipient({ ...recipient, address: e.target.value })}
             placeholder="收货地址"
-            className="w-full rounded-[10px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
+            className="w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
           />
         </div>
 
@@ -194,7 +194,7 @@ export default function OrderConfirm() {
               className={`rounded-pill px-3 py-1.5 text-[12px] transition ${
                 delivery === opt
                   ? 'bg-pink text-white'
-                  : 'bg-white text-sub shadow-card'
+                  : 'bg-white text-sub border border-line'
               }`}
             >
               {opt}
@@ -203,7 +203,7 @@ export default function OrderConfirm() {
         </div>
 
         <SectionTitle title="订单备注" />
-        <div className="rounded-card bg-white p-4 shadow-card">
+        <div className="rounded-card bg-white p-4 border border-line">
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
@@ -212,7 +212,7 @@ export default function OrderConfirm() {
           />
         </div>
 
-        <div className="mt-4 space-y-2 rounded-card bg-white p-4 text-[12px] shadow-card">
+        <div className="mt-4 space-y-2 rounded-card bg-white p-4 text-[12px] border border-line">
           <Row label="商品金额" value={`¥${order.total_price}`} />
           <Row label="配送费" value={`¥20`} />
           <Row

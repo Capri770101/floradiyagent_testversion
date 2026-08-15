@@ -1,7 +1,10 @@
 import React from 'react'
 
-// 按钮：primary（粉底白字）/ secondary（白底粉字描边），来自规范 §2.1
-// 规格：高 42，圆角 21
+// 按钮（Maison 规范 §5）：
+// primary  = 香槟金实底 + 象牙白字（或墨黑实底）
+// secondary = 白底 + 0.5px 墨黑描边
+// subtle   = 砂色底 + 深古铜字
+// 圆角 2px，字间距 1px，无投影
 export function Button({
   children,
   variant = 'primary',
@@ -10,11 +13,13 @@ export function Button({
   ...rest
 }) {
   const base =
-    'press inline-flex items-center justify-center h-[42px] rounded-btn text-[14px] font-medium transition disabled:opacity-50 disabled:pointer-events-none'
+    'press inline-flex items-center justify-center h-[42px] rounded-btn text-[14px] font-medium tracking-wide transition disabled:opacity-50 disabled:pointer-events-none'
   const styles =
     variant === 'primary'
-      ? 'bg-pink text-white'
-      : 'bg-white text-pink border border-pink'
+      ? 'bg-dark text-[#FAF8F5]'
+      : variant === 'subtle'
+        ? 'bg-sand text-gold-dark'
+        : 'bg-white text-ink border border-ink'
   return (
     <button
       className={`${base} ${styles} ${full ? 'w-full' : ''} ${className}`}

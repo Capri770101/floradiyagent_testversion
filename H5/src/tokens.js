@@ -1,37 +1,42 @@
-// 设计令牌 —— 严格对齐 DESIGN_SPEC_H5.md §1
+// 设计令牌 —— Maison Flora 轻奢规范（maison-flora-design-prompt.md §2/§4）
 // 颜色 / 圆角 / 字号 / 占位色 全部来自规范，避免散落硬编码。
 
 export const COLORS = {
-  bg: '#F8F6F2',
+  bg: '#FAF8F5',       // 象牙白
   white: '#FFFFFF',
-  ink: '#333333',
-  sub: '#999999',
-  pink: '#E88AA1',
-  pink2: '#F6DDE3',
-  green: '#A7C5AE',
-  cream: '#F7C99C',
-  line: '#E8E2DC',
-  dark: '#343434',
+  ink: '#1A1A1A',      // 墨黑
+  sub: '#6B6B6B',      // 石板灰
+  pink: '#B5985A',     // 香槟金（主色）
+  pink2: '#F0EBE3',    // 砂色
+  green: '#A0947C',    // 暖灰褐（状态）
+  cream: '#C9A96A',    // 浅金
+  line: '#D4CFC6',     // 石色细描边
+  dark: '#1A1A1A',     // 墨黑
+  gold: '#B5985A',
+  goldDark: '#6B5630',
+  burgundy: '#722F37',
+  sand: '#F0EBE3',
+  stone: '#8B8680',
 }
 
-// §1.1 图片占位色：无真实素材时使用纯色块（非外部 URL，符合前端规范）
+// 图片占位色：无真实素材时使用低饱和暖调色块（Maison 风格）
 export const PLACEHOLDER = {
-  homeBanner: '#F2E2DB',
-  homeRec: ['#E9C3C9', '#E9B7C4', '#F0C58B'],
-  agentPlan: '#E8BFC8',
-  diyMain: '#E5C8C5',
-  productBig: '#E4C3C6',
-  shopCover: '#B9A18D',
-  shopLogo: ['#A98B72', '#BBAA98'],
-  avatar: '#E8C8CC',
-  orderItem: ['#E7C0C7', '#E8C0C6'],
-  cartItem: ['#E8C0C6', '#EFC78D'],
-  guessLike: ['#F0C58B', '#E9C6CB'],
-  catFeature: ['#E8BFC8', '#EFC78D'],
+  homeBanner: '#EFE9DE',
+  homeRec: ['#E8E0D2', '#E5DCCB', '#EDE2CE'],
+  agentPlan: '#E9E1D3',
+  diyMain: '#EBE3D6',
+  productBig: '#EAE2D4',
+  shopCover: '#DED4C2',
+  shopLogo: ['#CFC2A9', '#D8CCB6'],
+  avatar: '#E9E1D3',
+  orderItem: ['#E8E0D2', '#E9E1D3'],
+  cartItem: ['#E8E0D2', '#EFE6D2'],
+  guessLike: ['#EDE2CE', '#E8E0D2'],
+  catFeature: ['#E9E1D3', '#EDE2CE'],
 }
 
-// 画布基准（移动端 375 × 812）
-export const CANVAS = { w: 375, h: 812 }
+// 画布基准（移动端 390 × 844）
+export const CANVAS = { w: 390, h: 844 }
 
-// 价格统一强调色
+// 价格统一强调色（香槟金）
 export const PRICE_COLOR = COLORS.pink

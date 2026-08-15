@@ -63,7 +63,7 @@ export default function DiyDetail() {
           name: p?.name || plan.name,
           price: estPrice,
           qty: 1,
-          shop: plan.merchant || 'FloraDIY 定制',
+          shop: plan.merchant || 'MAISON·FLORA 定制',
         },
       ])
       nav('/order', { state: { orderId: order.order_id } })
@@ -129,7 +129,7 @@ export default function DiyDetail() {
 
       <div className="flex-1 overflow-y-auto">
         {/* 顶部效果图：已生成则展示真实图，否则用占位色块；有 effect_prompt 时可一键生图 */}
-        <div className="relative mx-4 mt-3 h-[210px] overflow-hidden rounded-[20px] bg-line">
+        <div className="relative mx-4 mt-3 h-[210px] overflow-hidden rounded-[4px] bg-line">
           {img.status === 'done' && img.url ? (
             <img
               src={`${API_BASE}${img.url}`}

@@ -91,7 +91,7 @@ export default function Addresses() {
       <TopBar title="我的地址" right={editing ? null : undefined} />
       <div className="flex-1 overflow-y-auto px-4 pt-3 pb-6">
         {addresses.length === 0 && !editing && (
-          <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub shadow-card">
+          <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
             还没有收货地址，添加后下单即可一键选择
           </p>
         )}
@@ -99,7 +99,7 @@ export default function Addresses() {
         {addresses.map((a) => (
           <div
             key={a.id}
-            className="mb-3 rounded-card bg-white p-4 shadow-card"
+            className="mb-3 rounded-card bg-white p-4 border border-line"
           >
             <div className="flex items-center gap-2">
               <p className="text-[14px] font-medium text-dark">{a.name}</p>
@@ -127,7 +127,7 @@ export default function Addresses() {
         ))}
 
         {editing !== null && (
-          <form onSubmit={submit} className="mt-2 rounded-card bg-white p-4 shadow-card">
+          <form onSubmit={submit} className="mt-2 rounded-card bg-white p-4 border border-line">
             <p className="mb-3 text-[13px] font-medium text-dark">
               {editing?.id ? '编辑地址' : '新增地址'}
             </p>
@@ -135,20 +135,20 @@ export default function Addresses() {
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="收货人姓名"
-              className="mb-2 w-full rounded-[10px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
+              className="mb-2 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
             />
             <input
               value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               placeholder="手机号"
               inputMode="tel"
-              className="mb-2 w-full rounded-[10px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
+              className="mb-2 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
             />
             <input
               value={form.address}
               onChange={(e) => setForm({ ...form, address: e.target.value })}
               placeholder="详细地址（省市区 + 街道门牌）"
-              className="mb-2 w-full rounded-[10px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
+              className="mb-2 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none"
             />
             <label className="mb-3 flex items-center gap-2 text-[12px] text-ink">
               <input

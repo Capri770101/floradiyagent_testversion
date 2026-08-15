@@ -45,19 +45,19 @@ export default function Favorites() {
       <TopBar title="我的收藏" />
       <div className="flex-1 overflow-y-auto px-4 pt-3 pb-6">
         {favorites.length === 0 ? (
-          <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub shadow-card">
+          <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
             还没有收藏，去首页挑一束喜欢的吧
           </p>
         ) : (
           favorites.map((f) => (
             <div
               key={f.plan_id}
-              className="mb-3 flex items-center gap-3 rounded-card bg-white p-3 shadow-card"
+              className="mb-3 flex items-center gap-3 rounded-card bg-white p-3 border border-line"
             >
               <SmartImage
                 src={itemImagePath('plans', f.plan_id)}
                 imgKey="home_rec_1"
-                className="h-[62px] w-[62px] shrink-0 rounded-[10px]"
+                className="h-[62px] w-[62px] shrink-0 rounded-[4px]"
               />
               <div className="min-w-0 flex-1" onClick={() => nav(`/product/${f.plan_id}`)}>
                 <p className="truncate text-[13px] font-medium text-dark">{f.name}</p>

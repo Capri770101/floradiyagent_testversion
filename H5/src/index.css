@@ -3,17 +3,22 @@
 @tailwind utilities;
 
 :root {
-  /* 375 基准 → 1px : 1rpx 思路，这里用 css 变量承载设计令牌 */
-  --c-bg: #f8f6f2;
-  --c-ink: #333333;
-  --c-sub: #999999;
-  --c-pink: #e88aa1;
-  --c-pink2: #f6dde3;
-  --c-line: #e8e2dc;
-  --c-dark: #343434;
-  /* 文艺衬线字体栈（系统自带，无需外部字体；中文回落到宋体类，英文回落到 Georgia） */
-  --font-serif: Georgia, 'Times New Roman', 'Songti SC', 'Noto Serif CJK SC',
-    'STSong', 'SimSun', serif;
+  /* ===== Maison Flora 轻奢设计令牌（maison-flora-design-prompt.md §9）===== */
+  --c-bg: #faf8f5;       /* 象牙白页面底 */
+  --c-ink: #1a1a1a;      /* 墨黑文字 */
+  --c-sub: #6b6b6b;      /* 石板灰辅助文字 */
+  --c-pink: #b5985a;     /* 香槟金主色 */
+  --c-pink2: #f0ebe3;    /* 砂色柔和底 */
+  --c-line: #d4cfc6;     /* 石色极细描边 */
+  --c-dark: #1a1a1a;     /* 墨黑 */
+  --c-cream: #c9a96a;    /* 浅金 */
+  --c-gold: #b5985a;
+  --c-gold-dark: #6b5630;
+  --c-burgundy: #722f37;
+  --c-sand: #f0ebe3;
+  /* 衬线：Cormorant Garamond 优先，回退 Georgia + 系统宋体 */
+  --font-serif: 'Cormorant Garamond', Georgia, 'Times New Roman', 'Noto Serif SC',
+    'Songti SC', 'STSong', 'SimSun', serif;
 }
 
 * {
@@ -36,36 +41,51 @@ body {
   min-height: 100dvh;
 }
 
-/* ===== 温柔文艺手作风：字体 / 纸感 / 装饰 ===== */
+/* ===== Maison 轻奢极简风：衬线标题 / 极细线 / 无投影 ===== */
 
-/* 衬线标题：花艺手帐般的文艺感（仅用于标题，正文仍用无衬线保证可读性） */
+/* 衬线标题（Cormorant Garamond，仅 400，不加粗） */
 .font-serif-cn {
   font-family: var(--font-serif);
-  font-weight: 500;
+  font-weight: 400;
   letter-spacing: 0.02em;
 }
 
-/* 纸感底色：极淡暖色径向渐变，模拟纸张，替代纯平涂米白 */
+/* Eyebrow 小标签：10px / 500 / 字距 3px / 金色（规范 §3） */
+.eyebrow {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--c-gold);
+}
+
+/* 金句区署名小字：字距 2px */
+.quote-credit {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--c-sub);
+}
+
+/* 页面底：象牙白 + 极淡暖调（纸感，避免纯平涂） */
 .paper {
   background:
-    radial-gradient(120% 80% at 0% 0%, rgba(246, 221, 227, 0.35), transparent 60%),
-    radial-gradient(120% 80% at 100% 0%, rgba(247, 201, 156, 0.16), transparent 55%),
+    radial-gradient(120% 80% at 0% 0%, rgba(181, 152, 90, 0.06), transparent 60%),
     var(--c-bg);
 }
 
-/* Hero 文艺封面背景：暖粉到奶油的上扬渐变 */
+/* Hero 主视觉：象牙白底 + 极淡金调渐变（安静克制） */
 .hero-flora {
   background:
-    radial-gradient(140% 100% at 100% 0%, rgba(232, 138, 161, 0.20), transparent 55%),
-    linear-gradient(150deg, #f7e4de 0%, #f3d9d2 45%, #efd9c9 100%);
+    radial-gradient(140% 100% at 100% 0%, rgba(181, 152, 90, 0.10), transparent 55%),
+    linear-gradient(150deg, #f7f3ec 0%, #f3ede3 45%, #f0e9dd 100%);
 }
 
-/* 柔和暖投影（替代生硬阴影，更贴合手作温度） */
+/* 无投影（flat）：规范 §4 阴影=无，层次靠留白与描边 */
 .shadow-soft {
-  box-shadow: 0 8px 30px rgba(180, 120, 120, 0.10);
+  box-shadow: none;
 }
 
-/* 文艺分隔：标题前的细花卉点缀由组件提供，这里给一条轻分割线风格 */
+/* 极细描边（0.5px 语义，移动端用 1px 石色替代） */
 .hairline {
   border-color: var(--c-line);
 }

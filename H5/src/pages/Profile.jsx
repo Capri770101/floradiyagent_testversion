@@ -42,7 +42,7 @@ const FUNCTIONS = [
   { label: '我的地址', path: '/addresses' },
   { label: '领券中心', path: '/coupons' },
   { label: '客服中心', path: '/service' },
-  { label: '关于 FloraDIY', path: '/about' },
+  { label: '关于 MAISON·FLORA', path: '/about' },
   { label: '设置', path: '/settings' },
 ]
 
@@ -173,14 +173,14 @@ export default function Profile() {
           className="pointer-events-none absolute -right-2 -top-1 text-white/50"
           style={{ width: 92, height: 92 }}
         />
-        <h1 className="font-serif-cn text-[22px] font-medium text-dark">我的</h1>
+        <h1 className="font-serif-cn text-[26px] font-normal text-ink">我的</h1>
         <p className="mt-1 text-[12px] text-sub">专属花艺，温柔收藏</p>
       </div>
 
       {/* 用户区：登录态显示资料，未登录显示登录/注册入口 */}
       {user ? (
         <div className="mt-4 flex items-center gap-3 px-5">
-          <SmartImage imgKey="avatar" className="h-[56px] w-[56px] rounded-[28px]" />
+          <SmartImage imgKey="avatar" className="h-[56px] w-[56px] rounded-full" />
           <div className="flex-1">
             <p className="text-[16px] font-medium text-ink">{user.nickname || user.id}</p>
             <p className="mt-1 text-[10px] text-sub">{user.id}</p>
@@ -196,7 +196,7 @@ export default function Profile() {
       ) : (
         <form
           onSubmit={submit}
-          className="mx-5 mt-4 rounded-[16px] bg-white p-4 shadow-card"
+          className="mx-5 mt-4 rounded-[4px] bg-white p-4 border border-line"
         >
           <div className="mb-3 flex gap-4">
             {['login', 'register'].map((m) => (
@@ -214,14 +214,14 @@ export default function Profile() {
             placeholder="用户名"
             value={form.username}
             onChange={(e) => setForm({ ...form, username: e.target.value })}
-            className="mb-2 w-full rounded-[10px] border border-line bg-bg px-3 py-2 text-[13px] outline-none"
+            className="mb-2 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[13px] outline-none"
           />
           {mode === 'register' && (
             <input
               placeholder="昵称（可选）"
               value={form.nickname}
               onChange={(e) => setForm({ ...form, nickname: e.target.value })}
-              className="mb-2 w-full rounded-[10px] border border-line bg-bg px-3 py-2 text-[13px] outline-none"
+              className="mb-2 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[13px] outline-none"
             />
           )}
           <input
@@ -229,7 +229,7 @@ export default function Profile() {
             type="password"
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
-            className="mb-2 w-full rounded-[10px] border border-line bg-bg px-3 py-2 text-[13px] outline-none"
+            className="mb-2 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[13px] outline-none"
           />
           {err && <p className="mb-2 text-[11px] text-pink">{err}</p>}
           <Button type="submit" className="w-full" disabled={busy}>
@@ -242,13 +242,13 @@ export default function Profile() {
       )}
 
       {/* 会员卡 */}
-      <div className="relative mx-5 mt-5 flex h-[58px] items-center justify-between overflow-hidden rounded-[16px] bg-dark px-4">
+      <div className="relative mx-5 mt-5 flex h-[58px] items-center justify-between overflow-hidden rounded-[4px] bg-dark px-4">
         <FloraSprig
           className="pointer-events-none absolute -right-2 -bottom-3 text-white/15"
           style={{ width: 72, height: 72 }}
         />
         <div>
-          <p className="text-[13px] font-medium text-white">FloraDIY 金牌会员</p>
+          <p className="text-[13px] font-medium text-white">MAISON·FLORA 金牌会员</p>
           <p className="mt-1 text-[10px]" style={{ color: '#DDD2C8' }}>
             开通享更多专属权益
           </p>
@@ -263,7 +263,7 @@ export default function Profile() {
       </div>
 
       {/* 数据 */}
-      <div className="mx-5 mt-5 grid grid-cols-4 rounded-[16px] bg-white py-4 shadow-card">
+      <div className="mx-5 mt-5 grid grid-cols-4 rounded-[4px] bg-white py-4 border border-line">
         {STATS.map((s) => (
           <div key={s.label} className="flex flex-col items-center">
             <span className="text-[16px] font-medium text-dark">
@@ -287,7 +287,7 @@ export default function Profile() {
         <SectionTitle title="我的订单" />
         {isLoggedIn() ? (
           orders.length === 0 ? (
-            <p className="mt-3 rounded-card bg-white p-4 text-center text-[12px] text-sub shadow-card">
+            <p className="mt-3 rounded-card bg-white p-4 text-center text-[12px] text-sub border border-line">
               还没有订单，去 Agent 页让花艺师帮你设计一束吧
             </p>
           ) : (
@@ -296,7 +296,7 @@ export default function Profile() {
                 const meta = STATUS_META[o.status] || { label: o.status, color: 'text-sub' }
                 const items = o.items || []
                 return (
-                  <div key={o.order_id} className="overflow-hidden rounded-card bg-white shadow-card">
+                  <div key={o.order_id} className="overflow-hidden rounded-card bg-white border border-line">
                     <div className="flex items-center justify-between border-b border-line px-4 py-3">
                       <span className="text-[11px] text-sub">{o.order_id}</span>
                       <span className={`text-[12px] font-medium ${meta.color}`}>{meta.label}</span>
@@ -306,7 +306,7 @@ export default function Profile() {
                         <SmartImage
                           src={itemImagePath('plans', it.plan_id)}
                           imgKey="home_rec_1"
-                          className="h-[44px] w-[44px] shrink-0 rounded-[10px]"
+                          className="h-[44px] w-[44px] shrink-0 rounded-[4px]"
                         />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-[13px] text-dark">{it.name}</p>
@@ -395,7 +395,7 @@ export default function Profile() {
             </div>
           )
         ) : (
-          <p className="mt-3 rounded-card bg-white p-4 text-center text-[12px] text-sub shadow-card">
+          <p className="mt-3 rounded-card bg-white p-4 text-center text-[12px] text-sub border border-line">
             登录后查看你的订单
           </p>
         )}
@@ -404,7 +404,7 @@ export default function Profile() {
       {/* 常用功能 */}
       <div className="mt-9 px-5">
         <SectionTitle title="常用功能" />
-        <div className="mt-3 overflow-hidden rounded-[12px] bg-white shadow-card">
+        <div className="mt-3 overflow-hidden rounded-[4px] bg-white border border-line">
           {[...ROLE_FUNCTIONS.filter((rf) => (Array.isArray(rf.role) ? rf.role.includes(user?.role) : rf.role === user?.role)), ...FUNCTIONS].map((f, i, all) => (
             <div
               key={f.label}
@@ -462,7 +462,7 @@ export default function Profile() {
               placeholder="说说这束花的体验吧（选填）"
               maxLength={500}
               rows={3}
-              className="mt-4 w-full resize-none rounded-[12px] border border-line bg-bg p-3 text-[12px] text-ink outline-none placeholder:text-sub/60 focus:border-pink"
+              className="mt-4 w-full resize-none rounded-[4px] border border-line bg-bg p-3 text-[12px] text-ink outline-none placeholder:text-sub/60 focus:border-pink"
             />
             <Button className="mt-4 w-full" onClick={submitReview} disabled={reviewBusy}>
               {reviewBusy ? '提交中…' : '提交评价'}

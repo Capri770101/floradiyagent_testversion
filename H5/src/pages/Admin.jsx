@@ -52,7 +52,7 @@ function Field({ label, children }) {
 }
 
 const inputCls =
-  'mt-1 w-full rounded-[10px] border border-line bg-white px-3 py-2 text-[13px] text-ink outline-none placeholder:text-sub focus:border-pink'
+  'mt-1 w-full rounded-[4px] border border-line bg-white px-3 py-2 text-[13px] text-ink outline-none placeholder:text-sub focus:border-pink'
 
 function PlanForm({ initial, onDone, onCancel }) {
   const [f, setF] = useState(() => ({
@@ -93,7 +93,7 @@ function PlanForm({ initial, onDone, onCancel }) {
   }
 
   return (
-    <div className="space-y-3 rounded-card bg-white p-4 shadow-card">
+    <div className="space-y-3 rounded-card bg-white p-4 border border-line">
       <Field label="方案 ID（留空自动生成）">
         <input
           className={inputCls}
@@ -184,7 +184,7 @@ function ShopForm({ initial, onDone, onCancel }) {
   }
 
   return (
-    <div className="space-y-3 rounded-card bg-white p-4 shadow-card">
+    <div className="space-y-3 rounded-card bg-white p-4 border border-line">
       <Field label="店铺 ID（留空自动生成）">
         <input
           className={inputCls}
@@ -280,7 +280,7 @@ export default function Admin() {
         {error && <p className="mb-3 text-[12px] text-pink">{error}</p>}
 
         {forbidden ? (
-          <p className="mt-10 rounded-card bg-white p-8 text-center text-[13px] text-sub shadow-card">
+          <p className="mt-10 rounded-card bg-white p-8 text-center text-[13px] text-sub border border-line">
             无管理员权限
             <br />
             <span className="mt-1 block text-[11px] text-sub/70">
@@ -347,11 +347,11 @@ export default function Admin() {
         <div className="space-y-2">
           {tab === 'plans' &&
             plans.map((p) => (
-              <div key={p.plan_id} className="flex items-center gap-3 rounded-card bg-white p-3 shadow-card">
+              <div key={p.plan_id} className="flex items-center gap-3 rounded-card bg-white p-3 border border-line">
                 <SmartImage
                   src={itemImagePath('plans', p.plan_id)}
                   imgKey="home_rec_1"
-                  className="h-[52px] w-[52px] shrink-0 rounded-[10px]"
+                  className="h-[52px] w-[52px] shrink-0 rounded-[4px]"
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-medium text-dark">{p.name}</p>
@@ -373,11 +373,11 @@ export default function Admin() {
             ))}
           {tab === 'shops' &&
             shops.map((s) => (
-              <div key={s.shop_id} className="flex items-center gap-3 rounded-card bg-white p-3 shadow-card">
+              <div key={s.shop_id} className="flex items-center gap-3 rounded-card bg-white p-3 border border-line">
                 <SmartImage
                   src={itemImagePath('shops', s.shop_id)}
                   imgKey="shop_logo"
-                  className="h-[52px] w-[52px] shrink-0 rounded-[10px]"
+                  className="h-[52px] w-[52px] shrink-0 rounded-[4px]"
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-medium text-dark">{s.name}</p>

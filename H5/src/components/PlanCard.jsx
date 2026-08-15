@@ -15,14 +15,14 @@ export function PlanCard({
   onConfirm,
 }) {
   return (
-    <div className="animate-fade-up rounded-card-lg bg-white p-4 shadow-card">
+    <div className="animate-fade-up rounded-card-lg bg-white p-4 border border-line">
       {lead && <p className="text-[12px] text-sub">{lead}</p>}
       <h3 className="mt-1 text-[18px] font-medium text-dark">{title}</h3>
 
       <div className="mt-3 flex gap-3">
         <SmartImage
           imgKey="agent_plan"
-          className="h-[128px] w-[112px] shrink-0 rounded-[14px]"
+          className="h-[128px] w-[112px] shrink-0 rounded-[4px]"
         />
         <div className="flex-1">
           <p className="text-[12px] leading-[26px] text-ink">

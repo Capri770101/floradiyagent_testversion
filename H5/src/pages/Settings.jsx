@@ -19,7 +19,7 @@ export default function Settings() {
     <div className="flex h-full flex-col bg-bg">
       <TopBar title="设置" />
       <div className="flex-1 overflow-y-auto px-5 pt-4 pb-8">
-        <div className="overflow-hidden rounded-card bg-white shadow-card">
+        <div className="overflow-hidden rounded-card bg-white border border-line">
           <div className="flex items-center justify-between px-4 py-3.5">
             <span className="text-[12px] text-ink">账号状态</span>
             <span className="text-[12px] text-sub">{isLoggedIn() ? '已登录' : '未登录'}</span>
@@ -59,7 +59,7 @@ export default function Settings() {
         >
           退出登录
         </Button>
-        <p className="mt-4 text-center text-[10px] text-sub/60">FloraDIY v1.0</p>
+        <p className="mt-4 text-center text-[10px] text-sub/60">MAISON·FLORA v1.0</p>
       </div>
     </div>
   )

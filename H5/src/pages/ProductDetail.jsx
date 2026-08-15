@@ -108,7 +108,7 @@ export default function ProductDetail() {
       <div className="flex h-full flex-col bg-bg">
         <TopBar title="商品详情" />
         <div className="flex-1 p-5">
-          <div className="h-[270px] animate-pulse rounded-[20px] bg-line" />
+          <div className="h-[270px] animate-pulse rounded-[4px] bg-line" />
           <div className="mt-4 h-6 w-1/2 animate-pulse rounded bg-line" />
         </div>
       </div>
@@ -155,7 +155,7 @@ export default function ProductDetail() {
         </div>
         <div className="mt-6 px-5">
           <h2 className="text-[16px] font-medium text-dark">AI 推荐理由</h2>
-          <div className="mt-2 rounded-[16px] bg-white p-4 shadow-card">
+          <div className="mt-2 rounded-[4px] bg-white p-4 border border-line">
             <p className="text-[11px] leading-relaxed text-ink">{product.aiReason}</p>
           </div>
         </div>
@@ -169,7 +169,7 @@ export default function ProductDetail() {
           ) : (
             <div className="mt-2 space-y-2">
               {reviews.map((r) => (
-                <div key={r.id} className="rounded-[16px] bg-white p-4 shadow-card">
+                <div key={r.id} className="rounded-[4px] bg-white p-4 border border-line">
                   <div className="flex items-center justify-between">
                     <span className="text-[12px] font-medium text-dark">{r.nickname || '匿名用户'}</span>
                     <span className="flex items-center gap-0.5 text-cream">
