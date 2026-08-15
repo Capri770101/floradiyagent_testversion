@@ -78,7 +78,7 @@ export default function OrderConfirm() {
     )
   }
 
-  const total = calcPayable(order.total_price)
+  const total = calcPayable(order.total_price, order.discount)
 
   const onPay = async () => {
     if (saving) return
@@ -168,7 +168,11 @@ export default function OrderConfirm() {
         <div className="mt-4 space-y-2 rounded-card bg-white p-4 text-[12px] shadow-card">
           <Row label="商品金额" value={`¥${order.total_price}`} />
           <Row label="配送费" value={`¥20`} />
-          <Row label="优惠券" value={`-¥10`} valueClass="text-pink" />
+          <Row
+            label="优惠券"
+            value={`-¥${Number(order.discount || 0)}`}
+            valueClass="text-pink"
+          />
         </div>
         <div className="h-4" />
       </div>

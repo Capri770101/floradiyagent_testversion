@@ -17,6 +17,7 @@ import uuid
 from datetime import UTC, datetime
 
 from config import settings
+from storage.commerce import apply_best_coupon
 from storage.db import transaction
 from storage.repository import repo
 from tools import _resolve_session_plan, register_tool
@@ -90,19 +91,27 @@ def create_order(
                 _now(),
             ),
         )
+    # 与 /orders 下单链路一致：自动抵扣最优优惠券（新人立减等）
+    discount = apply_best_coupon(order_id, user_id, total)
 
     pay_jump = {
         "order_id": order_id,
         "page_path": settings.pay_page_path,
-        "params": {"order_id": order_id, "total_price": total, "shop_id": shop["shop_id"]},
+        "params": {
+            "order_id": order_id,
+            "total_price": total,
+            "discount": discount,
+            "shop_id": shop["shop_id"],
+        },
     }
-    logger.info("[skill_order] 订单 %s 已创建 user=%s shop=%s total=%.2f", order_id, user_id, shop["shop_id"], total)
+    logger.info("[skill_order] 订单 %s 已创建 user=%s shop=%s total=%.2f discount=%.2f", order_id, user_id, shop["shop_id"], total, discount)
 
     return json.dumps(
         {
             "order_id": order_id,
             "items": items,
             "total_price": total,
+            "discount": discount,
             "plan_type": plan_type,
             "pay_jump": pay_jump,
         },

@@ -107,6 +107,15 @@ export async function orderAction(orderId, action) {
   return data.order
 }
 
+export async function listCoupons() {
+  const data = await api('/coupons')
+  return data.coupons
+}
+
+export async function getPoints() {
+  return api('/points')
+}
+
 export async function payOrder(orderId, method = 'wechat') {
   const data = await api('/pay', {
     method: 'POST',

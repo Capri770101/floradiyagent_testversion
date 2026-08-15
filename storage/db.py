@@ -218,6 +218,35 @@ CREATE TABLE IF NOT EXISTS order_logistics (
     created_at TEXT NOT NULL,
     PRIMARY KEY (order_id, seq)
 );
+
+-- 优惠券（按用户隔离；下单时抵扣，status: unused|used）
+CREATE TABLE IF NOT EXISTS coupons (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    title      TEXT NOT NULL,
+    discount   REAL NOT NULL,                    -- 抵扣金额（元）
+    min_spend  REAL NOT NULL DEFAULT 0,          -- 满减门槛（0 表示无门槛）
+    status     TEXT NOT NULL DEFAULT 'unused',   -- unused|used
+    order_id   TEXT,                             -- 使用后关联的订单
+    created_at TEXT NOT NULL,
+    used_at    TEXT
+);
+
+-- 积分账户 + 流水（支付成功按金额 1:1 发放，如 ¥99 → 99 分）
+CREATE TABLE IF NOT EXISTS user_points (
+    user_id      TEXT PRIMARY KEY,
+    balance      INTEGER NOT NULL DEFAULT 0,
+    total_earned INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS point_records (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    delta      INTEGER NOT NULL,                 -- 正=获得 负=消费
+    reason     TEXT NOT NULL,
+    order_id   TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 #: 索引（交付级查询性能）
@@ -230,6 +259,8 @@ CREATE INDEX IF NOT EXISTS idx_orders_user          ON orders(user_id, created_a
 CREATE INDEX IF NOT EXISTS idx_order_items_order    ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_payments_order       ON payments(order_id);
 CREATE INDEX IF NOT EXISTS idx_logistics_order      ON order_logistics(order_id);
+CREATE INDEX IF NOT EXISTS idx_coupons_user          ON coupons(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_point_records_user    ON point_records(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_shop_plans_plan      ON shop_plans(plan_id);
 CREATE INDEX IF NOT EXISTS idx_plans_category       ON plans(category_id);
 """
@@ -254,6 +285,9 @@ _ALTERS = [
     ("orders", "recipient_address", "ALTER TABLE orders ADD COLUMN recipient_address TEXT"),
     ("orders", "delivery_time", "ALTER TABLE orders ADD COLUMN delivery_time TEXT"),
     ("orders", "note", "ALTER TABLE orders ADD COLUMN note TEXT"),
+    # orders: 优惠券抵扣
+    ("orders", "coupon_id", "ALTER TABLE orders ADD COLUMN coupon_id TEXT"),
+    ("orders", "discount", "ALTER TABLE orders ADD COLUMN discount REAL NOT NULL DEFAULT 0"),
 ]
 
 

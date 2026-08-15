@@ -7,7 +7,7 @@ import { FloraCorner, FloraSprig } from '../components/FloralDecor'
 import SectionTitle from '../components/SectionTitle'
 import { itemImagePath } from '../assets/imageMap'
 import { toast } from '../utils/toast'
-import { listOrders, orderAction, payOrder } from '../api/shop'
+import { listOrders, orderAction, listCoupons, getPoints } from '../api/shop'
 import {
   isLoggedIn,
   getUserId,
@@ -45,6 +45,8 @@ export default function Profile() {
   const [busy, setBusy] = useState(false)
   const [orders, setOrders] = useState([])
   const [expanded, setExpanded] = useState(null)
+  const [couponCount, setCouponCount] = useState(0)
+  const [points, setPoints] = useState(0)
 
   useEffect(() => {
     if (isLoggedIn()) {
@@ -86,6 +88,16 @@ export default function Profile() {
     loadOrders()
   }, [loadOrders])
 
+  useEffect(() => {
+    if (!isLoggedIn()) return
+    Promise.all([listCoupons(), getPoints()])
+      .then(([cs, ps]) => {
+        setCouponCount(cs.filter((c) => c.status === 'unused').length)
+        setPoints(ps.balance)
+      })
+      .catch(() => {})
+  }, [])
+
   const act = async (oid, action) => {
     try {
       await orderAction(oid, action)
@@ -96,19 +108,7 @@ export default function Profile() {
     }
   }
 
-  const goPay = async (oid) => {
-    try {
-      const { pay } = await payOrder(oid, 'wechat')
-      if (pay?.paid) {
-        toast('支付成功')
-        loadOrders()
-      } else {
-        nav('/pay?order_id=' + encodeURIComponent(oid))
-      }
-    } catch (e) {
-      toast(e.message || '支付发起失败', 'error')
-    }
-  }
+  const goPay = (oid) => nav('/pay', { state: { orderId: oid } })
 
   return (
     <div className="min-h-full bg-bg pb-8">
@@ -211,7 +211,9 @@ export default function Profile() {
       <div className="mx-5 mt-5 grid grid-cols-4 rounded-[16px] bg-white py-4 shadow-card">
         {STATS.map((s) => (
           <div key={s.label} className="flex flex-col items-center">
-            <span className="text-[16px] font-medium text-dark">{s.value}</span>
+            <span className="text-[16px] font-medium text-dark">
+              {s.label === '订单' ? orders.length : s.label === '优惠券' ? couponCount : s.label === '积分' ? points : s.value}
+            </span>
             <span className="mt-1 text-[10px] text-sub">{s.label}</span>
           </div>
         ))}
@@ -309,18 +311,9 @@ export default function Profile() {
                         </>
                       )}
                       {o.status === 'paid' && (
-                        <>
-                          <Button
-                            variant="secondary"
-                            className="!h-[30px] !rounded-pill !text-[12px]"
-                            onClick={() => nav('/pay?order_id=' + encodeURIComponent(o.order_id))}
-                          >
-                            去支付
-                          </Button>
-                          <Button className="!h-[30px] !rounded-pill !text-[12px]" onClick={() => act(o.order_id, 'ship')}>
-                            模拟发货
-                          </Button>
-                        </>
+                        <Button className="!h-[30px] !rounded-pill !text-[12px]" onClick={() => act(o.order_id, 'ship')}>
+                          模拟发货
+                        </Button>
                       )}
                       {o.status === 'shipped' && (
                         <Button className="!h-[30px] !rounded-pill !text-[12px]" onClick={() => act(o.order_id, 'complete')}>

@@ -37,6 +37,128 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
+# 优惠券 / 积分
+# --------------------------------------------------------------------------- #
+
+
+def _ensure_welcome_coupon(user_id: str) -> None:
+    """新用户自动发放一张「新人立减 10 元」无门槛券（幂等：已有券则不重复发）。"""
+    conn = get_conn()
+    has = conn.execute(
+        "SELECT 1 FROM coupons WHERE user_id=? LIMIT 1", (user_id,)
+    ).fetchone()
+    if has:
+        return
+    conn.execute(
+        """INSERT INTO coupons (id, user_id, title, discount, min_spend, status, created_at)
+           VALUES (?,?,?,?,?,?,?)""",
+        (
+            "C_" + uuid.uuid4().hex[:10],
+            user_id,
+            "新人立减 10 元",
+            10.0,
+            0.0,
+            "unused",
+            _now(),
+        ),
+    )
+    conn.commit()
+
+
+def list_coupons(user_id: str) -> list[dict[str, Any]]:
+    """列出用户优惠券（自动发放新人券），未使用的排前面。"""
+    _ensure_welcome_coupon(user_id)
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT * FROM coupons WHERE user_id=?
+           ORDER BY (status='unused') DESC, created_at DESC""",
+        (user_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _best_coupon_for(user_id: str, total: float) -> dict[str, Any] | None:
+    """选一张最优可用券：未使用 + 金额达标，抵扣额最大的那张。"""
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT * FROM coupons WHERE user_id=? AND status='unused' AND min_spend<=?
+           ORDER BY discount DESC LIMIT 1""",
+        (user_id, total),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def apply_best_coupon(order_id: str, user_id: str, total: float) -> float:
+    """为已落库订单自动抵扣最优券，返回实际抵扣金额（无券/不达标为 0）。"""
+    _ensure_welcome_coupon(user_id)
+    coupon = _best_coupon_for(user_id, total)
+    if not coupon:
+        return 0.0
+    return apply_coupon(order_id, coupon, total)
+
+
+def apply_coupon(order_id: str, coupon: dict[str, Any], total: float) -> float:
+    """把优惠券落订单（discount/coupon_id），标记为已用，返回抵扣后的金额。"""
+    conn = get_conn()
+    discount = min(float(coupon["discount"]), total)
+    conn.execute(
+        """UPDATE orders SET coupon_id=?, discount=? WHERE order_id=?""",
+        (coupon["id"], discount, order_id),
+    )
+    conn.execute(
+        """UPDATE coupons SET status='used', order_id=?, used_at=? WHERE id=?""",
+        (order_id, _now(), coupon["id"]),
+    )
+    conn.commit()
+    return total - discount
+
+
+def get_points(user_id: str) -> dict[str, Any]:
+    """查询用户积分余额与流水。"""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM user_points WHERE user_id=?", (user_id,)).fetchone()
+    balance = int(row["balance"]) if row else 0
+    records = conn.execute(
+        """SELECT * FROM point_records WHERE user_id=? ORDER BY created_at DESC LIMIT 50""",
+        (user_id,),
+    ).fetchall()
+    return {
+        "balance": balance,
+        "records": [dict(r) for r in records],
+    }
+
+
+def add_points(user_id: str, delta: int, reason: str, order_id: str = "") -> int:
+    """发放/扣减积分并记流水，返回最新余额。"""
+    conn = get_conn()
+    row = conn.execute("SELECT balance FROM user_points WHERE user_id=?", (user_id,)).fetchone()
+    balance = int(row["balance"]) if row else 0
+    new_balance = max(0, balance + delta)
+    conn.execute(
+        """INSERT INTO user_points (user_id, balance, total_earned)
+           VALUES (?,?,?)
+           ON CONFLICT(user_id) DO UPDATE SET
+             balance=excluded.balance,
+             total_earned=user_points.total_earned + CASE WHEN ? > 0 THEN ? ELSE 0 END""",
+        (user_id, new_balance, max(0, delta), delta, delta),
+    )
+    conn.execute(
+        """INSERT INTO point_records (id, user_id, delta, reason, order_id, created_at)
+           VALUES (?,?,?,?,?,?)""",
+        (
+            "P_" + uuid.uuid4().hex[:10],
+            user_id,
+            delta,
+            reason,
+            order_id or None,
+            _now(),
+        ),
+    )
+    conn.commit()
+    return new_balance
+
+
+# --------------------------------------------------------------------------- #
 # 购物车
 # --------------------------------------------------------------------------- #
 
@@ -134,7 +256,7 @@ def create_order(
     delivery: str | None = None,
     note: str | None = None,
 ) -> dict[str, Any]:
-    """创建订单：计算总额、落库（含收货信息），并从购物车移除带 item_id 的项。"""
+    """创建订单：计算总额、自动抵扣最优优惠券、落库（含收货信息），并从购物车移除带 item_id 的项。"""
     conn = get_conn()
     total = sum(float(it.get("price", 0)) * int(it.get("qty", 1)) for it in items)
     order_id = "O_" + uuid.uuid4().hex[:10]
@@ -165,6 +287,8 @@ def create_order(
             _now(),
         ),
     )
+    # 自动抵扣最优可用优惠券（新人立减等）；折扣落订单并标记券已用
+    apply_best_coupon(order_id, user_id, total)
     # 若购物车项带 item_id，下单后移除（避免重复结算）
     for it in items:
         iid = it.get("item_id")
@@ -385,6 +509,12 @@ def pay_order(
             (now, order_id),
         )
         _append_logistics(order_id, "支付成功，商家备货中")
+        add_points(
+            order["user_id"],
+            max(1, int(round(float(order.get("total_price") or 0)))),
+            "订单消费返积分",
+            order_id,
+        )
     else:
         conn.execute("UPDATE orders SET status='pending_payment' WHERE order_id=?", (order_id,))
     conn.commit()
@@ -414,6 +544,14 @@ def mark_order_paid(order_id: str, transaction_id: str = "") -> bool:
     conn.execute(
         "UPDATE orders SET paid=1, status='paid', paid_at=? WHERE order_id=?",
         (now, order_id),
+    )
+    _append_logistics(order_id, "支付成功，商家备货中")
+    # 真实网关回调确认：同样按金额发放积分（与沙箱渠道行为一致）
+    add_points(
+        row["user_id"],
+        max(1, int(round(float(row["total_price"] or 0)))),
+        "订单消费返积分",
+        order_id,
     )
     # 把该订单名下所有未支付 payments 标记为已支付（通常仅一笔）
     conn.execute(

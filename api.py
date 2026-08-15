@@ -837,6 +837,26 @@ async def list_orders_endpoint(request: Request, user_id: str | None = None) -> 
     return {"orders": orders}
 
 
+@app.get("/coupons")
+async def list_coupons_endpoint(request: Request, user_id: str | None = None) -> dict[str, Any]:
+    """列出用户优惠券（新用户自动发放新人立减券）。"""
+    uid = await resolve_uid(request, user_id)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    coupons = await asyncio.to_thread(commerce.list_coupons, uid)
+    return {"coupons": coupons}
+
+
+@app.get("/points")
+async def points_endpoint(request: Request, user_id: str | None = None) -> dict[str, Any]:
+    """查询用户积分余额与流水。"""
+    uid = await resolve_uid(request, user_id)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    points = await asyncio.to_thread(commerce.get_points, uid)
+    return points
+
+
 @app.get("/orders/{order_id}")
 async def get_order_endpoint(order_id: str, request: Request, user_id: str | None = None) -> dict[str, Any]:
     uid = await resolve_uid(request, user_id)

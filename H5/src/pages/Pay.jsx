@@ -4,7 +4,7 @@ import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
 import { IconCheckCircle } from '../components/icons'
 import { getOrder, payOrder } from '../api/shop'
-import { calcPayable } from '../utils/price'
+import { calcPayable, SHIPPING_FEE } from '../utils/price'
 import { toast } from '../utils/toast'
 
 const PAY_METHODS = [
@@ -37,7 +37,8 @@ export default function Pay() {
 
   const mm = String(Math.floor(remain / 60)).padStart(2, '0')
   const ss = String(remain % 60).padStart(2, '0')
-  const total = order ? calcPayable(order.total_price) : 0
+  const total = order ? calcPayable(order.total_price, order.discount) : 0
+  const earnedPoints = order ? Math.max(1, Math.round(Number(order.total_price) || 0)) : 0
   const first = order?.items?.[0]
   const recipient = order?.recipient
 
@@ -78,7 +79,35 @@ export default function Pay() {
           订单将在 {mm}:{ss} 后自动取消
         </p>
 
-        <h2 className="mt-8 px-1 text-[15px] font-medium text-dark">订单信息</h2>
+        {order && (
+          <>
+            <div className="mx-auto mt-4 w-fit rounded-full bg-pink/10 px-4 py-1.5 text-[11px] text-pink">
+              支付成功返 {earnedPoints} 积分
+            </div>
+
+            <h2 className="mt-8 px-1 text-[15px] font-medium text-dark">金额明细</h2>
+            <div className="mt-2 rounded-card bg-white p-4 text-[12px] shadow-card">
+              <div className="flex justify-between py-1 text-sub">
+                <span>商品金额</span>
+                <span className="text-ink">¥{Number(order.total_price || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between py-1 text-sub">
+                <span>配送费</span>
+                <span className="text-ink">¥{SHIPPING_FEE.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between py-1 text-sub">
+                <span>优惠券</span>
+                <span className="text-pink">-¥{Number(order.discount || 0).toFixed(2)}</span>
+              </div>
+              <div className="mt-1 flex justify-between border-t border-line pt-2 font-medium text-dark">
+                <span>应付合计</span>
+                <span>¥{total.toFixed(2)}</span>
+              </div>
+            </div>
+          </>
+        )}
+
+        <h2 className="mt-7 px-1 text-[15px] font-medium text-dark">订单信息</h2>
         <p className="mt-2 px-1 text-[12px] text-sub">
           {first?.name || '花束'}
           {first?.shop ? ` · ${first.shop}` : ''}
