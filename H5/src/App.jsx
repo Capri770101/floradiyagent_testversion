@@ -19,6 +19,8 @@ import Cart from './pages/Cart'
 import Admin from './pages/Admin'
 import Addresses from './pages/Addresses'
 import Favorites from './pages/Favorites'
+import CouponCenter from './pages/CouponCenter'
+import Merchant from './pages/Merchant'
 
 // 404 兜底页：路由未命中时给出明确反馈与返回入口（review 点名缺失）
 function NotFound() {
@@ -92,6 +94,15 @@ export default function App() {
           element={
             <RequireAuth>
               <Favorites />
+            </RequireAuth>
+          }
+        />
+        <Route path="/coupons" element={<CouponCenter />} />
+        <Route
+          path="/merchant"
+          element={
+            <RequireAuth>
+              <Merchant />
             </RequireAuth>
           }
         />

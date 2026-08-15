@@ -99,6 +99,10 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24 * 7  # JWT 有效期（默认 7 天）
     auth_required: bool = False  # True=强制鉴权；False=dev 模式（/chat 仍可用 user_id 直连）
 
+    # ---- 订单支付超时（分钟）----
+    # created / pending_payment 的订单超过该时长未支付，读取时懒过期自动取消（并返还优惠券）。
+    order_pay_timeout_minutes: int = 30
+
     # ---- 数据源（mock | remote）----
     # mock=内置示例数据（零依赖跑通）；remote=对接真实小程序后端（配置 REMOTE_API_BASE 即可）。
     # 后端需按 config 中 remote_*_path 约定的端点返回与 MockRepository 同形状的 JSON。

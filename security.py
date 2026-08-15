@@ -246,12 +246,12 @@ def login_user(username: str, password: str) -> str | None:
 
 
 def get_user_profile(user_id: str) -> dict[str, Any] | None:
-    """读取用户资料（不含敏感字段）。"""
+    """读取用户资料（不含敏感字段，含角色）。"""
     from storage.db import get_conn
 
     conn = get_conn()
     row = conn.execute(
-        "SELECT id, username, nickname, avatar, phone, created_at FROM users WHERE id = ?",
+        "SELECT id, username, nickname, avatar, phone, role, created_at FROM users WHERE id = ?",
         (user_id,),
     ).fetchone()
     return dict(row) if row else None

@@ -36,12 +36,18 @@ const STATS = [
   { label: '积分', value: 0 },
 ]
 const FUNCTIONS = [
-  { label: '管理后台', path: '/admin' },
   { label: '我的收藏', path: '/favorites' },
   { label: '我的地址', path: '/addresses' },
+  { label: '领券中心', path: '/coupons' },
   { label: '客服中心', path: '/service' },
   { label: '关于 FloraDIY', path: '/about' },
   { label: '设置', path: '/settings' },
+]
+
+// 管理类入口仅对对应角色展示（管理后台→admin；商家工作台→merchant 或 admin）
+const ROLE_FUNCTIONS = [
+  { role: 'admin', label: '管理后台', path: '/admin' },
+  { role: ['merchant', 'admin'], label: '商家工作台', path: '/merchant' },
 ]
 
 export default function Profile() {
@@ -74,7 +80,8 @@ export default function Profile() {
     setBusy(true)
     try {
       const data = await (mode === 'login' ? login : register)({ ...form })
-      setUser({ id: data.user_id, nickname: data.nickname || form.username })
+      setUser({ id: data.user_id, nickname: data.nickname || form.username, role: data.role || '' })
+      getProfile().then(setUser).catch(() => {})
       // 登录守卫场景：登录成功后跳回原来要访问的页面
       const from = location.state?.from
       if (from && from !== '/profile') nav(from, { replace: true })
@@ -393,7 +400,7 @@ export default function Profile() {
       <div className="mt-9 px-5">
         <SectionTitle title="常用功能" />
         <div className="mt-3 overflow-hidden rounded-[12px] bg-white shadow-card">
-          {FUNCTIONS.map((f, i) => (
+          {[...ROLE_FUNCTIONS.filter((rf) => (Array.isArray(rf.role) ? rf.role.includes(user?.role) : rf.role === user?.role)), ...FUNCTIONS].map((f, i, all) => (
             <div
               key={f.label}
               role="button"
@@ -403,7 +410,7 @@ export default function Profile() {
                 if (e.key === 'Enter' || e.key === ' ') e.preventDefault()
               }}
               className={`flex cursor-pointer items-center justify-between px-4 py-3.5 ${
-                i < FUNCTIONS.length - 1 ? 'border-b border-line' : ''
+                i < all.length - 1 ? 'border-b border-line' : ''
               }`}
             >
               <span className="text-[12px] text-ink">{f.label}</span>

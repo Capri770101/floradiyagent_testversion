@@ -5,14 +5,14 @@
 （花材 / 配比 / 色彩 / 寓意 / 包装 / 预算）→ 可 AI 生图看效果 → 推荐店铺 → 组装订单引导支付。
 店铺与下单是把「设计」落地的承接环节，而非核心卖点。同时支持日常闲聊与多轮上下文。
 
-> 本期只实现**普通用户**完整流程，商家 / 管理员接口与权限钩子已预留（见 `api.py:is_allowed`）。
+> 本期实现**普通用户 / 商家 / 管理员**完整流程：商家可查看店铺经营数据并代发货，管理员可管理商品与用户角色（角色提升见第十节 CLI）。
 
 ---
 
 ## 一、项目定位
 
-- **角色**：普通用户（user）/ 商家（merchant）/ 管理员（admin）。本期仅放行 `user`。
-- **接入点**：`/chat` 接受 `openid` 或 `user_id`。dev 模式下 `user_id` 可为任意字符串（测试用）；正式环境由小程序 `wx.login` 换 `openid` 后，经 `POST /auth/wx-login` 签发 JWT，后续请求携带 `Authorization: Bearer <token>`（`security.py` 负责校验）。
+- **角色**：普通用户（user）/ 商家（merchant）/ 管理员（admin）。`users.role` 列管理角色；admin 可查看/更新商品，merchant 与 admin 可进入商家工作台（经营统计 / 代发货 / 评价）。
+- **接入点**：`/chat` 接受 `openid` 或 `user_id`。dev 模式下 `user_id` 可为任意字符串（测试用）；正式环境由小程序 `wx.login` 换 `openid` 后，经 `POST /auth/wx-login` 签发 JWT，后续请求携带 `Authorization: Bearer <token>`（`security.py` 负责校验）。`AUTH_REQUIRED=true` 时所有业务接口强制鉴权（无 token 401、角色不符 403）。
 - **模式**：ReAct（思考-行动-观察）主循环 + skill 编排（**无状态机**：流程由 ReAct 循环与工具产物依赖驱动，不再有阶段邻接锁）。
 
 ---
@@ -271,3 +271,31 @@ curl http://localhost:8000/health
 3. 设 `DATA_SOURCE=remote` + `REMOTE_API_BASE`（真实后端按 `config.py` 中 `remote_*_path` 约定的端点返回 JSON）。
 
 结构化 UI 响应协议见第四节；远程后端接口契约见 `config.py` 的 `remote_*_path` 与 `storage/repository.py`；部署速查见第十一 / 十二节。
+
+---
+
+## 十四、P5 新增：权限 / 评价 / 支付超时 / 领券中心
+
+### 角色权限
+- `users.role` ∈ `user | merchant | admin`（默认 `user`）。CLI 提升：`python cli.py make-admin <username>` 或 `python cli.py set-role <username> <role>`。
+- 后端：`_require_admin` / `_require_merchant` 依赖做真实校验（无 token → 401；角色不符 → 403，dev 模式同样强制）。
+- H5：`RequireAuth` 守卫受保护路由；Profile「常用功能」按角色动态展示——admin 见「管理后台」、merchant/admin 见「商家工作台」、所有登录用户见「领券中心」。
+
+### 评价
+- `POST /reviews`：仅订单主人 + `done` 状态可评，一单一评幂等更新（`rating 1-5 + content`）。
+- `GET /reviews?plan_id=` 公开列表（带昵称），商品页与商家工作台展示。
+
+### 支付超时（真实化）
+- `ORDER_PAY_TIMEOUT_MINUTES`（默认 30）决定 `orders.expires_at`；`/pay` 页展示真实倒计时（`remaining_seconds`）。
+- **懒过期**：读取 / 支付 / 发货 / 签收 / 取消时校验，超时未付 → 自动取消 + 物流事件 + **返还占用的优惠券**；过期订单不可支付（400）。
+
+### 领券中心 / 积分商城
+- `coupon_offers` 表 + 幂等种子（免费券：5 元无门槛、满 99 减 10；积分券：50 积分兑 15 元、100 积分兑 30 元，限量）。
+- `GET /coupon-offers`（登录附带 `claimed` 标记）、`POST /coupon-offers/{id}/claim`（免费领 / 积分兑，每人每券限 1 张、库存扣减、积分扣减并记流水）。
+- H5 `/coupons`：领券中心（领取 / 兑换 / 我的券 / 积分展示）；支付成功按订单金额返积分。
+
+### 生产鉴权切换
+- `.env` 设 `AUTH_REQUIRED=true` + 自设 `JWT_SECRET` 即全站强制鉴权；`/plans` `/shops` `/reviews` `/coupon-offers` 保持公开（商品浏览无需登录）。
+
+### 验收
+- `pytest` 全绿（当前 **153 passed**）；H5 `npm run build` 通过。

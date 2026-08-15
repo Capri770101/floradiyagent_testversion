@@ -29,6 +29,16 @@ def _now() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _now_ts() -> float:
+    """当前时间戳。"""
+    return time.time()
+
+
+def _ts(value: str) -> float:
+    """解析 '%Y-%m-%d %H:%M:%S' 时间字符串为时间戳。"""
+    return time.mktime(time.strptime(value, "%Y-%m-%d %H:%M:%S"))
+
+
 def _row_to_dict(row: Any) -> dict[str, Any]:
     """sqlite3.Row -> dict，并把 selected 转成 bool。"""
     d = dict(row)
@@ -75,6 +85,113 @@ def list_coupons(user_id: str) -> list[dict[str, Any]]:
         (user_id,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# --------------------------------------------------------------------------- #
+# 领券中心 / 积分商城
+# --------------------------------------------------------------------------- #
+
+#: 内置可领取/可兑换券（首次启动播种；兑换成本 points_cost 积分，0=免费领）
+COUPON_OFFER_SEEDS = [
+    ("OFF_FREE5", "5 元无门槛券", 5.0, 0.0, 0, -1),
+    ("OFF_FULL99", "满 99 减 10 券", 10.0, 99.0, 0, -1),
+    ("OFF_PTS50", "50 积分兑 15 元券", 15.0, 0.0, 50, 200),
+    ("OFF_PTS100", "100 积分兑 30 元券", 30.0, 0.0, 100, 100),
+]
+
+
+def _seed_coupon_offers() -> None:
+    """幂等播种领券中心模板（仅补缺失行，不覆盖已修改数据）。"""
+    conn = get_conn()
+    for oid, title, discount, min_spend, pts, stock in COUPON_OFFER_SEEDS:
+        conn.execute(
+            """INSERT OR IGNORE INTO coupon_offers
+               (id, title, discount, min_spend, points_cost, stock, active, created_at)
+               VALUES (?,?,?,?,?,?,1,?)""",
+            (oid, title, discount, min_spend, pts, stock, _now()),
+        )
+    conn.commit()
+
+
+def list_coupon_offers(user_id: str = "") -> list[dict[str, Any]]:
+    """上架中的券模板（含每人限领状态：已领过则 claimed=true）。
+
+    Args:
+        user_id: 传入时附带 claimed / claimable 标记；留空则不标记。
+    """
+    _seed_coupon_offers()
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT * FROM coupon_offers WHERE active=1 ORDER BY points_cost ASC, discount ASC"""
+    ).fetchall()
+    offers: list[dict[str, Any]] = []
+    for r in rows:
+        o = dict(r)
+        o["claimed"] = False
+        if user_id:
+            got = conn.execute(
+                "SELECT 1 FROM coupons WHERE user_id=? AND offer_id=? LIMIT 1",
+                (user_id, o["id"]),
+            ).fetchone()
+            o["claimed"] = bool(got)
+        offers.append(o)
+    return offers
+
+
+def claim_coupon_offer(user_id: str, offer_id: str) -> dict[str, Any]:
+    """领取一张券（points_cost=0 免费领；>0 需积分兑换）。
+
+    Raises:
+        ValueError: 模板不存在 / 未上架 / 已领过 / 积分不足 / 库存不足。
+    """
+    _seed_coupon_offers()
+    conn = get_conn()
+    offer = conn.execute(
+        "SELECT * FROM coupon_offers WHERE id=? AND active=1", (offer_id,)
+    ).fetchone()
+    if not offer:
+        raise ValueError("该券已下架或不存在")
+    already = conn.execute(
+        "SELECT 1 FROM coupons WHERE user_id=? AND offer_id=? LIMIT 1", (user_id, offer_id)
+    ).fetchone()
+    if already:
+        raise ValueError("每人限领一张，你已经领过了")
+    stock = int(offer["stock"])
+    if stock == 0:
+        raise ValueError("库存不足，已抢光")
+    cost = int(offer["points_cost"])
+    if cost > 0:
+        balance = conn.execute(
+            "SELECT balance FROM user_points WHERE user_id=?", (user_id,)
+        ).fetchone()
+        if not balance or int(balance["balance"]) < cost:
+            raise ValueError(f"积分不足，需要 {cost} 积分")
+    # 扣库存（-1 不限）
+    if stock > 0:
+        conn.execute(
+            "UPDATE coupon_offers SET stock=stock-1 WHERE id=?", (offer_id,)
+        )
+    # 发券
+    cid = "C_" + uuid.uuid4().hex[:10]
+    conn.execute(
+        """INSERT INTO coupons (id, user_id, title, discount, min_spend, status, offer_id, created_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (
+            cid,
+            user_id,
+            offer["title"],
+            float(offer["discount"]),
+            float(offer["min_spend"]),
+            "unused",
+            offer_id,
+            _now(),
+        ),
+    )
+    # 积分兑换：扣减积分并记流水
+    if cost > 0:
+        add_points(user_id, -cost, f"积分兑换「{offer['title']}」")
+    conn.commit()
+    return dict(conn.execute("SELECT * FROM coupons WHERE id=?", (cid,)).fetchone())
 
 
 def _best_coupon_for(user_id: str, total: float) -> dict[str, Any] | None:
@@ -563,6 +680,51 @@ def remove_cart_item(item_id: str) -> bool:
 # --------------------------------------------------------------------------- #
 
 
+def _expire_unpaid_order(conn, row) -> bool:
+    """懒过期：created/pending_payment 订单超过支付时限 → 自动取消并返还优惠券。
+
+    Returns:
+        True 表示本次发生了过期取消。
+    """
+    status = row["status"]
+    if status not in ("created", "pending_payment"):
+        return False
+    expires_at = row["expires_at"]
+    if not expires_at:
+        return False
+    try:
+        expired = _now_ts() > _ts(expires_at)
+    except ValueError:
+        return False
+    if not expired:
+        return False
+    conn.execute(
+        "UPDATE orders SET status='canceled' WHERE order_id=? AND status=?",
+        (row["order_id"], status),
+    )
+    _append_logistics(row["order_id"], "超过支付时限，订单已自动取消")
+    # 返还该订单占用（已标记 used）的优惠券
+    cid = row["coupon_id"]
+    if cid:
+        conn.execute(
+            """UPDATE coupons SET status='unused', order_id=NULL, used_at=NULL
+               WHERE id=? AND status='used'""",
+            (cid,),
+        )
+    conn.commit()
+    return True
+
+
+def _order_remaining_seconds(row) -> int:
+    """订单剩余支付秒数（已支付/已过期返回 0）。"""
+    if row["status"] in ("created", "pending_payment") and row["expires_at"]:
+        try:
+            return max(0, int(_ts(row["expires_at"]) - _now_ts()))
+        except ValueError:
+            return 0
+    return 0
+
+
 def create_order(
     user_id: str,
     items: list[dict[str, Any]],
@@ -595,9 +757,9 @@ def create_order(
     conn.execute(
         """INSERT INTO orders
            (order_id, user_id, plan_id, plan_type, shop_id, items, total_price,
-            paid, status, address_id, recipient_name, recipient_phone, recipient_address,
+            paid, status, expires_at, address_id, recipient_name, recipient_phone, recipient_address,
             delivery_time, note, created_at)
-           VALUES (?,?,?,?,?,?,?,0,'created',?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,0,'created',?,?,?,?,?,?,?,?)""",
         (
             order_id,
             user_id,
@@ -606,6 +768,7 @@ def create_order(
             first.get("shop"),
             json.dumps(items, ensure_ascii=False),
             total,
+            _expires_at_str(),
             saved_addr["id"] if saved_addr else None,
             rname,
             rphone,
@@ -674,12 +837,27 @@ def update_order(
     return get_order(order_id)
 
 
+def _expires_at_str() -> str:
+    """订单支付截止时间字符串（now + order_pay_timeout_minutes）。"""
+    from config import settings
+
+    return time.strftime(
+        "%Y-%m-%d %H:%M:%S",
+        time.localtime(_now_ts() + settings.order_pay_timeout_minutes * 60),
+    )
+
+
 def get_order(order_id: str) -> dict[str, Any] | None:
-    """读取订单详情（items 反序列化、paid 转 bool、补充 recipient 嵌套对象）。"""
+    """读取订单详情（items 反序列化、paid 转 bool、补充 recipient 嵌套对象）。
+
+    读取时执行懒过期：超时未支付的订单自动转为 canceled 并返还优惠券。
+    """
     conn = get_conn()
     row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
     if not row:
         return None
+    _expire_unpaid_order(conn, row)
+    row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
     d = dict(row)
     d["items"] = json.loads(d["items"]) if d.get("items") else []
     d["paid"] = bool(d.get("paid"))
@@ -690,6 +868,7 @@ def get_order(order_id: str) -> dict[str, Any] | None:
         "address": d.get("recipient_address"),
     }
     d["logistics"] = list_logistics(order_id)
+    d["remaining_seconds"] = _order_remaining_seconds(row)
     return d
 
 
@@ -739,6 +918,7 @@ def ship_order(order_id: str) -> dict[str, Any] | None:
     row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
     if not row:
         return None
+    _expire_unpaid_order(conn, row)
     if row["status"] != "paid":
         raise ValueError(f"当前状态 {row['status']} 不可发货")
     conn.execute(
@@ -757,6 +937,7 @@ def complete_order(order_id: str) -> dict[str, Any] | None:
     row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
     if not row:
         return None
+    _expire_unpaid_order(conn, row)
     if row["status"] != "shipped":
         raise ValueError(f"当前状态 {row['status']} 不可签收")
     conn.execute(
@@ -774,6 +955,7 @@ def cancel_order(order_id: str) -> dict[str, Any] | None:
     row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
     if not row:
         return None
+    _expire_unpaid_order(conn, row)
     if row["status"] not in ("created", "pending_payment"):
         raise ValueError(f"当前状态 {row['status']} 不可取消")
     conn.execute(
@@ -812,7 +994,11 @@ def pay_order(
     row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
     if not row:
         return None
+    _expire_unpaid_order(conn, row)
+    row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
     order = dict(row)
+    if order["status"] not in ("created", "pending_payment"):
+        raise ValueError(f"当前状态 {order['status']} 不可支付")
 
     provider = payment_module.get_provider()
     try:

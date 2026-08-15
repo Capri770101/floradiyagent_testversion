@@ -199,6 +199,50 @@ export async function postReview({ order_id, rating, content }) {
   return data.review
 }
 
+// ---------------- 领券中心 / 积分商城 ----------------
+
+export async function listCouponOffers() {
+  const data = await api('/coupon-offers')
+  return data
+}
+
+export async function claimCouponOffer(offerId) {
+  const data = await api(`/coupon-offers/${encodeURIComponent(offerId)}/claim`, {
+    method: 'POST',
+  })
+  return data.coupon
+}
+
+// ---------------- 商家端 ----------------
+
+export async function merchantStats(shopId = '') {
+  const q = shopId ? `?shop_id=${encodeURIComponent(shopId)}` : ''
+  const data = await api(`/merchant/stats${q}`)
+  return data
+}
+
+export async function merchantOrders(shopId = '', status = '') {
+  const params = new URLSearchParams()
+  if (shopId) params.set('shop_id', shopId)
+  if (status) params.set('status', status)
+  const q = params.toString()
+  const data = await api(`/merchant/orders${q ? `?${q}` : ''}`)
+  return data.orders
+}
+
+export async function merchantShip(orderId) {
+  const data = await api(`/merchant/orders/${encodeURIComponent(orderId)}/ship`, {
+    method: 'POST',
+  })
+  return data.order
+}
+
+export async function merchantReviews(shopId = '') {
+  const q = shopId ? `?shop_id=${encodeURIComponent(shopId)}` : ''
+  const data = await api(`/merchant/reviews${q}`)
+  return data.reviews
+}
+
 // ---------------- 管理后台（方案 / 店铺 CRUD） ----------------
 
 export async function adminListPlans() {

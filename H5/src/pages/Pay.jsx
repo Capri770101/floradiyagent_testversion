@@ -20,13 +20,19 @@ export default function Pay() {
   const { state } = useLocation()
   const orderId = state?.orderId
   const [sel, setSel] = useState(0)
-  const [remain, setRemain] = useState(29 * 60 + 52)
+  const [remain, setRemain] = useState(0)
   const [order, setOrder] = useState(null)
   const [paying, setPaying] = useState(false)
 
   useEffect(() => {
     if (orderId) {
-      getOrder(orderId).then(setOrder).catch((e) => console.error('订单加载失败', e))
+      getOrder(orderId)
+        .then((o) => {
+          setOrder(o)
+          // 真实剩余支付秒数（后端按订单 expires_at 计算；无值则兜底 30 分钟）
+          setRemain(Math.max(0, Number(o.remaining_seconds) || 30 * 60))
+        })
+        .catch((e) => console.error('订单加载失败', e))
     }
   }, [orderId])
 
@@ -34,6 +40,17 @@ export default function Pay() {
     const t = setInterval(() => setRemain((r) => (r > 0 ? r - 1 : 0)), 1000)
     return () => clearInterval(t)
   }, [])
+
+  // 倒计时归零：订单已超时，跳回订单列表让后端懒过期生效
+  useEffect(() => {
+    if (order && remain === 0 && !paying && order.status !== 'canceled') {
+      const t = setTimeout(() => {
+        toast('支付超时，订单已自动取消', 'error')
+        nav('/profile', { replace: true })
+      }, 400)
+      return () => clearTimeout(t)
+    }
+  }, [remain, order, paying, nav])
 
   const mm = String(Math.floor(remain / 60)).padStart(2, '0')
   const ss = String(remain % 60).padStart(2, '0')
@@ -76,7 +93,7 @@ export default function Pay() {
       <div className="flex-1 overflow-y-auto px-4 pt-6">
         <p className="text-center text-[30px] font-medium text-dark">¥{total.toFixed(2)}</p>
         <p className="mt-3 text-center text-[10px] text-sub">
-          订单将在 {mm}:{ss} 后自动取消
+          {remain > 0 ? `订单将在 ${mm}:${ss} 后自动取消` : '订单已超时取消'}
         </p>
 
         {order && (
@@ -152,8 +169,8 @@ export default function Pay() {
       </div>
 
       <div className="shrink-0 border-t border-line bg-bg px-4 py-4">
-        <Button full disabled={paying} onClick={onPay}>
-          立即支付 ¥{total.toFixed(2)}
+        <Button full disabled={paying || remain === 0} onClick={onPay}>
+          {remain === 0 ? '订单已取消' : `立即支付 ¥${total.toFixed(2)}`}
         </Button>
         <p className="mt-2 text-center text-[9px] text-sub">支付即表示同意《用户支付协议》</p>
       </div>

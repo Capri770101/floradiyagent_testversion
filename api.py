@@ -860,6 +860,38 @@ async def points_endpoint(request: Request, user_id: str | None = None) -> dict[
 
 
 # --------------------------------------------------------------------------- #
+# 领券中心 / 积分商城
+# --------------------------------------------------------------------------- #
+
+
+@app.get("/coupon-offers")
+async def list_coupon_offers_endpoint(
+    request: Request, user_id: str | None = None
+) -> dict[str, Any]:
+    """上架中的券模板（登录后附带每人限领状态 claimed；未登录同样可浏览）。"""
+    uid = None
+    try:
+        uid = await resolve_uid(request, user_id)
+    except HTTPException:
+        uid = None
+    offers = await asyncio.to_thread(commerce.list_coupon_offers, uid or "")
+    return {"offers": offers}
+
+
+@app.post("/coupon-offers/{offer_id}/claim")
+async def claim_coupon_offer_endpoint(offer_id: str, request: Request) -> dict[str, Any]:
+    """领取 / 积分兑换一张券（points_cost=0 免费领；>0 扣积分）。"""
+    uid = await resolve_uid(request, None)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    try:
+        coupon = await asyncio.to_thread(commerce.claim_coupon_offer, uid, offer_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"coupon": coupon}
+
+
+# --------------------------------------------------------------------------- #
 # 收货地址
 # --------------------------------------------------------------------------- #
 
@@ -1082,6 +1114,9 @@ async def pay_endpoint(req: PayRequest, request: Request) -> dict[str, Any]:
         extra["description"] = req.description
     try:
         result = await asyncio.to_thread(commerce.pay_order, req.order_id, req.method, extra)
+    except ValueError as exc:
+        # 状态机保护（如订单已取消 / 超时未支付）与业务校验
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except payment_module.PaymentConfigError as exc:
         # 真实渠道凭据未配置：明确 400，避免「半成品」上线
         raise HTTPException(status_code=400, detail=str(exc)) from exc

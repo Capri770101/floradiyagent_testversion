@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS orders (
     status         TEXT NOT NULL DEFAULT 'created',  -- created|paid|shipped|done|canceled
     paid           INTEGER NOT NULL DEFAULT 0,    -- 0=未支付 1=已支付（兼容旧库）
     paid_at        TEXT,
+    expires_at     TEXT,                          -- 支付超时时间（created/pending_payment 过期自动取消）
     address_id     TEXT,                          -- -> addresses.id
     recipient_name  TEXT,
     recipient_phone TEXT,
@@ -248,9 +249,22 @@ CREATE TABLE IF NOT EXISTS coupons (
     discount   REAL NOT NULL,                    -- 抵扣金额（元）
     min_spend  REAL NOT NULL DEFAULT 0,          -- 满减门槛（0 表示无门槛）
     status     TEXT NOT NULL DEFAULT 'unused',   -- unused|used
+    offer_id   TEXT,                             -- 来源（领券中心 offer，可选）
     order_id   TEXT,                             -- 使用后关联的订单
     created_at TEXT NOT NULL,
     used_at    TEXT
+);
+
+-- 领券中心 / 积分商城：可领取/可兑换的券模板
+CREATE TABLE IF NOT EXISTS coupon_offers (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    discount    REAL NOT NULL,                   -- 抵扣金额（元）
+    min_spend   REAL NOT NULL DEFAULT 0,         -- 满减门槛
+    points_cost INTEGER NOT NULL DEFAULT 0,      -- 0=免费领取；>0=积分兑换
+    stock       INTEGER NOT NULL DEFAULT 0,      -- 剩余库存（-1=不限）
+    active      INTEGER NOT NULL DEFAULT 1,      -- 是否上架
+    created_at  TEXT NOT NULL
 );
 
 -- 积分账户 + 流水（支付成功按金额 1:1 发放，如 ¥99 → 99 分）
@@ -312,6 +326,10 @@ _ALTERS = [
     # orders: 优惠券抵扣
     ("orders", "coupon_id", "ALTER TABLE orders ADD COLUMN coupon_id TEXT"),
     ("orders", "discount", "ALTER TABLE orders ADD COLUMN discount REAL NOT NULL DEFAULT 0"),
+    # orders: 支付超时（懒过期自动取消）
+    ("orders", "expires_at", "ALTER TABLE orders ADD COLUMN expires_at TEXT"),
+    # coupons: 领券中心来源标记
+    ("coupons", "offer_id", "ALTER TABLE coupons ADD COLUMN offer_id TEXT"),
 ]
 
 
