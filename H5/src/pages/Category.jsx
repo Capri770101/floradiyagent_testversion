@@ -185,6 +185,19 @@ export default function Category() {
               <div className="flex-1">
                 <p className="text-[13px] font-medium text-ink">{f.name}</p>
                 <p className="mt-1 text-[10px] text-sub">{(f.tags || []).join(' · ')}</p>
+                {/* 商品对应的店家：点击进店 */}
+                {f.shop_id && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      nav(`/shop/${f.shop_id}`)
+                    }}
+                    className="mt-1 flex items-center gap-0.5 text-[10px] text-pink"
+                  >
+                    🏪 {f.merchant_name || '花店'}
+                    <IconArrow width={9} height={9} />
+                  </button>
+                )}
                 <p className="mt-1 text-[12px] font-medium text-pink">¥{f.price}</p>
               </div>
               <IconArrow width={16} height={16} className="text-sub" />

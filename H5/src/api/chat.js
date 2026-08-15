@@ -3,20 +3,24 @@
 // 身份统一来自 auth.js（登录态用令牌身份，未登录用匿名 uid），并自动携带 Bearer 令牌。
 
 import { getUserId, authHeaders } from './auth'
+import { getLocation } from '../utils/location'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 export { getUserId }
 
 export async function sendChat({ message, sessionId, userId }) {
+  const loc = getLocation()
+  const body = {
+    user_id: userId,
+    message,
+    session_id: sessionId || undefined,
+  }
+  if (loc?.lat != null && loc?.lng != null) body.location = { lat: loc.lat, lng: loc.lng }
   const res = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({
-      user_id: userId,
-      message,
-      session_id: sessionId || undefined,
-    }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')

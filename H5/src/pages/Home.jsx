@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { IconArrow, IconStar } from '../components/icons'
 import { FloraCorner, FloraSprig } from '../components/FloralDecor'
 import SectionTitle from '../components/SectionTitle'
+import LocationPicker from '../components/LocationPicker'
 import { listPlans, listShops } from '../api/shop'
+import { getLocation, locationName, setLocation } from '../utils/location'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
 import { itemImagePath } from '../assets/imageMap'
@@ -13,13 +15,15 @@ export default function Home() {
   const nav = useNavigate()
   const [plans, setPlans] = useState([])
   const [shops, setShops] = useState([])
+  const [loc, setLoc] = useState(getLocation)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let alive = true
     ;(async () => {
       try {
-        const [ps, ss] = await Promise.all([listPlans(), listShops()])
+        const [ps, ss] = await Promise.all([listPlans(), listShops(loc)])
         if (!alive) return
         setPlans(ps)
         setShops(ss)
@@ -32,7 +36,14 @@ export default function Home() {
     return () => {
       alive = false
     }
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loc])
+
+  const onLocation = (next) => {
+    setLocation(next) // 持久化，首页/分类/对话/店铺列表共用
+    setLoc(next)
+    setPickerOpen(false)
+  }
 
   return (
     <div className="min-h-full bg-bg pb-8">
@@ -40,6 +51,16 @@ export default function Home() {
         <h1 className="font-serif-cn text-[25px] font-medium text-dark">FloraDIY</h1>
         <p className="mt-1 text-[12px] text-sub">AI帮你设计专属花束</p>
       </div>
+
+      {/* 定位栏：显示当前位置，点击重新选择 */}
+      <button
+        onClick={() => setPickerOpen(true)}
+        className="press mx-5 mt-3 flex h-[34px] w-fit items-center gap-1 rounded-full bg-white px-3 text-[11px] text-ink shadow-card"
+      >
+        <span className="text-[12px]">📍</span>
+        <span className="max-w-[130px] truncate font-medium">{locationName() || '选择位置'}</span>
+        <IconArrow width={10} height={10} className="rotate-90 text-sub" />
+      </button>
 
       {/* Hero Banner —— 文艺封面：暖渐变 + 角落花枝 + 衬线标题 */}
       <div className="hero-flora relative mx-5 mt-3 overflow-hidden rounded-[24px] p-4 shadow-soft">
@@ -92,15 +113,29 @@ export default function Home() {
                       nav(`/product/${p.id}`)
                     }
                   }}
-                  className="press cursor-pointer"
+                  className="press cursor-pointer rounded-[12px] bg-white p-2 shadow-card"
                 >
                   <SmartImage
                     src={itemImagePath('plans', p.id)}
                     color={imgColor(p.id)}
-                    className="h-[72px] w-full rounded-[10px]"
+                    className="h-[68px] w-full rounded-[10px]"
                   />
                   <p className="mt-2 truncate text-[11px] text-ink">{p.name}</p>
                   <p className="text-[12px] font-medium text-pink">¥{p.price}</p>
+                  {/* 商品对应的店家：点击进店 */}
+                  {p.shop_id && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        nav(`/shop/${p.shop_id}`)
+                      }}
+                      className="mt-1 flex w-full items-center gap-0.5 truncate text-[9px] text-sub"
+                    >
+                      <span className="shrink-0">🏪</span>
+                      <span className="truncate">{p.merchant_name || '花店'}</span>
+                      <IconArrow width={8} height={8} className="shrink-0" />
+                    </button>
+                  )}
                 </div>
               ))}
         </div>
@@ -136,8 +171,8 @@ export default function Home() {
                   <div className="flex-1">
                     <p className="text-[13px] font-medium text-ink">{s.name}</p>
                     <p className="mt-1 flex items-center gap-1 text-[11px] text-sub">
-                      <IconStar width={11} height={11} className="text-cream" />{' '}
-                      {s.rating} · {s.eta}
+                      <IconStar width={11} height={11} className="text-cream" /> {s.rating} ·{' '}
+                      {s.eta} · 起送 ¥{s.min_delivery}
                     </p>
                   </div>
                   <span className="text-[10px] text-sub">{s.dist}</span>
@@ -145,6 +180,12 @@ export default function Home() {
               ))}
         </div>
       </div>
+
+      <LocationPicker
+        open={pickerOpen}
+        onConfirm={onLocation}
+        onClose={() => setPickerOpen(false)}
+      />
     </div>
   )
 }

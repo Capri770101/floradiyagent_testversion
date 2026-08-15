@@ -482,6 +482,19 @@ def list_categories() -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+def plan_shop_id(plan_id: str) -> str | None:
+    """返回承载该方案的首个店铺 id（shop_plans 关联），用于商品卡跳转对应店家。"""
+    row = get_conn().execute(
+        "SELECT shop_id FROM shop_plans WHERE plan_id=? ORDER BY rowid LIMIT 1", (plan_id,)
+    ).fetchone()
+    return row["shop_id"] if row else None
+
+
+def distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """两点间球面距离（km），供接口层按真实定位计算展示距离。"""
+    return _haversine(lat1, lng1, lat2, lng2)
+
+
 def list_shops() -> list[dict[str, Any]]:
     """后台管理用：返回全字段店铺列表（含 plan_ids 关联）。"""
     conn = get_conn()

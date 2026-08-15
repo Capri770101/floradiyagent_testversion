@@ -7,6 +7,8 @@ import { FloraCorner, FloraSprig } from '../components/FloralDecor'
 import SectionTitle from '../components/SectionTitle'
 import { itemImagePath } from '../assets/imageMap'
 import { toast } from '../utils/toast'
+import { getLocation, setLocation } from '../utils/location'
+import LocationPicker from '../components/LocationPicker'
 import { listOrders, orderAction, listCoupons, getPoints, listFavorites, postReview } from '../api/shop'
 import { IconStar } from '../components/icons'
 import {
@@ -67,6 +69,7 @@ export default function Profile() {
   const [reviewRating, setReviewRating] = useState(5)
   const [reviewContent, setReviewContent] = useState('')
   const [reviewBusy, setReviewBusy] = useState(false)
+  const [showLoc, setShowLoc] = useState(false) // 登录后首次选择定位
 
   useEffect(() => {
     if (isLoggedIn()) {
@@ -82,6 +85,8 @@ export default function Profile() {
       const data = await (mode === 'login' ? login : register)({ ...form })
       setUser({ id: data.user_id, nickname: data.nickname || form.username, role: data.role || '' })
       getProfile().then(setUser).catch(() => {})
+      // 登录后首次：先选择收货位置（确定当前定位）
+      if (!getLocation()) setShowLoc(true)
       // 登录守卫场景：登录成功后跳回原来要访问的页面
       const from = location.state?.from
       if (from && from !== '/profile') nav(from, { replace: true })
@@ -465,6 +470,16 @@ export default function Profile() {
           </div>
         </div>
       )}
+
+      {/* 登录后首次定位选择 */}
+      <LocationPicker
+        open={showLoc}
+        onConfirm={(loc) => {
+          setLocation(loc)
+          setShowLoc(false)
+        }}
+        onClose={() => setShowLoc(false)}
+      />
     </div>
   )
 }

@@ -596,6 +596,7 @@ def _plan_card(p: dict[str, Any]) -> dict[str, Any]:
         "name": p["name"],
         "price": p["price"],
         "merchant_name": p.get("merchant_name", ""),  # 透传给商品详情/加购/下单
+        "shop_id": catalog_store.plan_shop_id(p["plan_id"]),  # 商品对应的店家（跳转店铺页）
         "rating": "4.8",
         "sold": 200 + (abs(hash(p["plan_id"])) % 300),
         "tags": p.get("tags", []),
@@ -612,14 +613,22 @@ def _plan_full(p: dict[str, Any]) -> dict[str, Any]:
     return base
 
 
-def _shop_card(s: dict[str, Any]) -> dict[str, Any]:
+def _shop_card(s: dict[str, Any], location: dict[str, float] | None = None) -> dict[str, Any]:
+    """店铺列表卡；传入定位时按真实经纬度计算展示距离（否则用静态 distance_km）。"""
+    d = s.get("distance_km")
+    if location and s.get("lat") is not None and s.get("lng") is not None:
+        d = catalog_store.distance_km(location["lat"], location["lng"], s["lat"], s["lng"])
     return {
         "id": s["shop_id"],
         "name": s["name"],
         "rating": str(s.get("rating", "4.8")),
-        "dist": f"{s.get('distance_km')}km",
+        "dist": f"{d:.1f}km" if isinstance(d, float) else f"{d}km",
         "eta": "配送约30分钟",
         "price_range": s.get("price_range", ""),
+        "min_delivery": (int(float(s.get("price_range", "0").split("-")[0])) // 10 * 10)
+        if s.get("price_range") and s["price_range"].split("-")[0].strip().isdigit()
+        else 30,
+        "delivery_fee": 3 if float(s.get("distance_km") or 1) <= 1 else 5 if float(s.get("distance_km") or 1) <= 2.5 else 8,
     }
 
 
@@ -711,9 +720,11 @@ async def plan_detail(plan_id: str) -> dict[str, Any]:
 
 
 @app.get("/shops")
-async def list_shops_endpoint() -> dict[str, Any]:
-    shops = await asyncio.to_thread(repo.list_shops, None)
-    return {"shops": [_shop_card(s) for s in shops]}
+async def list_shops_endpoint(lat: float | None = None, lng: float | None = None) -> dict[str, Any]:
+    """店铺列表；传入 lat/lng（用户定位）时按真实经纬度排序并展示计算距离。"""
+    location = {"lat": lat, "lng": lng} if lat is not None and lng is not None else None
+    shops = await asyncio.to_thread(repo.list_shops, None, location)
+    return {"shops": [_shop_card(s, location) for s in shops]}
 
 
 @app.get("/shops/{shop_id}")

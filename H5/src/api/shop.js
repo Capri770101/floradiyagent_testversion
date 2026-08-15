@@ -42,8 +42,14 @@ export async function getPlan(id) {
   return data.plan
 }
 
-export async function listShops() {
-  const data = await api('/shops')
+export async function listShops(location) {
+  const params = new URLSearchParams()
+  if (location?.lat != null && location?.lng != null) {
+    params.set('lat', location.lat)
+    params.set('lng', location.lng)
+  }
+  const q = params.toString()
+  const data = await api(`/shops${q ? `?${q}` : ''}`)
   return data.shops
 }
 
