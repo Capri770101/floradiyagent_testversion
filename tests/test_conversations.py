@@ -3,13 +3,13 @@
 不依赖 LLM，纯 DB 逻辑单测。
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from storage.db import init_db  # noqa: E402
 from storage import memory as mem  # noqa: E402
+from storage.db import init_db  # noqa: E402
 
 # 确保测试库表结构就绪（conftest 已把 DB_PATH 指向临时文件）
 init_db()

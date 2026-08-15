@@ -18,7 +18,6 @@ import logging
 import math
 import re
 import sqlite3
-import uuid
 from typing import Any
 
 from storage.db import get_conn

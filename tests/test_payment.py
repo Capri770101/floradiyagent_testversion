@@ -14,7 +14,6 @@ from __future__ import annotations
 import pytest
 
 from storage import commerce
-from storage import payment as payment_module
 from storage.db import init_db
 from storage.payment import (
     AlipayProvider,

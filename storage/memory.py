@@ -238,7 +238,6 @@ def reset_session(user_id: str, conversation_id: str | None = None) -> bool:
 
 def create_conversation(user_id: str, title: str = "新对话") -> str:
     """新建一个会话，返回会话 ID。"""
-    conn = get_conn()
     sid = uuid.uuid4().hex
     with transaction() as c:
         c.execute(

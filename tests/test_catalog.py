@@ -3,14 +3,14 @@
 不依赖 LLM；init_db 会顺带 seed_catalog 灌入示例数据。
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from storage.db import init_db  # noqa: E402
-from storage import catalog  # noqa: E402
 from requirements import FlowerRequirement  # noqa: E402
+from storage import catalog  # noqa: E402
+from storage.db import init_db  # noqa: E402
 
 
 def setup_module(module):

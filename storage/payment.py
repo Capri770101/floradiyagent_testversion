@@ -28,11 +28,13 @@ import logging
 import secrets
 import time
 import uuid
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import httpx
+
 from config import settings
 
 logger = logging.getLogger("payment")
@@ -342,7 +344,7 @@ class WeChatPayProvider(BaseProvider):
                 cert = serialization.load_pem_public_key(creds["public_cert"].encode("utf-8"))
                 cert.verify(
                     signature=base64.b64decode(sig),
-                    data=f"{ts}\n{nonce}\n{body.decode('utf-8')}\n".encode("utf-8"),
+                    data=f"{ts}\n{nonce}\n{body.decode('utf-8')}\n".encode(),
                     padding=padding.PKCS1v15(),
                     algorithm=hashes.SHA256(),
                 )

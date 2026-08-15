@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 
 import api
 import security
-from storage import memory as mem_store
 
 
 @pytest.fixture
