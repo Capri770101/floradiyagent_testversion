@@ -11,6 +11,7 @@ import {
   withApiUrl,
 } from '../api/chat'
 import { createOrder } from '../api/shop'
+import { calcPayable } from '../utils/price'
 import { Placeholder } from '../components/Placeholder'
 import { Pill } from '../components/Pill'
 import { Button } from '../components/Button'
@@ -137,6 +138,92 @@ function ImageTaskCard({ data }) {
           className="w-full rounded-[10px]"
           alt="效果图"
         />
+      )}
+    </div>
+  )
+}
+
+// 店铺推荐卡片：展示后端 search_shops / LLM 透传的店铺列表，
+// 点击即向智能体发出「选这家下单」的确认意图，由 create_order 产出订单。
+function ShopCard({ shops, onPick }) {
+  return (
+    <div className="mt-2 space-y-2">
+      {shops.map((s) => (
+        <button
+          key={s.shop_id || s.id}
+          onClick={() => onPick(s)}
+          className="press block w-full rounded-card-lg bg-white p-3 text-left shadow-card"
+        >
+          <div className="flex items-center gap-3">
+            <SmartImage
+              src={itemImagePath('shops', s.shop_id || s.id)}
+              imgKey="shop_logo"
+              className="h-[52px] w-[52px] shrink-0 rounded-[10px]"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[14px] font-medium text-dark">
+                {s.name}
+              </p>
+              <p className="mt-0.5 text-[11px] text-sub">
+                {s.rating != null && (
+                  <span className="mr-1">评分 {s.rating}</span>
+                )}
+                {s.distance_km != null && (
+                  <span className="mr-1">{s.distance_km}km</span>
+                )}
+                {s.price_range && <span>¥{s.price_range}</span>}
+              </p>
+              {s.intro && (
+                <p className="mt-0.5 truncate text-[11px] text-sub">
+                  {s.intro}
+                </p>
+              )}
+            </div>
+          </div>
+          <p className="mt-2 text-right text-[12px] font-medium text-pink">
+            去这家下单 →
+          </p>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// 订单卡片：展示 create_order 产出的订单摘要，附「去支付」跳转
+function OrderCard({ data, onPay }) {
+  const items = Array.isArray(data?.items) ? data.items : []
+  const total =
+    data?.total_price ??
+    items.reduce((a, b) => a + Number(b.price || b.amount || 0), 0)
+  const oid = data?.pay_jump?.params?.order_id || data?.order_id
+  return (
+    <div className="mt-2 rounded-card-lg bg-white p-4 shadow-card">
+      <p className="text-[12px] text-sub">订单已创建，确认信息后去支付</p>
+      {items.map((it, i) => (
+        <div
+          key={i}
+          className="mt-2 flex items-center justify-between text-[13px]"
+        >
+          <span className="min-w-0 truncate text-ink">
+            {it.name || it.plan_name}
+          </span>
+          <span className="shrink-0 text-pink">
+            ¥{it.price ?? it.amount}
+          </span>
+        </div>
+      ))}
+      <div className="mt-2 flex justify-between border-t border-line pt-2 text-[13px]">
+        <span className="text-sub">应付合计</span>
+        <span className="font-medium text-pink">¥{calcPayable(total).toFixed(2)}</span>
+      </div>
+      <p className="mt-1 text-[10px] text-sub">
+        含配送费，已减优惠券；以支付页为准
+      </p>
+      {oid && <p className="mt-1 text-[11px] text-sub">订单号：{oid}</p>}
+      {onPay && (
+        <Button className="mt-3 w-full" onClick={onPay}>
+          去支付
+        </Button>
       )}
     </div>
   )
@@ -411,6 +498,22 @@ export default function Agent() {
                 )
               )}
             {m.ui === 'image_task' && <ImageTaskCard data={m.data} />}
+            {m.ui === 'shop_card' && m.data?.shops?.length > 0 && (
+              <ShopCard
+                shops={m.data.shops}
+                onPick={(s) => send(`选择 ${s.name} 帮我下单`)}
+              />
+            )}
+            {m.ui === 'order_card' && (
+              <OrderCard
+                data={m.data}
+                onPay={() => {
+                  const oid =
+                    m.data?.pay_jump?.params?.order_id || m.data?.order_id
+                  nav('/pay', { state: { orderId: oid } })
+                }}
+              />
+            )}
             {m.ui === 'dialog_options' &&
               m.data?.options?.map((o, i) => {
                 const opt =
@@ -426,16 +529,23 @@ export default function Agent() {
                 )
               })}
             {m.ui === 'pay_jump' && (
-              <Button
-                className="mt-2 w-full"
-                onClick={() => {
+              <OrderCard
+                data={{
+                  order_id: m.data?.order_id,
+                  items: [
+                    {
+                      name: m.data?.plan_name || '花束',
+                      price: m.data?.total_price ?? 0,
+                    },
+                  ],
+                  total_price: m.data?.total_price ?? 0,
+                }}
+                onPay={() => {
                   const oid =
-                    m.data?.params?.order_id || m.data?.order_id
+                    m.data?.pay_jump?.params?.order_id || m.data?.order_id
                   nav('/pay', { state: { orderId: oid } })
                 }}
-              >
-                去支付
-              </Button>
+              />
             )}
           </div>
         </div>
