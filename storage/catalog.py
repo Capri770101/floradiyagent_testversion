@@ -476,6 +476,12 @@ def list_plans() -> list[dict[str, Any]]:
     return [_row_to_plan(r) for r in rows]
 
 
+def list_categories() -> list[dict[str, Any]]:
+    """全部分类（按 sort 升序），供店铺详情页的分类菜单 / 管理后台使用。"""
+    rows = get_conn().execute("SELECT * FROM categories ORDER BY sort ASC, id ASC").fetchall()
+    return [dict(r) for r in rows]
+
+
 def list_shops() -> list[dict[str, Any]]:
     """后台管理用：返回全字段店铺列表（含 plan_ids 关联）。"""
     conn = get_conn()

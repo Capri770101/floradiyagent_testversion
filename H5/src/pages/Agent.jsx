@@ -170,47 +170,58 @@ function ImageTaskCard({ data }) {
   )
 }
 
-// 店铺推荐卡片：展示后端 search_shops / LLM 透传的店铺列表，
-// 点击即向智能体发出「选这家下单」的确认意图，由 create_order 产出订单。
+// 店铺推荐卡片：展示后端 search_shops / LLM 透传的店铺列表。
+// 卡片主体 → 进店（店铺详情页）；「去这家下单」→ 向智能体发出选店确认，由 create_order 产出订单。
 function ShopCard({ shops, onPick }) {
+  const nav = useNavigate()
   return (
     <div className="mt-2 space-y-2">
       {shops.map((s) => (
-        <button
+        <div
           key={s.shop_id || s.id}
-          onClick={() => onPick(s)}
           className="press block w-full rounded-card-lg bg-white p-3 text-left shadow-card"
         >
-          <div className="flex items-center gap-3">
-            <SmartImage
-              src={itemImagePath('shops', s.shop_id || s.id)}
-              imgKey="shop_logo"
-              className="h-[52px] w-[52px] shrink-0 rounded-[10px]"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[14px] font-medium text-dark">
-                {s.name}
-              </p>
-              <p className="mt-0.5 text-[11px] text-sub">
-                {s.rating != null && (
-                  <span className="mr-1">评分 {s.rating}</span>
-                )}
-                {s.distance_km != null && (
-                  <span className="mr-1">{s.distance_km}km</span>
-                )}
-                {s.price_range && <span>¥{s.price_range}</span>}
-              </p>
-              {s.intro && (
-                <p className="mt-0.5 truncate text-[11px] text-sub">
-                  {s.intro}
+          <button
+            onClick={() => nav(`/shop/${s.shop_id || s.id}`)}
+            className="block w-full text-left"
+          >
+            <div className="flex items-center gap-3">
+              <SmartImage
+                src={itemImagePath('shops', s.shop_id || s.id)}
+                imgKey="shop_logo"
+                className="h-[52px] w-[52px] shrink-0 rounded-[10px]"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[14px] font-medium text-dark">
+                  {s.name}
                 </p>
-              )}
+                <p className="mt-0.5 text-[11px] text-sub">
+                  {s.rating != null && (
+                    <span className="mr-1">评分 {s.rating}</span>
+                  )}
+                  {s.distance_km != null && (
+                    <span className="mr-1">{s.distance_km}km</span>
+                  )}
+                  {s.price_range && <span>¥{s.price_range}</span>}
+                </p>
+                {s.intro && (
+                  <p className="mt-0.5 truncate text-[11px] text-sub">
+                    {s.intro}
+                  </p>
+                )}
+              </div>
             </div>
+          </button>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-[11px] text-sub">起送 ¥{s.min_delivery ?? '—'} · 配送 ¥{s.delivery_fee ?? '—'}</span>
+            <button
+              onClick={() => onPick(s)}
+              className="text-[12px] font-medium text-pink"
+            >
+              去这家下单 →
+            </button>
           </div>
-          <p className="mt-2 text-right text-[12px] font-medium text-pink">
-            去这家下单 →
-          </p>
-        </button>
+        </div>
       ))}
     </div>
   )

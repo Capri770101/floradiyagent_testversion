@@ -623,21 +623,75 @@ def _shop_card(s: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _shop_menu_item(p: dict[str, Any]) -> dict[str, Any]:
+    """店铺详情菜单项（美团式商品卡字段）。
+
+    sales 为演示推导值（与列表页 sold 同思路）：真实上线后应由订单数据统计。
+    """
+    return {
+        "id": p["plan_id"],
+        "name": p["name"],
+        "price": p["price"],
+        "desc": p.get("desc", ""),
+        "tags": p.get("tags", []),
+        "style": p.get("style", ""),
+        "image": p.get("effect_image_url"),
+        "sales": 100 + (abs(hash(p["plan_id"])) % 900),
+    }
+
+
 def _shop_full(s: dict[str, Any]) -> dict[str, Any]:
-    plans = [repo.get_plan(pid) for pid in s.get("plan_ids", [])]
-    recommend = [
-        {"id": p["plan_id"], "name": p["name"], "price": p["price"]}
-        for p in plans
-        if p
-    ]
+    """店铺详情（美团外卖式）：经营信息 + 分类菜单（左栏分类 / 右栏商品）。
+
+    以下字段为演示推导值（基于现有真实字段稳定生成，零迁移）：
+    min_delivery / delivery_fee / hours / address / notice；真实上线应由商家后台维护。
+    """
+    plans = [p for p in (repo.get_plan(pid) for pid in s.get("plan_ids", [])) if p]
+    # 分类菜单：按 categories 排序分组，未分类的兜底到「其他」
+    cats = catalog_store.list_categories()
+    cat_map = {c["id"]: c["name"] for c in cats}
+    menu: list[dict[str, Any]] = []
+    for c in cats:
+        items = [p for p in plans if p.get("category_id") == c["id"]]
+        if items:
+            menu.append({"id": c["id"], "name": c["name"], "items": [_shop_menu_item(p) for p in items]})
+    others = [p for p in plans if p.get("category_id") not in cat_map]
+    if others:
+        menu.append({"id": "cat_other", "name": "其他", "items": [_shop_menu_item(p) for p in others]})
+
+    # 经营信息推导
+    m = re.match(r"\s*(\d+)\s*-\s*(\d+)\s*", str(s.get("price_range", "")))
+    lo = float(m.group(1)) if m else None
+    d = float(s.get("distance_km") or 1.0)
+    delivery_fee = 3 if d <= 1 else 5 if d <= 2.5 else 8
+    min_delivery = (int(lo) // 10 * 10) if lo else 30
+    zone = "盐田"
+    z = re.search(r"\((.+?)店\)", str(s.get("name", "")))
+    if z:
+        zone = z.group(1)
+    addr_no = 8 + (abs(hash(s.get("shop_id", ""))) % 88)
+
     return {
         "id": s["shop_id"],
         "name": s["name"],
         "rating": str(s.get("rating", "4.8")),
         "status": "营业中",
         "dist": f"{s.get('distance_km')}km",
-        "intro": "专注鲜花定制与同城速递，包装精致、准时送达。",
-        "recommend": recommend,
+        "intro": s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
+        # 美团式经营信息（演示推导值）
+        "sales": 200 + (abs(hash(s.get("shop_id", ""))) % 800),   # 月售
+        "min_delivery": min_delivery,                             # 起送价（元）
+        "delivery_fee": delivery_fee,                             # 配送费（元）
+        "delivery_time": "约30分钟",
+        "hours": "09:00 - 21:00",
+        "address": f"深圳市{zone}区海景路 {addr_no} 号（示例地址）",
+        "notice": s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
+        # 分类菜单
+        "menu": menu,
+        "recommend": [
+            {"id": p["plan_id"], "name": p["name"], "price": p["price"]}
+            for p in plans
+        ],
     }
 
 
