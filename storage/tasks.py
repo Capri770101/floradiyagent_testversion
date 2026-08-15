@@ -50,12 +50,12 @@ def _write_mock_placeholder(task_id: str) -> str:
     本服务托管地址 /generated/{id}.png，Mock / 出图失败降级时也能正常显示。
     """
     size = 256
-    # 竖向渐变（浅粉 → 米白），256 色 RGB，无隔行
+    # 竖向渐变（砂金暖调 → 象牙白，Maison 风格），256 色 RGB，无隔行
     rows = []
     for y in range(size):
-        r = int(255 - 90 * y / size)
-        g = int(228 - 60 * y / size)
-        b = int(228 - 60 * y / size)
+        r = int(244 - 42 * y / size)
+        g = int(235 - 44 * y / size)
+        b = int(222 - 40 * y / size)
         rows.append(b"\x00" + bytes([r, g, b]) * size)
     raw = b"".join(rows)
 

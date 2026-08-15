@@ -104,7 +104,7 @@ export default function Cart() {
               <div className="flex-1">
                 <p className="text-[11px] text-sub">{it.shop || '精选花店'}</p>
                 <p className="text-[13px] font-medium text-ink">{it.name}</p>
-                <p className="mt-1 text-[12px] font-medium text-pink">¥{it.price}</p>
+                <p className="mt-1 text-[12px] font-medium text-ink">¥{it.price}</p>
               </div>
               <div className="flex items-center gap-2 text-[11px] text-ink">
                 <button onClick={() => changeQty(it, -1)} aria-label="减少">
@@ -133,7 +133,7 @@ export default function Cart() {
       <div className="flex shrink-0 items-center justify-between border-t border-line bg-white px-6 py-4">
         <div>
           <span className="text-[12px] text-ink">合计</span>
-          <span className="ml-2 text-[18px] font-medium text-pink">¥{total}</span>
+          <span className="ml-2 text-[18px] font-medium text-ink">¥{total}</span>
         </div>
         <button
           onClick={onCheckout}

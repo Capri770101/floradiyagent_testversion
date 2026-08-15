@@ -1,31 +1,40 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { IconArrow, IconStar, IconPin, IconStore } from '../components/icons'
+import { IconArrow, IconStar, IconPin, IconMenu } from '../components/icons'
 import SectionTitle from '../components/SectionTitle'
 import LocationPicker from '../components/LocationPicker'
-import { listPlans, listShops } from '../api/shop'
+import ProductCard from '../components/ProductCard'
+import MaisonBloom from '../components/MaisonBloom'
+import { listPlans, listShops, getCart } from '../api/shop'
+import { getUserId } from '../api/chat'
 import { getLocation, locationName, setLocation } from '../utils/location'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
 import { itemImagePath } from '../assets/imageMap'
 
-// 01 首页
 export default function Home() {
   const nav = useNavigate()
   const [plans, setPlans] = useState([])
   const [shops, setShops] = useState([])
+  const [cart, setCart] = useState({})
   const [loc, setLoc] = useState(getLocation)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let alive = true
     ;(async () => {
       try {
-        const [ps, ss] = await Promise.all([listPlans(), listShops(loc)])
+        const [ps, ss, items] = await Promise.all([listPlans(), listShops(loc), getCart(getUserId())])
         if (!alive) return
         setPlans(ps)
         setShops(ss)
+        const m = {}
+        ;(items || []).forEach((it) => {
+          m[it.item_id] = { name: it.name, price: it.price, qty: it.qty }
+        })
+        setCart(m)
       } catch (e) {
         if (alive) console.error('首页加载失败', e)
       } finally {
@@ -38,119 +47,130 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loc])
 
+  const cartCount = useMemo(() => Object.values(cart).reduce((s, it) => s + it.qty, 0), [cart])
+  const cartTotal = useMemo(
+    () => Object.values(cart).reduce((s, it) => s + it.price * it.qty, 0),
+    [cart],
+  )
+
   const onLocation = (next) => {
-    setLocation(next) // 持久化，首页/分类/对话/店铺列表共用
+    setLocation(next)
     setLoc(next)
     setPickerOpen(false)
   }
 
+  const MENU_LINKS = [
+    { label: '我的收藏', path: '/favorites' },
+    { label: '领券中心', path: '/coupons' },
+    { label: '设置', path: '/settings' },
+    { label: '关于 MAISON·FLORA', path: '/about' },
+  ]
+
   return (
-    <div className="min-h-full bg-bg pb-8">
-      {/* 品牌头：MAISON·FLORA 衬线 logo + 法文副标 */}
-      <div className="px-5 pt-8">
-        <p className="eyebrow">Atelier de Fleurs</p>
-        <h1 className="mt-1 font-serif-cn text-[30px] font-normal leading-none tracking-wide text-ink">
-          MAISON·FLORA
-        </h1>
-        <p className="mt-2 text-[12px] text-sub">轻奢花艺 · AI 专属设计</p>
+    <div className="min-h-full bg-bg pb-4">
+      {/* 顶部品牌条：MAISON·FLORA + ≡ 菜单（参考稿 .topbar） */}
+      <div className="flex items-center justify-between px-5 pb-4 pt-3">
+        <p className="font-serif-cn text-[19px] font-medium tracking-[2px] text-ink">
+          MAISON<span className="text-gold">·</span>FLORA
+        </p>
+        <button
+          onClick={() => setMenuOpen(true)}
+          aria-label="菜单"
+          className="press -mr-1 p-1 text-ink"
+        >
+          <IconMenu width={22} height={22} />
+        </button>
       </div>
 
-      {/* 定位栏：显示当前位置，点击重新选择 */}
+      {/* ≡ 菜单弹层 */}
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 bg-black/30" onClick={() => setMenuOpen(false)}>
+          <div
+            className="ml-auto flex h-full w-[220px] flex-col bg-white px-2 py-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="eyebrow px-4">Menu</p>
+            <div className="mt-3">
+              {MENU_LINKS.map((l) => (
+                <button
+                  key={l.path}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    nav(l.path)
+                  }}
+                  className="block w-full px-4 py-3.5 text-left text-[13px] text-ink"
+                >
+                  {l.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-auto px-4 py-4 text-[10px] tracking-[0.2em] text-stone">
+              MAISON·FLORA
+              <br />
+              Atelier de Fleurs
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* 定位栏 */}
       <button
         onClick={() => setPickerOpen(true)}
-        className="press mx-5 mt-4 flex h-[36px] w-fit items-center gap-1.5 rounded-[2px] border border-line bg-white px-3 text-[11px] text-ink"
+        className="press mx-5 flex h-[34px] w-fit items-center gap-1.5 rounded-[2px] border border-line bg-white px-3 text-[11px] text-ink"
       >
-        <IconPin width={13} height={13} className="text-gold" />
+        <IconPin width={12} height={12} className="text-gold" />
         <span className="max-w-[130px] truncate font-medium">{locationName() || '选择位置'}</span>
         <IconArrow width={10} height={10} className="rotate-90 text-sub" />
       </button>
 
-      {/* Hero —— Maison 主视觉：象牙白 + 衬线大字 + 金色短线 */}
-      <div className="hero-flora relative mx-5 mt-4 overflow-hidden rounded-[4px] p-6">
-        <p className="eyebrow">Signature Bouquets</p>
-        <p className="mt-3 font-serif-cn text-[26px] font-normal leading-snug text-ink">
-          把时间，温柔地
+      {/* Hero（参考稿 .hero：居中 衬线大字 + 金线 + 金线花卉） */}
+      <div className="px-6 pb-2 pt-10 text-center">
+        <p className="eyebrow">Atelier de Fleurs · 2026</p>
+        <h1 className="mt-3 font-serif-cn text-[36px] font-normal leading-[1.15] text-ink">
+          为懂得欣赏
           <br />
-          交还给一朵花
+          的人而绽放
+        </h1>
+        <div className="mx-auto mt-5 h-px w-9 bg-gold" />
+        <p className="mx-auto mt-5 max-w-[280px] text-[12px] leading-relaxed text-sub">
+          每一束花，皆由花艺师手工甄选、当日采撷。以克制之美，承载最厚重的情意。
         </p>
-        <div className="mt-4 h-[2px] w-10 bg-gold" />
-        <p className="mt-3 text-[12px] text-sub">智能推荐 · 专属设计 · 送花无忧</p>
-        <button
-          onClick={() => nav('/agent')}
-          className="press mt-5 inline-flex h-[44px] w-[132px] items-center justify-center rounded-[2px] bg-dark text-[14px] font-medium tracking-wide text-[#FAF8F5]"
-        >
-          开始对话
-        </button>
+        <div className="mx-auto mt-6 flex h-[190px] w-[170px] items-center justify-center rounded-[4px] border border-line bg-[#F0EBE3]">
+          <MaisonBloom size={150} />
+        </div>
       </div>
 
-      {/* 今日推荐 */}
-      <div className="mt-12 px-5">
-        <SectionTitle
-          eyebrow="Curation"
-          title="今日推荐"
-          action={
-            <button
-              onClick={() => nav('/category')}
-              className="flex items-center text-[11px] text-sub"
-            >
-              更多 <IconArrow width={12} height={12} />
-            </button>
-          }
-        />
-        <div className="mt-5 grid grid-cols-3 gap-2">
+      {/* 当季臻选（参考稿 .sec：居中 eyebrow + 衬线标题 + 金线） */}
+      <div className="mt-10 px-5">
+        <div className="text-center">
+          <p className="eyebrow">Signature Collection</p>
+          <h2 className="mt-2 font-serif-cn text-[28px] font-normal text-ink">当季臻选</h2>
+          <div className="mx-auto mt-4 h-px w-9 bg-gold" />
+        </div>
+        <div className="mt-7 space-y-4">
           {loading
-            ? Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-[120px] animate-pulse rounded-[2px] bg-line" />
+            ? Array.from({ length: 2 }).map((_, i) => (
+                <div key={i} className="h-[220px] animate-pulse rounded-[4px] bg-line" />
               ))
             : plans.slice(0, 3).map((p) => (
-                <div
-                  key={p.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => nav(`/product/${p.id}`)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      nav(`/product/${p.id}`)
-                    }
-                  }}
-                  className="press cursor-pointer rounded-[2px] bg-white p-2 border border-line"
-                >
-                  <SmartImage
-                    src={itemImagePath('plans', p.id)}
-                    color={imgColor(p.id)}
-                    className="h-[68px] w-full rounded-[4px]"
-                  />
-                  <p className="mt-2 truncate text-[11px] text-ink">{p.name}</p>
-                  <p className="text-[12px] font-medium text-pink">¥{p.price}</p>
-                  {/* 商品对应的店家：点击进店 */}
-                  {p.shop_id && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        nav(`/shop/${p.shop_id}`)
-                      }}
-                      className="mt-1 flex w-full items-center gap-0.5 truncate text-[9px] text-sub"
-                    >
-                      <IconStore width={9} height={9} className="shrink-0 text-gold" />
-                      <span className="truncate">{p.merchant_name || '花店'}</span>
-                      <IconArrow width={8} height={8} className="shrink-0" />
-                    </button>
-                  )}
-                </div>
+                <ProductCard key={p.id} p={p} onOpen={() => nav(`/product/${p.id}`)} />
               ))}
         </div>
       </div>
 
       {/* 热门商家 */}
       <div className="mt-12 px-5">
-        <SectionTitle eyebrow="Maisons" title="热门商家" />
-        <div className="mt-5 space-y-3">
+        <div className="text-center">
+          <p className="eyebrow">Maisons</p>
+          <h2 className="mt-2 font-serif-cn text-[28px] font-normal text-ink">合作花店</h2>
+          <div className="mx-auto mt-4 h-px w-9 bg-gold" />
+        </div>
+        <div className="mt-7 space-y-3">
           {loading
             ? Array.from({ length: 2 }).map((_, i) => (
-                <div key={i} className="h-[60px] animate-pulse rounded-card bg-line" />
+                <div key={i} className="h-[64px] animate-pulse rounded-[4px] bg-line" />
               ))
-            : shops.map((s) => (
+            : shops.slice(0, 4).map((s) => (
                 <div
                   key={s.id}
                   role="button"
@@ -162,17 +182,17 @@ export default function Home() {
                       nav(`/shop/${s.id}`)
                     }
                   }}
-                  className="press flex cursor-pointer items-center gap-3 rounded-card bg-white p-3 border border-line"
+                  className="press flex cursor-pointer items-center gap-3 rounded-[4px] border border-line bg-white px-3.5 py-3"
                 >
                   <SmartImage
                     src={itemImagePath('shops', s.id)}
                     color={imgColor(s.id)}
-                    className="h-[44px] w-[54px] rounded-[4px]"
+                    className="h-[44px] w-[52px] rounded-[2px]"
                   />
                   <div className="flex-1">
-                    <p className="text-[13px] font-medium text-ink">{s.name}</p>
-                    <p className="mt-1 flex items-center gap-1 text-[11px] text-sub">
-                      <IconStar width={11} height={11} className="text-cream" /> {s.rating} ·{' '}
+                    <p className="font-serif-cn text-[15px] font-normal text-ink">{s.name}</p>
+                    <p className="mt-1 flex items-center gap-1 text-[10px] text-sub">
+                      <IconStar width={10} height={10} className="text-cream" /> {s.rating} ·{' '}
                       {s.eta} · 起送 ¥{s.min_delivery}
                     </p>
                   </div>
@@ -180,6 +200,48 @@ export default function Home() {
                 </div>
               ))}
         </div>
+      </div>
+
+      {/* 金句区（参考稿 .quote） */}
+      <div className="mt-14 border-y border-line px-8 py-12 text-center">
+        <p className="font-serif-cn text-[22px] font-normal leading-[1.5] text-ink">
+          “真正的奢侈，是
+          <br />
+          把时间温柔地，
+          <br />
+          交还给一朵花。”
+        </p>
+        <p className="quote-credit mt-5">— MAISON FLORA ATELIER</p>
+      </div>
+
+      {/* 页脚 */}
+      <p className="py-8 text-center text-[10px] tracking-[1px] text-stone">
+        MAISON · FLORA — 轻奢花艺 · 2026
+      </p>
+
+      {/* 吸底结算栏（参考稿 .sticky：墨黑底 + 香槟金 CTA） */}
+      <div className="sticky bottom-0 z-10 flex items-center justify-between bg-ink px-5 py-3.5">
+        <div>
+          <p className="text-[10px] tracking-[1px] text-[#FAF8F5]/70">
+            购物袋 · {cartCount} 件
+          </p>
+          <p className="mt-0.5 text-[15px] text-[#FAF8F5]">
+            {cartTotal > 0 ? (
+              <>
+                <span className="mr-0.5 text-[10px]">¥</span>
+                {cartTotal}
+              </>
+            ) : (
+              '0'
+            )}
+          </p>
+        </div>
+        <button
+          onClick={() => nav('/cart')}
+          className="rounded-[2px] bg-gold px-6 py-2.5 text-[12px] font-medium tracking-[1px] text-[#FAF8F5]"
+        >
+          去结算
+        </button>
       </div>
 
       <LocationPicker

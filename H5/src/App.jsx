@@ -36,10 +36,37 @@ function NotFound() {
   )
 }
 
+// 状态栏（Maison 参考稿 §6：模拟原生 App 顶部 9:41 / 5G）
+function StatusBar() {
+  const [now, setNow] = React.useState(new Date())
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30000)
+    return () => clearInterval(t)
+  }, [])
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mm = String(now.getMinutes()).padStart(2, '0')
+  return (
+    <div className="flex h-[34px] shrink-0 items-center justify-between bg-bg px-5 text-[12px] font-medium text-ink">
+      <span>{hh}:{mm}</span>
+      <span className="flex items-center gap-1">
+        <span className="tracking-[2px] text-[9px]">●●●</span>
+        <span>5G</span>
+        <svg width="16" height="11" viewBox="0 0 16 11" fill="none">
+          <rect x="0" y="7" width="2.5" height="4" rx="0.5" fill="currentColor" />
+          <rect x="4" y="5" width="2.5" height="6" rx="0.5" fill="currentColor" />
+          <rect x="8" y="3" width="2.5" height="8" rx="0.5" fill="currentColor" />
+          <rect x="12" y="0" width="2.5" height="11" rx="0.5" fill="currentColor" opacity="0.35" />
+        </svg>
+      </span>
+    </div>
+  )
+}
+
 // 每个页面底部都显示导航栏（含详情/订单/支付页），保证全局可达。
 function Layout() {
   return (
     <div className="app-shell">
+      <StatusBar />
       <div className="app-scroll">
         <Outlet />
       </div>

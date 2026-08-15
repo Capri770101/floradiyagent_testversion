@@ -85,7 +85,7 @@ function ChatPlanCard({ plan, onConfirm, onAdjust }) {
         </div>
       </div>
       {plan.price != null && (
-        <p className="mt-3 text-[18px] font-medium text-pink">¥{plan.price}</p>
+        <p className="mt-3 text-[18px] font-medium text-ink">¥{plan.price}</p>
       )}
       <div className="mt-3 flex gap-3">
         {onAdjust && (
@@ -254,7 +254,7 @@ function OrderCard({ data, onPay }) {
       ))}
       <div className="mt-2 flex justify-between border-t border-line pt-2 text-[13px]">
         <span className="text-sub">应付合计</span>
-        <span className="font-medium text-pink">¥{calcPayable(total, discount).toFixed(2)}</span>
+        <span className="font-medium text-ink">¥{calcPayable(total, discount).toFixed(2)}</span>
       </div>
       <p className="mt-1 text-[10px] text-sub">
         含配送费，已减优惠券 ¥{Number(discount || 0).toFixed(2)}；以支付页为准

@@ -2,15 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Placeholder } from '../components/Placeholder'
 import { Pill } from '../components/Pill'
-import { IconSearch, IconArrow, IconStore } from '../components/icons'
+import { IconSearch } from '../components/icons'
 import SectionTitle from '../components/SectionTitle'
-import { listPlans } from '../api/shop'
-import { imgColor } from '../utils/color'
-import SmartImage from '../components/SmartImage'
-import { itemImagePath } from '../assets/imageMap'
+import ProductCard from '../components/ProductCard'
+import { listPlans, addCart } from '../api/shop'
+import { getUserId } from '../api/chat'
 
 // 09 分类
-function Glyph({ name, color = '#E88AA1' }) {
+function Glyph({ name, color = '#B5985A' }) {
   const common = {
     width: 22,
     height: 22,
@@ -160,50 +159,33 @@ export default function Category() {
         </div>
       </div>
 
-      {/* 精选花束（真实接口） */}
-      <div className="mt-9 px-5">
-        <SectionTitle title="精选花束" />
-        <div className="mt-3 space-y-3">
+      {/* 精选花束（真实接口，参考稿整屏宽产品卡） */}
+      <div className="mt-12 px-5">
+        <div className="text-center">
+          <p className="eyebrow">Collection</p>
+          <h2 className="mt-2 font-serif-cn text-[26px] font-normal text-ink">精选花束</h2>
+          <div className="mx-auto mt-4 h-px w-9 bg-gold" />
+        </div>
+        <div className="mt-7 space-y-4">
           {featured.map((f) => (
-            <div
+            <ProductCard
               key={f.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => nav(`/product/${f.id}`)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  nav(`/product/${f.id}`)
+              p={f}
+              onOpen={() => nav(`/product/${f.id}`)}
+              onAdd={async (item) => {
+                try {
+                  await addCart(getUserId(), {
+                    plan_id: item.id,
+                    name: item.name,
+                    price: item.price,
+                    shop: item.merchant_name || '',
+                  })
+                  alert('已加入购物袋')
+                } catch (e) {
+                  alert('加入失败：' + e.message)
                 }
               }}
-              className="press flex cursor-pointer items-center gap-3 rounded-card bg-white p-3 border border-line"
-            >
-              <SmartImage
-                src={itemImagePath('category', f.id)}
-                color={imgColor(f.id)}
-                className="h-[60px] w-[78px] rounded-[4px]"
-              />
-              <div className="flex-1">
-                <p className="text-[13px] font-medium text-ink">{f.name}</p>
-                <p className="mt-1 text-[10px] text-sub">{(f.tags || []).join(' · ')}</p>
-                {/* 商品对应的店家：点击进店 */}
-                {f.shop_id && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      nav(`/shop/${f.shop_id}`)
-                    }}
-                    className="mt-1 flex items-center gap-0.5 text-[10px] text-gold"
-                  >
-                    <IconStore width={11} height={11} />
-                    {f.merchant_name || '花店'}
-                    <IconArrow width={9} height={9} />
-                  </button>
-                )}
-                <p className="mt-1 text-[12px] font-medium text-pink">¥{f.price}</p>
-              </div>
-              <IconArrow width={16} height={16} className="text-sub" />
-            </div>
+            />
           ))}
           {featured.length === 0 && (
             <p className="py-6 text-center text-[12px] text-sub">没有找到匹配的花束</p>

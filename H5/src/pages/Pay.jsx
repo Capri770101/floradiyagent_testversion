@@ -8,7 +8,7 @@ import { calcPayable, SHIPPING_FEE } from '../utils/price'
 import { toast } from '../utils/toast'
 
 const PAY_METHODS = [
-  { id: 'wechat', name: '微信支付', color: '#A7C5AE' },
+  { id: 'wechat', name: '微信支付', color: '#B5985A' },
   { id: 'alipay', name: '支付宝', color: '#cfcfcf' },
   { id: 'union', name: '银联云闪付', color: '#cfcfcf' },
   { id: 'huabei', name: '花呗', color: '#cfcfcf' },
@@ -114,7 +114,7 @@ export default function Pay() {
               </div>
               <div className="flex justify-between py-1 text-sub">
                 <span>优惠券</span>
-                <span className="text-pink">-¥{Number(order.discount || 0).toFixed(2)}</span>
+                <span className="text-ink">-¥{Number(order.discount || 0).toFixed(2)}</span>
               </div>
               <div className="mt-1 flex justify-between border-t border-line pt-2 font-medium text-dark">
                 <span>应付合计</span>

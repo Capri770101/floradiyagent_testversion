@@ -129,7 +129,7 @@ export default function OrderConfirm() {
             />
             <div className="flex-1">
               <p className="text-[13px] font-medium text-ink">{it.name}</p>
-              <p className="mt-2 text-[12px] font-medium text-pink">¥{it.price}</p>
+              <p className="mt-2 text-[12px] font-medium text-ink">¥{it.price}</p>
             </div>
             <span className="text-[11px] text-sub">×{it.qty}</span>
           </div>
@@ -227,7 +227,7 @@ export default function OrderConfirm() {
       <div className="flex shrink-0 items-center justify-between border-t border-line bg-bg px-5 py-4">
         <div>
           <span className="text-[13px] text-ink">合计</span>
-          <span className="ml-2 text-[20px] font-medium text-pink">¥{total}</span>
+          <span className="ml-2 text-[20px] font-medium text-ink">¥{total}</span>
         </div>
         <Button style={{ width: 119 }} onClick={onPay} disabled={saving}>
           {saving ? '保存中…' : '去支付'}

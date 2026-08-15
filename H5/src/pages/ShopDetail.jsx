@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
-import { IconStar, IconCart, IconPlus, IconArrow, IconClock, IconPin } from '../components/icons'
+import { IconStar, IconCart, IconArrow, IconClock, IconPin } from '../components/icons'
 import { getShop, getCart, addCart, updateCart, removeCart } from '../api/shop'
 import { getUserId } from '../api/chat'
 import { PLACEHOLDER } from '../tokens'
@@ -27,7 +27,7 @@ function ShopHeader({ shop, noticeOpen, onToggleNotice }) {
       <div className="bg-white px-4 pb-3 pt-3">
         <div className="flex items-start justify-between">
           <div className="min-w-0">
-            <h1 className="truncate text-[19px] font-medium text-dark">{shop.name}</h1>
+            <h1 className="truncate font-serif-cn text-[20px] font-normal text-ink">{shop.name}</h1>
             <p className="mt-1 flex items-center gap-1 text-[11px] text-ink">
               <IconStar width={11} height={11} className="text-cream" filled />
               <span className="font-medium text-dark">{shop.rating}</span>
@@ -86,38 +86,41 @@ function ShopHeader({ shop, noticeOpen, onToggleNotice }) {
 
 function ProductRow({ item, qty, onAdd, onDec, onInc }) {
   return (
-    <div className="flex gap-3 py-3">
+    <div className="flex gap-3 py-4">
       <SmartImage
         src={itemImagePath('plans', item.id)}
         color={imgColor(item.id)}
-        className="h-[76px] w-[76px] shrink-0 rounded-[4px]"
+        className="h-[76px] w-[76px] shrink-0 rounded-[2px]"
       />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[14px] font-medium text-dark">{item.name}</p>
+        <p className="truncate font-serif-cn text-[17px] font-normal text-ink">{item.name}</p>
         <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-sub">{item.desc}</p>
         {(item.tags?.length > 0 || item.style) && (
           <p className="mt-1 flex flex-wrap gap-1">
             {item.style && (
-              <span className="rounded bg-pink-2 px-1 py-px text-[9px] text-pink">{item.style}</span>
+              <span className="rounded-[2px] bg-sand px-1.5 py-px text-[9px] text-gold-dark">{item.style}</span>
             )}
             {(item.tags || []).slice(0, 2).map((t) => (
-              <span key={t} className="rounded bg-bg px-1 py-px text-[9px] text-sub">
+              <span key={t} className="rounded-[2px] bg-bg px-1.5 py-px text-[9px] text-stone">
                 {t}
               </span>
             ))}
           </p>
         )}
-        <div className="mt-1.5 flex items-end justify-between">
+        <div className="mt-2 flex items-end justify-between">
           <div>
-            <p className="text-[11px] text-sub">月售 {item.sales}</p>
-            <p className="text-[15px] font-medium text-pink">¥{item.price}</p>
+            <p className="text-[10px] text-stone">月售 {item.sales}</p>
+            <p className="text-[15px] text-ink">
+              <span className="mr-0.5 text-[10px] text-stone">¥</span>
+              {item.price}
+            </p>
           </div>
           {qty > 0 ? (
             <div className="flex items-center gap-2.5">
               <button
                 onClick={onDec}
                 aria-label="减少"
-                className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-line text-[14px] text-ink"
+                className="flex h-[24px] w-[24px] items-center justify-center rounded-[2px] border border-line text-[14px] text-ink"
               >
                 −
               </button>
@@ -125,7 +128,7 @@ function ProductRow({ item, qty, onAdd, onDec, onInc }) {
               <button
                 onClick={onInc}
                 aria-label="增加"
-                className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-pink text-[14px] text-white"
+                className="flex h-[24px] w-[24px] items-center justify-center rounded-[2px] bg-gold text-[14px] text-[#FAF8F5]"
               >
                 ＋
               </button>
@@ -133,10 +136,9 @@ function ProductRow({ item, qty, onAdd, onDec, onInc }) {
           ) : (
             <button
               onClick={onAdd}
-              aria-label="加入购物车"
-              className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-pink text-white"
+              className="rounded-[2px] bg-sand px-4 py-2 text-[11px] font-medium tracking-[1px] text-gold-dark"
             >
-              <IconPlus width={14} height={14} />
+              加入
             </button>
           )}
         </div>
@@ -304,7 +306,7 @@ export default function ShopDetail() {
               }`}
               style={
                 activeCat === i
-                  ? { boxShadow: 'inset 2px 0 0 #E88AA1' }
+                  ? { boxShadow: 'inset 2px 0 0 #B5985A' }
                   : undefined
               }
             >
@@ -320,7 +322,7 @@ export default function ShopDetail() {
           )}
           {menu.map((c, i) => (
             <section key={c.id} ref={(el) => (sectionRefs.current[i] = el)}>
-              <h3 className="sticky top-0 z-10 -mx-4 bg-bg/95 px-4 pb-1 pt-3 text-[13px] font-medium text-ink backdrop-blur">
+              <h3 className="sticky top-0 z-10 -mx-4 bg-bg/95 px-4 pb-1 pt-3 font-serif-cn text-[17px] font-normal text-ink backdrop-blur">
                 {c.name}
               </h3>
               <div className="divide-y divide-line">

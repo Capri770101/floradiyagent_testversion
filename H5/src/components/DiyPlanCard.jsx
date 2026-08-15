@@ -141,7 +141,7 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
           </p>
         </div>
         {p.price != null && (
-          <span className="text-[16px] font-medium text-pink">¥{p.price}</span>
+          <span className="text-[16px] font-medium text-ink">¥{p.price}</span>
         )}
         <Chevron open={open} />
       </button>

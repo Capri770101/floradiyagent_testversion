@@ -228,7 +228,7 @@ export default function DiyDetail() {
         <div className="flex items-center justify-between">
           <div>
             <span className="text-[12px] text-ink">合计预算：</span>
-            <span className="text-[18px] font-medium text-pink">¥{p.price}</span>
+            <span className="text-[18px] font-medium text-ink">¥{p.price}</span>
           </div>
           <Button style={{ width: 122 }} onClick={onConfirm} disabled={busy}>
             确认方案

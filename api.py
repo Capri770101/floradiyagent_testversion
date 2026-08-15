@@ -589,6 +589,16 @@ async def list_tools() -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
+def _plan_label(p: dict[str, Any]) -> str:
+    """Maison 稀缺角标（参考稿 §5）：Premium=金色实底 / Limited=酒红描边 / New=砂色底。"""
+    price = p.get("price") or 0
+    if price >= 300:
+        return "Premium"
+    if price >= 150:
+        return "Limited"
+    return "New"
+
+
 def _plan_card(p: dict[str, Any]) -> dict[str, Any]:
     """把仓储方案映射成 H5 列表卡所需字段。"""
     return {
@@ -597,6 +607,7 @@ def _plan_card(p: dict[str, Any]) -> dict[str, Any]:
         "price": p["price"],
         "merchant_name": p.get("merchant_name", ""),  # 透传给商品详情/加购/下单
         "shop_id": catalog_store.plan_shop_id(p["plan_id"]),  # 商品对应的店家（跳转店铺页）
+        "label": _plan_label(p),  # Premium / Limited / New 角标
         "rating": "4.8",
         "sold": 200 + (abs(hash(p["plan_id"])) % 300),
         "tags": p.get("tags", []),
@@ -645,6 +656,7 @@ def _shop_menu_item(p: dict[str, Any]) -> dict[str, Any]:
         "tags": p.get("tags", []),
         "style": p.get("style", ""),
         "image": p.get("effect_image_url"),
+        "label": _plan_label(p),
         "sales": 100 + (abs(hash(p["plan_id"])) % 900),
     }
 
