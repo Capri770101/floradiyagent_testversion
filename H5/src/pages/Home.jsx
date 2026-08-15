@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconArrow, IconStar, IconPin, IconMenu } from '../components/icons'
-import SectionTitle from '../components/SectionTitle'
 import LocationPicker from '../components/LocationPicker'
 import ProductCard from '../components/ProductCard'
 import MaisonBloom from '../components/MaisonBloom'
-import { listPlans, listShops, getCart } from '../api/shop'
+import SmartImage from '../components/SmartImage'
+import { listPlans, listShops, getCart, addCart } from '../api/shop'
 import { getUserId } from '../api/chat'
+import { isLoggedIn, getProfile } from '../api/auth'
+import { toast } from '../utils/toast'
 import { getLocation, locationName, setLocation } from '../utils/location'
 import { imgColor } from '../utils/color'
-import SmartImage from '../components/SmartImage'
 import { itemImagePath } from '../assets/imageMap'
 
 export default function Home() {
@@ -20,6 +21,7 @@ export default function Home() {
   const [loc, setLoc] = useState(getLocation)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -59,6 +61,33 @@ export default function Home() {
     setPickerOpen(false)
   }
 
+  const onAddToCart = async (item) => {
+    try {
+      const created = await addCart(getUserId(), {
+        plan_id: item.id,
+        name: item.name,
+        price: item.price,
+        shop: item.merchant_name || '',
+      })
+      setCart((prev) => ({
+        ...prev,
+        [created.item_id]: { name: created.name, price: created.price, qty: created.qty },
+      }))
+      toast('已加入购物袋')
+    } catch (e) {
+      toast(e.message || '加入失败', 'error')
+    }
+  }
+
+  const openMenu = () => {
+    setMenuOpen(true)
+    if (isLoggedIn()) {
+      getProfile().then(setProfile).catch(() => setProfile(null))
+    } else {
+      setProfile(null)
+    }
+  }
+
   const MENU_LINKS = [
     { label: '我的收藏', path: '/favorites' },
     { label: '领券中心', path: '/coupons' },
@@ -74,7 +103,7 @@ export default function Home() {
           MAISON<span className="text-gold">·</span>FLORA
         </p>
         <button
-          onClick={() => setMenuOpen(true)}
+          onClick={openMenu}
           aria-label="菜单"
           className="press -mr-1 p-1 text-ink"
         >
@@ -82,15 +111,58 @@ export default function Home() {
         </button>
       </div>
 
-      {/* ≡ 菜单弹层 */}
+      {/* ≡ 侧拉菜单：个人资料 + 快捷入口 */}
       {menuOpen && (
         <div className="fixed inset-0 z-50 bg-black/30" onClick={() => setMenuOpen(false)}>
           <div
-            className="ml-auto flex h-full w-[220px] flex-col bg-white px-2 py-6"
+            className="ml-auto flex h-full w-[240px] flex-col border-l border-line bg-white py-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="eyebrow px-4">Menu</p>
-            <div className="mt-3">
+            {/* 个人区 */}
+            <button
+              onClick={() => {
+                setMenuOpen(false)
+                nav('/profile')
+              }}
+              className="flex items-center gap-3 px-5 pb-5 text-left"
+            >
+              <SmartImage
+                imgKey="avatar"
+                color={imgColor('avatar')}
+                className="h-[44px] w-[44px] rounded-full border border-line"
+              />
+              <div className="min-w-0">
+                {profile || isLoggedIn() ? (
+                  <>
+                    <p className="truncate font-serif-cn text-[15px] font-normal text-ink">
+                      {profile?.nickname || profile?.username || 'Capri'}
+                    </p>
+                    <p className="mt-0.5 truncate text-[10px] text-stone">
+                      {profile?.id || '个人中心'}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[14px] font-medium text-ink">登录 / 注册</p>
+                    <p className="mt-0.5 text-[10px] text-stone">登录后同步对话与订单</p>
+                  </>
+                )}
+              </div>
+              <IconArrow width={14} height={14} className="ml-auto rotate-0 shrink-0 text-sub" />
+            </button>
+            <div className="mx-5 h-px bg-line" />
+
+            {/* 菜单项 */}
+            <div className="mt-2">
+              <button
+                onClick={() => {
+                  setMenuOpen(false)
+                  nav('/profile')
+                }}
+                className="block w-full px-5 py-3.5 text-left text-[13px] text-ink"
+              >
+                个人中心
+              </button>
               {MENU_LINKS.map((l) => (
                 <button
                   key={l.path}
@@ -98,13 +170,13 @@ export default function Home() {
                     setMenuOpen(false)
                     nav(l.path)
                   }}
-                  className="block w-full px-4 py-3.5 text-left text-[13px] text-ink"
+                  className="block w-full px-5 py-3.5 text-left text-[13px] text-ink"
                 >
                   {l.label}
                 </button>
               ))}
             </div>
-            <p className="mt-auto px-4 py-4 text-[10px] tracking-[0.2em] text-stone">
+            <p className="mt-auto px-5 py-4 text-[10px] tracking-[0.2em] text-stone">
               MAISON·FLORA
               <br />
               Atelier de Fleurs
@@ -153,7 +225,7 @@ export default function Home() {
                 <div key={i} className="h-[220px] animate-pulse rounded-[4px] bg-line" />
               ))
             : plans.slice(0, 3).map((p) => (
-                <ProductCard key={p.id} p={p} onOpen={() => nav(`/product/${p.id}`)} />
+                <ProductCard key={p.id} p={p} onOpen={() => nav(`/product/${p.id}`)} onAdd={onAddToCart} />
               ))}
         </div>
       </div>

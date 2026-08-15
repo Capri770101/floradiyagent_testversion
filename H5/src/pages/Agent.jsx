@@ -59,17 +59,15 @@ function flowersOf(plan) {
 function ChatPlanCard({ plan, onConfirm, onAdjust }) {
   const isShop = plan._type === 'shop'
   return (
-    <div className="animate-fade-up mt-2 rounded-card-lg bg-white p-4 border border-line">
-      <p className="text-[12px] text-sub">
-        {isShop ? '为你找到的现成方案' : '我为你设计了一款'}
-      </p>
-      <h3 className="mt-1 text-[18px] font-medium text-dark">{plan.name}</h3>
+    <div className="animate-fade-up mt-2 rounded-[4px] border border-line bg-white p-4">
+      <p className="eyebrow">{isShop ? 'Signature' : 'Couture'}</p>
+      <h3 className="mt-1.5 font-serif-cn text-[19px] font-normal text-ink">{plan.name}</h3>
       <div className="mt-3 flex gap-3">
         <SmartImage
           src={plan.plan_id ? itemImagePath('plans', plan.plan_id) : null}
           imgKey={isShop ? undefined : 'agent_plan'}
           color={isShop ? PLACEHOLDER.productBig : PLACEHOLDER.agentPlan}
-          className="h-[128px] w-[112px] shrink-0 rounded-[4px]"
+          className="h-[128px] w-[112px] shrink-0 rounded-[2px]"
         />
         <div className="flex-1">
           <p className="text-[12px] leading-[26px] text-ink">
@@ -80,12 +78,15 @@ function ChatPlanCard({ plan, onConfirm, onAdjust }) {
             ))}
           </p>
           {plan.merchant && (
-            <p className="mt-1 text-[11px] text-sub">{plan.merchant}</p>
+            <p className="mt-1 text-[11px] text-stone">{plan.merchant}</p>
           )}
         </div>
       </div>
       {plan.price != null && (
-        <p className="mt-3 text-[18px] font-medium text-ink">¥{plan.price}</p>
+        <p className="mt-3 text-[17px] text-ink">
+          <span className="mr-0.5 text-[10px] text-stone">¥</span>
+          {plan.price}
+        </p>
       )}
       <div className="mt-3 flex gap-3">
         {onAdjust && (
@@ -140,7 +141,7 @@ function ImageTaskCard({ data }) {
 
   if (state.status === 'failed') {
     return (
-      <p className="mt-2 rounded-[4px] bg-pink-2 px-3 py-2 text-[11px] text-pink">
+      <p className="mt-2 rounded-[2px] bg-sand px-3 py-2 text-[11px] text-gold-dark">
         效果图生成失败了，可以让我重新生成试试。
       </p>
     )
@@ -179,7 +180,7 @@ function ShopCard({ shops, onPick }) {
       {shops.map((s) => (
         <div
           key={s.shop_id || s.id}
-          className="press block w-full rounded-card-lg bg-white p-3 text-left border border-line"
+          className="press block w-full rounded-[4px] border border-line bg-white p-3 text-left"
         >
           <button
             onClick={() => nav(`/shop/${s.shop_id || s.id}`)}
@@ -189,10 +190,10 @@ function ShopCard({ shops, onPick }) {
               <SmartImage
                 src={itemImagePath('shops', s.shop_id || s.id)}
                 imgKey="shop_logo"
-                className="h-[52px] w-[52px] shrink-0 rounded-[4px]"
+                className="h-[52px] w-[52px] shrink-0 rounded-[2px]"
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[14px] font-medium text-dark">
+                <p className="truncate font-serif-cn text-[16px] font-normal text-ink">
                   {s.name}
                 </p>
                 <p className="mt-0.5 text-[11px] text-sub">
@@ -212,11 +213,11 @@ function ShopCard({ shops, onPick }) {
               </div>
             </div>
           </button>
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-[11px] text-sub">起送 ¥{s.min_delivery ?? '—'} · 配送 ¥{s.delivery_fee ?? '—'}</span>
+          <div className="mt-2 flex items-center justify-between border-t border-line pt-2">
+            <span className="text-[10px] text-stone">起送 ¥{s.min_delivery ?? '—'} · 配送 ¥{s.delivery_fee ?? '—'}</span>
             <button
               onClick={() => onPick(s)}
-              className="text-[12px] font-medium text-pink"
+              className="text-[12px] font-medium text-gold"
             >
               去这家下单 →
             </button>
@@ -528,7 +529,7 @@ export default function Agent() {
     if (m.role === 'user') {
       return (
         <div key={idx} className="flex justify-end px-4 pb-3">
-          <div className="max-w-[220px] rounded-[4px] bg-pink px-3.5 py-2.5 text-right text-[12px] leading-relaxed text-white">
+          <div className="max-w-[220px] rounded-[2px] border border-line bg-sand px-3.5 py-2.5 text-right text-[12px] leading-relaxed text-ink">
             {m.content}
           </div>
         </div>
@@ -538,14 +539,14 @@ export default function Agent() {
     return (
       <div key={idx} className="px-4 pb-3">
         <div className="flex items-start gap-2">
-          <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-pink text-white">
-            <IconFlower width={16} height={16} />
+          <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gold bg-white text-gold">
+            <IconFlower width={15} height={15} />
           </div>
           <div className="max-w-[285px]">
-            <div className="rounded-[4px] bg-white px-3.5 py-2.5">
+            <div className="rounded-[2px] border border-line bg-white px-3.5 py-2.5">
               {m.lead ? (
                 <>
-                  <p className="mb-1 font-medium text-dark">{content}</p>
+                  <p className="mb-1 font-medium text-ink">{content}</p>
                   <p className="text-[11px] text-sub">{m.lead}</p>
                 </>
               ) : (
@@ -654,10 +655,10 @@ export default function Agent() {
         {loading && (
           <div className="px-4 pb-3">
             <div className="flex items-start gap-2">
-              <div className="mt-1 flex h-7 w-7 items-center justify-center rounded-full bg-pink text-white">
-                <IconFlower width={16} height={16} />
+              <div className="mt-1 flex h-7 w-7 items-center justify-center rounded-full border border-gold bg-white text-gold">
+                <IconFlower width={15} height={15} />
               </div>
-              <div className="rounded-[4px] bg-white px-4 py-3">
+              <div className="rounded-[2px] border border-line bg-white px-4 py-3">
                 <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sub" />
                 <span
                   className="ml-1 inline-block h-2 w-2 animate-pulse rounded-full bg-sub"
@@ -671,22 +672,22 @@ export default function Agent() {
             </div>
           </div>
         )}
-        {error && <p className="px-4 pb-2 text-[11px] text-pink">{error}</p>}
+        {error && <p className="px-4 pb-2 text-[11px] text-burgundy">{error}</p>}
       </div>
 
       <div className="flex shrink-0 items-center gap-2 border-t border-line bg-bg px-4 py-3">
-        <div className="flex h-[50px] flex-1 items-center rounded-[4px] bg-white px-4">
+        <div className="flex h-[48px] flex-1 items-center rounded-[2px] border border-line bg-white px-4">
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && send()}
             placeholder="说说你的想法…"
-            className="w-full bg-transparent text-[12px] text-ink outline-none placeholder:text-sub"
+            className="w-full bg-transparent text-[12px] text-ink outline-none placeholder:text-stone"
           />
         </div>
         <button
           onClick={() => send()}
-          className="press flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-full bg-pink text-white"
+          className="press flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[2px] bg-gold text-[#FAF8F5]"
           aria-label="发送"
         >
           <IconPlus width={20} height={20} />

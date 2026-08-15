@@ -17,11 +17,11 @@ import { itemImagePath } from '../assets/imageMap'
 function ShopHeader({ shop, noticeOpen, onToggleNotice }) {
   return (
     <div className="shrink-0">
-      {/* 封面 */}
+      {/* 封面（真实店铺图，文件未就位时回退砂色块） */}
       <SmartImage
-        imgKey="shop_cover"
+        src={itemImagePath('shops', shop.id)}
         color={PLACEHOLDER.shopCover}
-        className="h-[132px] w-full"
+        className="h-[150px] w-full"
       />
       {/* 店铺信息卡 */}
       <div className="bg-white px-4 pb-3 pt-3">
