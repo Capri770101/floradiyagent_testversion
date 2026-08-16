@@ -68,7 +68,7 @@ def test_wx_login_auto_provisions_profile(client: TestClient) -> None:
     fake = {"openid": "oBindTest", "session_key": "sk"}
     with patch.object(security.settings, "wechat_appid", "appid"), \
          patch.object(security.settings, "wechat_secret", "secret"), \
-         patch.object(api, "wx_code2session", return_value=fake):
+         patch("routers.auth.wx_code2session", return_value=fake):
         r = client.post("/auth/wx-login", json={"code": "abc"})
         assert r.status_code == 200
         assert r.json()["is_new"] is True
@@ -97,7 +97,7 @@ def test_wx_bind_success_and_conflict(client: TestClient) -> None:
 
     with patch.object(security.settings, "wechat_appid", "appid"), \
          patch.object(security.settings, "wechat_secret", "secret"), \
-         patch.object(api, "wx_code2session", return_value=fake):
+         patch("routers.auth.wx_code2session", return_value=fake):
         r = client.post("/auth/wx-bind", json={"code": "abc"}, headers={"Authorization": f"Bearer {token_a}"})
         assert r.status_code == 200
         assert r.json()["ok"] is True

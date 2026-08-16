@@ -104,3 +104,14 @@ def test_knowledge_proven_domain():
     out = query_knowledge("proven", "玫瑰")
     assert out["domain"] == "proven"
     assert any(e["id"] == r["plan_id"] for e in out["results"])
+
+
+def test_design_context_includes_proven():
+    """设计链路 RAG 上下文包含历史实战方案（闭环：AI 越用越懂你）。"""
+    from tools import _retrieve_for_design
+
+    r = diy.save_diy_plan(_make_plan(flower="康乃馨", recipient="母亲"), "u_diy_test7")
+    diy.mark_diy_plan_ordered(r["plan_id"])
+    ctx = _retrieve_for_design("给母亲买花，预算200")
+    assert "历史实战方案" in ctx
+    assert "康乃馨" in ctx

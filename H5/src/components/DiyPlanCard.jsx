@@ -93,7 +93,6 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
         .map((s) => s.trim())
         .filter(Boolean)
   const [imgState, setImgState] = useState({ status: 'none', url: null })
-  if (!p) return null
 
   // 头部价格：从「约 200 元（入门 / 日常档）」这类整串中拆出数字主价与档位小字，
   // 避免右侧一整串大字影响卡片头部排版。
@@ -139,6 +138,9 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
       alive = false
     }
   }, [img?.task_id, img?.result_url])
+
+  // 防御：无方案不渲染。注意：必须在所有 hooks 之后 return（hooks 不能被条件跳过）。
+  if (!p) return null
 
   return (
     <div className="animate-fade-up mt-2 overflow-hidden rounded-card-lg bg-white border border-line">

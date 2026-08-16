@@ -116,8 +116,6 @@ function ChatPlanCard({ plan, onConfirm, onAdjust, onDiy }) {
 // 生图结果卡片：同步任务带 result_url 直接渲染；异步任务轮询 /tasks/{id} 至 done
 // 仅在无前置方案卡时独立展示（通常效果图会并入方案卡片）
 function ImageTaskCard({ data }) {
-  // 防御：无 task_id 也无 result_url 的空生图卡片（LLM 幻觉）不渲染
-  if (!data?.task_id && !data?.result_url && !data?.image_url) return null
   // 后端 result_url 为 /generated/{id}.jpg 形式，经 Vite 代理需补 /api 前缀
   const doneUrl = withApiUrl(data?.result_url || data?.image_url)
   const [state, setState] = useState(() =>
@@ -147,6 +145,10 @@ function ImageTaskCard({ data }) {
       alive = false
     }
   }, [data?.task_id, doneUrl])
+
+  // 防御：无 task_id 也无 result_url 的空生图卡片（LLM 幻觉）不渲染。
+  // 注意：必须在 hooks 之后 return（hooks 不能被条件跳过）。
+  if (!data?.task_id && !doneUrl) return null
 
   if (state.status === 'failed') {
     return (

@@ -252,6 +252,10 @@ class ReActAgent:
                 ui = UIType.TEXT
             data_arg = respond_args.get("data") or {}
             data = data_arg if isinstance(data_arg, dict) else {}
+            # 契约校验（LLM 输出可靠性）：data 形状不符合该 ui 的契约 → 置空，
+            # 交由下方 _data_effective=False 走 _derive_ui 工具推导兜底（杜绝幻觉卡片）。
+            if self._validate_respond_data(ui, data) is None:
+                data = {}
 
             # 工具推导的卡片/按钮 ui（依据本轮工具成果或当前阶段）
             inferred_ui, inferred_data = self._derive_ui(tool_log, new_stage, final_reply)
@@ -663,6 +667,28 @@ class ReActAgent:
         if "generate_diy_plan" in ordered or "search_plans" in ordered:
             return SessionStage.DIY_DESIGN
         return incoming
+
+    @staticmethod
+    def _validate_respond_data(ui: UIType, data: dict) -> dict | None:
+        """按 ui 契约校验 respond_to_user 携带的 data 形状；无效返回 None。
+
+        卡片类 ui 必须有核心字段，否则视为 LLM 幻觉（如 plan_card 无 plans、
+        pay_jump 无 order_id、dialog_options 无 options），调用方据此把 data 置空，
+        交给 _derive_ui 依据真实工具成果重建卡片。
+        """
+        if ui == UIType.TEXT:
+            return data
+        if ui == UIType.DIALOG_OPTIONS:
+            return data if isinstance(data.get("options"), list) and data["options"] else None
+        if ui == UIType.PLAN_CARD:
+            return data if isinstance(data.get("plans"), list) and data["plans"] else None
+        if ui == UIType.SHOP_CARD:
+            return data if isinstance(data.get("shops"), list) and data["shops"] else None
+        if ui in (UIType.ORDER_CARD, UIType.PAY_JUMP):
+            return data if data.get("order_id") or data.get("page_path") else None
+        if ui == UIType.IMAGE_TASK:
+            return data if (data.get("task_id") or data.get("result_url")) else None
+        return data
 
     def _derive_ui(
         self, tool_log: list[ToolCallRecord], stage: SessionStage, reply: str

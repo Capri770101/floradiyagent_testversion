@@ -32,7 +32,7 @@ def test_wx_login_success_issues_verifiable_jwt(client: TestClient) -> None:
     fake = {"openid": "oABC123", "session_key": "sk", "unionid": "u1"}
     with patch.object(security.settings, "wechat_appid", "appid"), \
          patch.object(security.settings, "wechat_secret", "secret"), \
-         patch.object(api, "wx_code2session", return_value=fake):
+         patch("routers.auth.wx_code2session", return_value=fake):
         r = client.post("/auth/wx-login", json={"code": "abc"})
         assert r.status_code == 200
         body = r.json()
@@ -47,7 +47,7 @@ def test_wx_login_wechat_error_propagates(client: TestClient) -> None:
     fake = {"errcode": 40029, "errmsg": "invalid code"}
     with patch.object(security.settings, "wechat_appid", "appid"), \
          patch.object(security.settings, "wechat_secret", "secret"), \
-         patch.object(api, "wx_code2session", return_value=fake):
+         patch("routers.auth.wx_code2session", return_value=fake):
         r = client.post("/auth/wx-login", json={"code": "bad"})
         assert r.status_code == 400
 

@@ -170,7 +170,11 @@ def _load_shops() -> list[dict[str, Any]]:
 
 
 def _load_proven() -> list[dict[str, Any]]:
-    """实战方案域：diy_plans 中高确认/高成交的用户方案（平台学习素材，惰性加载）。"""
+    """实战方案域：diy_plans 中高确认/高成交的用户方案（平台学习素材）。
+
+    注意：**不做内存缓存**——proven 随用户确认/成交动态增长，缓存会导致
+    新增方案不可见（测试与线上行为都会受影响）。
+    """
     data: list[dict[str, Any]] = []
     try:
         from storage.diy import list_proven_plans
@@ -178,18 +182,17 @@ def _load_proven() -> list[dict[str, Any]]:
         data = list_proven_plans()
     except Exception:  # pragma: no cover
         logger.warning("[knowledge] 实战方案库加载失败（DB 未就绪？）", exc_info=True)
-    _cache["proven"] = data
     return data
 
 
 def _load(domain: str) -> list[dict[str, Any]]:
-    """加载某域数据（带内存缓存，避免重复读盘）。"""
+    """加载某域数据（带内存缓存，避免重复读盘）。proven 域动态增长，不缓存。"""
+    if domain == "proven":
+        return _load_proven()
     if domain in _cache:
         return _cache[domain]
     if domain == "shop":
         return _load_shops()
-    if domain == "proven":
-        return _load_proven()
     path = _BASE_DIR / _DOMAINS[domain]
     if not path.exists():
         logger.warning("[knowledge] 数据文件缺失: %s", path)

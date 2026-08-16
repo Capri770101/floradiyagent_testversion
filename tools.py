@@ -947,8 +947,23 @@ def _build_plan(
 # --------------------------------------------------------------------------- #
 
 def _retrieve_for_design(requirements: str) -> str:
-    """把知识库 RAG 检索结果格式化为 LLM 可读的上下文（候选花材/风格/场景）。"""
+    """把知识库 RAG 检索结果格式化为 LLM 可读的上下文（候选花材/风格/场景/实战方案）。"""
     parts: list[str] = []
+    # 实战方案域（DIY 资产库闭环）：用户验证/成交过的方案优先作为设计参考，
+    # 让 AI 从「被市场验证的组合」出发设计，而非每次从零编造。
+    proven = query_knowledge("proven", requirements)["results"][:3]
+    if proven:
+        lines = []
+        for s in proven:
+            flowers = "、".join(s.get("flowers") or [])
+            lines.append(
+                f"- {s.get('name')}（风格:{s.get('style') or '-'}，对象:{s.get('recipient') or '-'}，"
+                f"场合:{s.get('occasion') or '-'}，预算:{s.get('budget') or '-'}元，"
+                f"主花:{flowers}，寓意:{s.get('meaning') or '-'}"
+                + (f"，已成交 {s.get('order_count')} 次" if s.get("order_count") else "")
+                + "）"
+            )
+        parts.append("【历史实战方案（用户验证过，可参考其组合但请结合本次需求微调）】\n" + "\n".join(lines))
     flowers = query_knowledge("flower", requirements)["results"][:8]
     if flowers:
         lines = [
