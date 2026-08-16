@@ -20,8 +20,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import threading
 import time
 import uuid
+from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -36,7 +38,7 @@ from pydantic import BaseModel, Field
 import security
 from agent import ReActAgent, is_allowed
 from config import settings, setup_logging
-from security import create_token, get_current_user, wx_code2session
+from security import get_current_user, wx_code2session
 from storage import catalog as catalog_store
 from storage import commerce, repository, tasks
 from storage import memory as mem_store
@@ -54,6 +56,52 @@ agent = ReActAgent()
 
 #: 轻量运行时指标（进程内，重启清零；生产可换 Prometheus  exporter）
 METRICS: dict[str, Any] = {"requests_total": 0, "requests_by_path": {}, "status_codes": {}}
+
+
+# --------------------------------------------------------------------------- #
+# 内存滑动窗口限流（防刷 LLM 账单 / 撞验证码；进程内，重启清零）
+# --------------------------------------------------------------------------- #
+
+
+class SlidingWindowLimiter:
+    """按 key 的滑动窗口计数：窗口内请求数 ≥ limit 则拒绝（返回 False）。
+
+    仅用于单进程部署；多 worker 需换 Redis（接口不变）。
+    """
+
+    def __init__(self) -> None:
+        self._hits: dict[str, deque[float]] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key: str, limit: int, window: float = 60.0) -> bool:
+        if limit <= 0:
+            return False
+        now = time.monotonic()
+        with self._lock:
+            dq = self._hits.setdefault(key, deque())
+            while dq and now - dq[0] > window:
+                dq.popleft()
+            if len(dq) >= limit:
+                return False
+            dq.append(now)
+            return True
+
+
+_limiter = SlidingWindowLimiter()
+
+
+def _client_ip(request: Request) -> str:
+    """取客户端 IP（透传 X-Forwarded-For 时取第一个值）。"""
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _check_rate(key: str, limit: int, window: float = 60.0) -> None:
+    """限流检查：超限抛 429（HTTPException 由统一 handler 转 JSON）。"""
+    if settings.rate_limit_enabled and not _limiter.allow(key, limit, window):
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
 
 
 # --------------------------------------------------------------------------- #
@@ -273,8 +321,9 @@ async def unhandled_exc_handler(request: Request, exc: Exception) -> JSONRespons
 
 
 @app.post("/auth/wx-login")
-async def wx_login(req: WxLoginRequest) -> dict[str, Any]:
+async def wx_login(req: WxLoginRequest, request: Request) -> dict[str, Any]:
     """微信小程序登录：用临时 code 换取 openid 并签发 JWT。"""
+    _check_rate(f"auth:{_client_ip(request)}", settings.rate_limit_auth_per_minute)
     if not settings.auth_configured:
         raise HTTPException(
             status_code=503,
@@ -309,7 +358,11 @@ async def wx_login(req: WxLoginRequest) -> dict[str, Any]:
 
 @app.post("/auth/phone-code")
 async def phone_code(req: PhoneCodeRequest) -> dict[str, Any]:
-    """手机号验证码：dev 模式不真实发送（固定验证码见 .env SMS_DEV_CODE，默认 123456）。"""
+    """手机号验证码：dev 模式不真实发送（固定验证码见 .env SMS_DEV_CODE，默认 123456）。
+
+    限流：每手机号每分钟 N 次（防短信轰炸）。
+    """
+    _check_rate(f"phone_code:{req.phone}", settings.rate_limit_phone_per_minute)
     code = security.issue_phone_code(req.phone)
     logger.info("[phone-code] phone=%s dev_mode=%s", req.phone, settings.sms_provider == "dev")
     return {
@@ -321,7 +374,11 @@ async def phone_code(req: PhoneCodeRequest) -> dict[str, Any]:
 
 @app.post("/auth/phone-login")
 async def phone_login(req: PhoneLoginRequest) -> dict[str, Any]:
-    """手机号验证码登录/注册：验证码通过后自动登录（无账号则一键注册）。"""
+    """手机号验证码登录/注册：验证码通过后自动登录（无账号则一键注册）。
+
+    限流：每手机号每分钟 N 次（防暴力撞 6 位验证码）。
+    """
+    _check_rate(f"phone_login:{req.phone}", settings.rate_limit_phone_login_per_minute)
     if not security.verify_phone_code(req.phone, req.code):
         raise HTTPException(status_code=401, detail="验证码错误或已过期")
     try:
@@ -389,11 +446,12 @@ async def resolve_uid(request: Request, body_user_id: str | None = None) -> str 
 
 
 @app.post("/auth/register")
-async def register(req: RegisterRequest) -> dict[str, Any]:
+async def register(req: RegisterRequest, request: Request) -> dict[str, Any]:
     """账号注册（非微信场景）：创建 users 行并签发 JWT。
 
     用户名已存在返回 409；密码过短返回 422（pydantic）或 400（业务校验）。
     """
+    _check_rate(f"auth:{_client_ip(request)}", settings.rate_limit_auth_per_minute)
     try:
         uid, token = security.register_user(req.username, req.password, req.nickname)
     except ValueError as exc:
@@ -410,8 +468,9 @@ async def register(req: RegisterRequest) -> dict[str, Any]:
 
 
 @app.post("/auth/login")
-async def login(req: LoginRequest) -> dict[str, Any]:
+async def login(req: LoginRequest, request: Request) -> dict[str, Any]:
     """账号登录：校验凭据并签发 JWT；失败返回 401。"""
+    _check_rate(f"auth:{_client_ip(request)}", settings.rate_limit_auth_per_minute)
     token = security.login_user(req.username, req.password)
     if not token:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
@@ -441,7 +500,11 @@ async def auth_me(request: Request) -> dict[str, Any]:
 
 @app.post("/chat")
 async def chat(req: ChatRequest, request: Request) -> Any:
-    """与智能体对话，跑完 ReAct + 状态机后返回结构化 UI 响应。"""
+    """与智能体对话，跑完 ReAct + 状态机后返回结构化 UI 响应。
+
+    限流：每 IP 每分钟 N 次（付费 LLM 接口，防刷单）。
+    """
+    _check_rate(f"chat:{_client_ip(request)}", settings.rate_limit_chat_per_minute)
     request_id = getattr(request.state, "request_id", "-")
     # 身份解析：鉴权模式以 JWT openid 为准（忽略请求体 user_id，防冒用）；dev 模式回退 body user_id。
     user_id = await resolve_uid(request, req.user_id)
@@ -977,15 +1040,19 @@ async def post_order(req: OrderCreateRequest, request: Request) -> dict[str, Any
     uid = await resolve_uid(request, req.user_id)
     if not uid:
         raise HTTPException(status_code=401, detail="缺少用户身份")
-    order = await asyncio.to_thread(
-        commerce.create_order,
-        uid,
-        [it.model_dump() for it in req.items],
-        req.recipient,
-        req.delivery,
-        req.note,
-        req.address_id,
-    )
+    try:
+        order = await asyncio.to_thread(
+            commerce.create_order,
+            uid,
+            [it.model_dump() for it in req.items],
+            req.recipient,
+            req.delivery,
+            req.note,
+            req.address_id,
+        )
+    except ValueError as exc:
+        # 方案不存在/已下架（服务端取价失败）→ 400，绝不信客户端价格
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"order": order}
 
 

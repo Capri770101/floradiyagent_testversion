@@ -152,6 +152,13 @@ class Settings(BaseSettings):
     history_limit: int = 20         # 短期记忆每次载入最近 N 条
     request_timeout: float = 60.0    # 单请求全程超时兜底
 
+    # ---- 接口限流（内存滑动窗口；防刷 LLM 账单 / 撞验证码）----
+    rate_limit_enabled: bool = True  # False=整体关闭（仅限压测/联调）
+    rate_limit_chat_per_minute: int = 30      # /chat 每 IP 每分钟（付费 LLM，重点保护）
+    rate_limit_auth_per_minute: int = 120     # /auth/login|register|wx-login 每 IP 每分钟
+    rate_limit_phone_per_minute: int = 3      # /auth/phone-code 每手机号每分钟（防短信轰炸）
+    rate_limit_phone_login_per_minute: int = 10  # /auth/phone-login 每手机号每分钟（防撞 6 位码）
+
     # ---- 知识库向量检索（RAG）----
     # 检索由 knowledge/store.py 实现：TF-IDF 向量空间 + 字符 n-gram 切词（纯 Python，零依赖、可离线）。
     # 混合策略：关键词命中保底 ∪ 向量语义召回（仅多 token/长自然语句触发），接口 query_knowledge 不变。

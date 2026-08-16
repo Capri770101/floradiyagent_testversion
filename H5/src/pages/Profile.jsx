@@ -69,7 +69,7 @@ const FUNCTIONS = [
   { label: '我的地址', path: '/addresses' },
   { label: '领券中心', path: '/coupons' },
   { label: '客服中心', path: '/service' },
-  { label: '关于 MAISON·FLORA', path: '/about' },
+  { label: '关于跳舞兰', path: '/about' },
   { label: '设置', path: '/settings' },
 ]
 
@@ -300,7 +300,7 @@ export default function Profile() {
             style={{ width: 64, height: 64 }}
           />
           <div className="mb-4 flex items-baseline justify-between border-b border-line pb-2.5">
-            <p className="eyebrow">Atelier</p>
+            <p className="eyebrow">跳舞兰</p>
             <div className="flex gap-4">
               {[
                 { key: 'phone', label: '手机号登录' },
@@ -424,8 +424,8 @@ export default function Profile() {
             alt="跳舞兰"
             className="mx-auto h-11 w-11 rounded-full border border-line bg-white object-cover"
           />
-          <p className="eyebrow mt-3">Atelier</p>
-          <p className="mt-2 font-serif-cn text-[20px] text-ink">欢迎来到 MAISON·FLORA</p>
+          <p className="eyebrow mt-3">跳舞兰</p>
+          <p className="mt-2 font-serif-cn text-[20px] text-ink">欢迎来到 跳舞兰</p>
           <p className="mt-1 text-[11px] text-sub">登录后对话、购物车、订单按账号隔离保存</p>
           <Button className="mt-5 w-full" onClick={() => setLoginOpen(true)}>
             手机号 / 微信登录
@@ -489,7 +489,7 @@ export default function Profile() {
             className="h-7 w-7 shrink-0 rounded-full border border-white/30 bg-white object-cover"
           />
           <div>
-            <p className="text-[13px] font-medium text-white">MAISON·FLORA 金牌会员</p>
+            <p className="text-[13px] font-medium text-white">跳舞兰 金牌会员</p>
             <p className="mt-1 text-[10px]" style={{ color: '#DDD2C8' }}>
               开通享更多专属权益
             </p>

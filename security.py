@@ -288,7 +288,6 @@ def issue_phone_code(phone: str) -> str:
 
 def verify_phone_code(phone: str, code: str) -> bool:
     """校验手机号验证码（校验通过即销毁，防止重放）。"""
-    from config import settings
 
     item = _PHONE_CODES.get(phone)
     if not item:

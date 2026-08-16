@@ -92,7 +92,7 @@ export default function Home() {
     { label: '我的收藏', path: '/favorites' },
     { label: '领券中心', path: '/coupons' },
     { label: '设置', path: '/settings' },
-    { label: '关于 MAISON·FLORA', path: '/about' },
+    { label: '关于跳舞兰', path: '/about' },
   ]
 
   return (
@@ -121,7 +121,7 @@ export default function Home() {
             className="h-6 w-6 rounded-full border border-line bg-white object-cover"
           />
           <span className="font-serif-cn text-[15px] tracking-[2px]">
-            MAISON<span className="text-gold">·</span>FLORA
+            跳舞兰
           </span>
           <IconMenu width={20} height={20} className="ml-0.5 text-ink" />
         </button>
@@ -199,9 +199,9 @@ export default function Home() {
                 className="mx-auto h-9 w-9 rounded-full border border-line bg-white object-cover"
               />
               <span className="mt-2 block text-[10px] tracking-[0.2em] text-stone">
-                MAISON·FLORA
+                跳舞兰
                 <br />
-                Atelier de Fleurs
+                花艺工坊
               </span>
             </p>
           </div>
@@ -215,7 +215,7 @@ export default function Home() {
           alt="跳舞兰"
           className="mx-auto h-12 w-12 rounded-full border border-line bg-white object-cover shadow-soft"
         />
-        <p className="eyebrow mt-3">Atelier de Fleurs · 2026</p>
+        <p className="eyebrow mt-3">花艺工坊 · 2026</p>
         <h1 className="mt-3 font-serif-cn text-[36px] font-normal leading-[1.15] text-ink">
           为懂得欣赏
           <br />
@@ -301,12 +301,12 @@ export default function Home() {
           <br />
           交还给一朵花。”
         </p>
-        <p className="quote-credit mt-5">— MAISON FLORA ATELIER</p>
+        <p className="quote-credit mt-5">— 跳舞兰 · 花艺工坊</p>
       </div>
 
       {/* 页脚 */}
       <p className="py-8 text-center text-[10px] tracking-[1px] text-stone">
-        MAISON · FLORA — 轻奢花艺 · 2026
+        跳舞兰 — 轻奢花艺 · 2026
       </p>
 
       {/* 吸底结算栏（参考稿 .sticky：墨黑底 + 香槟金 CTA） */}

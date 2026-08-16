@@ -733,15 +733,35 @@ def create_order(
     note: str | None = None,
     address_id: str | None = None,
 ) -> dict[str, Any]:
-    """创建订单：计算总额、自动抵扣最优优惠券、落库（含收货信息），并从购物车移除带 item_id 的项。
+    """创建订单：服务端按目录取价计算总额、自动抵扣最优优惠券、落库（含收货信息），
+    并从购物车移除带 item_id 的项。
+
+    安全：**价格一律以目录（repo.get_plan）为准，绝不信客户端传价**（review P0：
+    POST /orders 曾直接按客户端 price×qty 计总额，可被篡改为任意低价）。
+    方案不存在 → ValueError（接口层转 400）。
 
     Args:
         address_id: 收货地址 id（用户已存地址时传此即可）；未传或找不到时回退 recipient 手填。
     """
     conn = get_conn()
-    total = sum(float(it.get("price", 0)) * int(it.get("qty", 1)) for it in items)
+    from storage.repository import repo  # 延迟导入，避免循环依赖
+
+    priced: list[dict[str, Any]] = []
+    for it in items:
+        pid = it.get("plan_id")
+        plan = repo.get_plan(pid) if pid else None
+        if not plan:
+            raise ValueError(f"方案不存在或已下架: {pid}")
+        priced.append(
+            {
+                **it,
+                "price": float(plan["price"]),  # 服务端价格覆盖客户端传入值
+                "name": plan.get("name") or it.get("name", ""),
+            }
+        )
+    total = sum(float(i["price"]) * max(1, int(i.get("qty", 1))) for i in priced)
     order_id = "O_" + uuid.uuid4().hex[:10]
-    first = items[0] if items else {}
+    first = priced[0] if priced else {}
     # 兼容 recipient 两种命名风格（前端 name/phone/address 或 recipient_name/...）
     r = recipient or {}
     rname = r.get("name") or r.get("recipient_name")
@@ -766,7 +786,7 @@ def create_order(
             first.get("plan_id"),
             "plan",
             first.get("shop"),
-            json.dumps(items, ensure_ascii=False),
+            json.dumps(priced, ensure_ascii=False),
             total,
             _expires_at_str(),
             saved_addr["id"] if saved_addr else None,
@@ -781,7 +801,7 @@ def create_order(
     # 自动抵扣最优可用优惠券（新人立减等）；折扣落订单并标记券已用
     apply_best_coupon(order_id, user_id, total)
     # 若购物车项带 item_id，下单后移除（避免重复结算）
-    for it in items:
+    for it in priced:
         iid = it.get("item_id")
         if iid:
             conn.execute("DELETE FROM cart_items WHERE item_id=?", (iid,))

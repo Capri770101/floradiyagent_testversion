@@ -63,7 +63,7 @@ export default function DiyDetail() {
           name: p?.name || plan.name,
           price: estPrice,
           qty: 1,
-          shop: plan.merchant || 'MAISON·FLORA 定制',
+          shop: plan.merchant || '跳舞兰 定制',
         },
       ])
       nav('/order', { state: { orderId: order.order_id } })

@@ -51,7 +51,8 @@ def test_welcome_coupon_auto_issued(client):
 def test_order_auto_applies_best_coupon(client):
     token = _register(client, "cp_b")
     order = _create_order(client, token, price=99)
-    assert order["total_price"] == 99
+    # 价格以目录为准（P001=199），客户端传价 99 被服务端覆盖（review P0 防篡改）
+    assert order["total_price"] == 199
     assert order["discount"] == 10
     assert order["coupon_id"]
     # 券被标记已用
@@ -73,7 +74,7 @@ def test_pay_awards_points(client):
     )
     assert r.status_code == 200
     points = client.get("/points", headers={"Authorization": f"Bearer {token}"}).json()
-    assert points["balance"] == 99
+    assert points["balance"] == 199  # 订单总额以目录价计（P001=199），1:1 返积分
     assert any("返积分" in rec["reason"] for rec in points["records"])
 
 

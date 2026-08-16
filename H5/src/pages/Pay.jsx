@@ -142,7 +142,7 @@ export default function Pay() {
             alt="跳舞兰"
             className="h-4 w-4 rounded-full border border-line bg-white object-cover"
           />
-          收款方 MAISON·FLORA
+          收款方 跳舞兰
         </p>
 
         <h2 className="mt-7 px-1 text-[15px] font-medium text-dark">支付方式</h2>

@@ -416,7 +416,7 @@ export default function Agent() {
             name: p.name,
             price: p.price,
             qty: 1,
-            shop: p.merchant || 'MAISON·FLORA',
+            shop: p.merchant || '跳舞兰',
           },
         ])
         nav('/order', { state: { orderId: order.order_id } })

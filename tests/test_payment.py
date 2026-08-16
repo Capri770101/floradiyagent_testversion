@@ -74,7 +74,10 @@ def test_alipay_missing_creds_raises() -> None:
 
 
 def _make_order(user_id: str = "u_pay") -> str:
-    """造一个已落库的测试订单（依赖 commerce.create_order）。"""
+    """造一个已落库的测试订单（依赖 commerce.create_order）。
+
+    注意：价格以目录为准（P001=199），客户端传 50 无效；2 件 → 总额 398。
+    """
     items = [{"plan_id": "P001", "name": "测试花束", "price": 50.0, "qty": 2}]
     order = commerce.create_order(user_id, items)
     return order["order_id"]
@@ -99,7 +102,7 @@ def test_pay_order_sandbox_records_payment_and_marks_paid() -> None:
     assert pay_row is not None
     assert pay_row["status"] == "paid"
     assert pay_row["method"] == "wechat"
-    assert float(pay_row["amount"]) == 100.0
+    assert float(pay_row["amount"]) == 398.0
 
 
 def test_pay_order_unknown_order_returns_none() -> None:

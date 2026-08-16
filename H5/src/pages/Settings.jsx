@@ -91,7 +91,7 @@ export default function Settings() {
             alt="跳舞兰"
             className="mx-auto h-8 w-8 rounded-full border border-line bg-white object-cover"
           />
-          <p className="mt-2 text-[10px] text-sub/60">MAISON·FLORA v1.0</p>
+          <p className="mt-2 text-[10px] text-sub/60">跳舞兰 v1.0</p>
         </div>
       </div>
     </div>
