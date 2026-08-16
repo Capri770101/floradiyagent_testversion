@@ -61,6 +61,12 @@ export const IconPlus = (p) => (
   </svg>
 )
 
+export const IconSend = (p) => (
+  <svg {...base} {...p}>
+    <path d="m22 2-11 11M22 2l-7 20-4-9-9-4 20-7Z" />
+  </svg>
+)
+
 export const IconHeart = (p) => (
   <svg {...base} {...p} fill={p.filled ? 'currentColor' : 'none'}>
     <path d="M12 20s-7-4.3-9.2-8.5C1.3 8.7 2.6 5.5 5.8 5.5c2 0 3.2 1.3 4.2 2.6 1-1.3 2.2-2.6 4.2-2.6 3.2 0 4.5 3.2 3 6C19 15.7 12 20 12 20Z" />

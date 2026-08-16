@@ -47,6 +47,7 @@ export function normalizePlan(plan) {
     careTips: plan.care_tips ?? d.care_tips,
     cardMessage: plan.card_message ?? d.card_message,
     budget: plan.budget_breakdown ?? d.budget_breakdown,
+    effectImageUrl: plan.effect_image_url ?? plan.result_url ?? null,
     flowers,
     merchant: plan.merchant,
     effectPrompt: plan.effect_prompt ?? d.effect_prompt,
@@ -105,6 +106,11 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
   useEffect(() => {
     if (img?.result_url) {
       setImgState({ status: 'done', url: withApiUrl(img.result_url) })
+      return
+    }
+    // 历史方案回落：从资产库取回的方案自带 effect_image_url，直接渲染
+    if (p.effectImageUrl) {
+      setImgState({ status: 'done', url: withApiUrl(p.effectImageUrl) })
       return
     }
     if (!img?.task_id) {

@@ -9,7 +9,12 @@ export default function About() {
       <div className="flex-1 overflow-y-auto px-5 pt-5 pb-10">
         {/* 品牌卡：衬线 logo + 金句 */}
         <div className="hero-flora rounded-[4px] px-6 py-8 text-center">
-          <p className="eyebrow">Atelier de Fleurs</p>
+          <img
+            src="/images/brand/logo.jpg"
+            alt="跳舞兰"
+            className="mx-auto h-14 w-14 rounded-full border border-line bg-white object-cover shadow-soft"
+          />
+          <p className="eyebrow mt-3">Atelier de Fleurs</p>
           <h2 className="mt-2 font-serif-cn text-[26px] font-normal text-ink">MAISON·FLORA</h2>
           <p className="mt-3 font-serif-cn text-[15px] font-normal text-ink/80">
             真正的奢侈，是把时间，

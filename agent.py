@@ -381,6 +381,42 @@ class ReActAgent:
             and mem_store.get_session_flag(user_id, sid, "image_confirmed") != "1"
         ):
             mem_store.set_session_flag(user_id, sid, "image_confirmed", "1")
+        # DIY 方案入库（确认级）：用户本轮明确确认方案且会话有最新 DIY 方案 →
+        # 存入 diy_plans 资产库（个人复用 + 平台学习素材）。重复方案按
+        # user_id+内容指纹去重，不重复落库。
+        if (
+            any(w in message for w in (
+                "确认方案", "确认这个方案", "就这个", "定这个", "就它", "这个方案", "方案可以",
+            ))
+            or (is_affirmative(message) and "方案" in message)
+        ):
+            try:
+                from storage.diy import save_diy_plan
+
+                _diy = mem_store.get_session_json(user_id, sid, "latest_diy_plan")
+                if _diy and _diy.get("diy"):
+                    # 回填效果图：方案本身无图时，从会话最近生图任务取 result_url
+                    if not (_diy.get("result_url") or _diy.get("effect_image_url")):
+                        try:
+                            from storage.tasks import get_image_task
+
+                            for _m in reversed(mem_store.load_display_messages(sid)):
+                                _d = _m.get("data") if isinstance(_m.get("data"), dict) else {}
+                                if _d.get("task_id"):
+                                    _t = get_image_task(str(_d["task_id"]))
+                                    if _t.get("result_url"):
+                                        _diy["result_url"] = _t["result_url"]
+                                    break
+                        except Exception:  # noqa: BLE001
+                            logger.exception("[agent] DIY 方案效果图回填失败")
+                    _diy["requirement"] = message
+                    _res = save_diy_plan(_diy, user_id)
+                    logger.info(
+                        "[agent] DIY 方案入库 saved=%s duplicate=%s id=%s",
+                        _res["saved"], _res["duplicate"], _res["plan_id"],
+                    )
+            except Exception:  # noqa: BLE001
+                logger.exception("[agent] DIY 方案入库失败")
         # 「先推现有方案」兜底（live 关键）：需求基本明确后，本轮应把配送范围内符合
         # 条件的现有花束以卡片推给用户（用户可直接选购，或转 DIY）。live 下 LLM 常只回
         # 文字不调 search_plans（尤其需求刚交代完的第一轮），导致现有方案永远推不出来。
@@ -407,6 +443,7 @@ class ReActAgent:
             and new_stage not in (SessionStage.DONE, SessionStage.ORDER_CONFIRM)
             and not any(w in message for w in (
                 "店铺", "下单", "购买", "支付", "付款", "确认方案", "diy", "diy 定制",
+                "定制", "专属", "自己设计", "独一无二", "特别", "重新设计",
             ))
         ):
             try:
@@ -565,9 +602,11 @@ class ReActAgent:
             "- respond_to_user：当无需再调工具、直接回复用户时调用，并给出 ui/data（卡片/按钮）。",
             "## 主流程（按需走，不强推，用户可随时打断）",
             "1. 先聊：用户闲聊或问花卉/花艺知识（花期、养护、寓意、搭配等），直接亲切回答即可，不要调用任何工具，也不要推荐方案或店铺。",
-            "2. 需求基本明确后（送谁/场合/预算至少一项已交代）：先调 search_plans，把配送范围内符合需求的现有花束以卡片推给用户；用户可直接挑一款购买，也可说「我要 DIY 定制」来设计专属方案。",
-            "3. 用户要 DIY：调 generate_diy_plan 设计完整方案（花材/寓意/包装/预算/DIY 步骤/养护），并按需生成效果图；用户确认方案后，调 search_shops 推荐能做该方案的店铺。",
-            "4. 用户选定店铺后：调 create_order 下单并给支付跳转。",
+            "2. 需求基本明确后（送谁/场合/预算至少一项已交代）：默认先调 search_plans，把配送范围内符合需求的现有花束以卡片推给用户；用户可直接挑一款购买，也可说「我要 DIY 定制」来设计专属方案。",
+            "3. 用户明确表达 DIY 意图（如「定制 / 专属 / 自己设计 / 独一无二 / 特别一点」，或主动交代 ≥2 个偏好维度：对象/场合/预算/色系/风格/花材禁忌）时：跳过 search_plans，直接调 generate_diy_plan 设计专属方案。",
+            "4. search_plans 返回为空或结果与需求明显不符（预算/色系/花材/对象均不命中）时：不要硬推无关方案，直接转 generate_diy_plan 按需求设计专属方案。",
+            "5. DIY 方案设计后（花材/寓意/包装/预算/DIY 步骤/养护），可按需生成效果图；用户确认方案后，调 search_shops 推荐能做该方案的店铺。",
+            "6. 用户选定店铺后：调 create_order 下单并给支付跳转。",
             "## 原则",
             "1. 用户随时可打断、改需求、回退；不要强推固定流程。",
             "2. 生图前必须已有方案；无方案时先引导用户设计。",

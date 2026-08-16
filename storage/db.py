@@ -70,6 +70,36 @@ CREATE TABLE IF NOT EXISTS plans (
     created_at       TEXT NOT NULL
 );
 
+-- 用户 DIY 方案资产库：只收录「用户确认过」的方案（确认→confirmed，成交→ordered）；
+-- 按 user_id + 内容指纹去重，同一用户同一配方不重复落库
+CREATE TABLE IF NOT EXISTS diy_plans (
+    id               TEXT PRIMARY KEY,           -- plan_id，如 DIY_1a2b3c
+    user_id          TEXT NOT NULL,
+    fingerprint      TEXT NOT NULL,              -- 内容指纹（花材/角色/风格/对象/预算/包装）
+    name             TEXT NOT NULL,
+    requirement      TEXT,                       -- 原始需求文本（学习/复用输入）
+    recipient        TEXT,
+    occasion         TEXT,
+    style            TEXT,
+    budget           REAL,
+    color_scheme     TEXT,                       -- JSON 数组
+    flowers          TEXT,                       -- JSON [{bucket,name,ratio}]
+    packaging        TEXT,
+    meaning          TEXT,
+    diy_steps        TEXT,                       -- JSON 数组
+    care_tips        TEXT,
+    card_message     TEXT,
+    budget_breakdown TEXT,                       -- JSON 对象
+    effect_image_url TEXT,
+    status           TEXT NOT NULL DEFAULT 'confirmed',
+    order_count      INTEGER NOT NULL DEFAULT 0,
+    created_at       TEXT NOT NULL,
+    confirmed_at     TEXT,
+    UNIQUE (user_id, fingerprint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_diy_plans_user ON diy_plans(user_id);
+
 -- 店铺
 CREATE TABLE IF NOT EXISTS shops (
     id           TEXT PRIMARY KEY,               -- shop_id，如 S001

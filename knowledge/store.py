@@ -38,6 +38,7 @@ _DOMAINS: dict[str, str] = {
     "packaging": "packaging.json",
     "scene": "scenes.json",
     "shop": "",  # 商家智库（storage.catalog 提供，惰性加载）
+    "proven": "",  # 实战方案（用户验证过的 DIY 方案，storage.diy 提供，惰性加载）
 }
 
 _BASE_DIR = Path(__file__).resolve().parent
@@ -168,12 +169,27 @@ def _load_shops() -> list[dict[str, Any]]:
     return data
 
 
+def _load_proven() -> list[dict[str, Any]]:
+    """实战方案域：diy_plans 中高确认/高成交的用户方案（平台学习素材，惰性加载）。"""
+    data: list[dict[str, Any]] = []
+    try:
+        from storage.diy import list_proven_plans
+
+        data = list_proven_plans()
+    except Exception:  # pragma: no cover
+        logger.warning("[knowledge] 实战方案库加载失败（DB 未就绪？）", exc_info=True)
+    _cache["proven"] = data
+    return data
+
+
 def _load(domain: str) -> list[dict[str, Any]]:
     """加载某域数据（带内存缓存，避免重复读盘）。"""
     if domain in _cache:
         return _cache[domain]
     if domain == "shop":
         return _load_shops()
+    if domain == "proven":
+        return _load_proven()
     path = _BASE_DIR / _DOMAINS[domain]
     if not path.exists():
         logger.warning("[knowledge] 数据文件缺失: %s", path)

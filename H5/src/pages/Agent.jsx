@@ -19,7 +19,7 @@ import { Button } from '../components/Button'
 import DiyPlanCard from '../components/DiyPlanCard'
 import SmartImage from '../components/SmartImage'
 import { itemImagePath } from '../assets/imageMap'
-import { IconFlower, IconPlus, IconMenu, IconTrash } from '../components/icons'
+import { IconSend, IconMenu, IconTrash } from '../components/icons'
 import { FloraBloom } from '../components/FloralDecor'
 import { PLACEHOLDER } from '../tokens'
 
@@ -548,9 +548,11 @@ export default function Agent() {
     return (
       <div key={idx} className="px-4 pb-3">
         <div className="flex items-start gap-2">
-          <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gold bg-white text-gold">
-            <IconFlower width={15} height={15} />
-          </div>
+          <img
+            src="/images/brand/logo.jpg"
+            alt="跳舞兰"
+            className="mt-1 h-7 w-7 shrink-0 rounded-full border border-gold bg-white object-cover"
+          />
           <div className="max-w-[285px]">
             <div className="rounded-[2px] border border-line bg-white px-3.5 py-2.5">
               {m.lead ? (
@@ -660,7 +662,14 @@ export default function Agent() {
         >
           <IconMenu width={22} height={22} />
         </button>
-        <span className="text-[16px] font-medium text-dark">小兰</span>
+        <span className="flex items-center gap-2">
+          <img
+            src="/images/brand/logo.jpg"
+            alt="跳舞兰"
+            className="h-6 w-6 rounded-full border border-gold bg-white object-cover"
+          />
+          <span className="text-[16px] font-medium text-dark">小兰</span>
+        </span>
         <span className="ml-2 text-[9px] text-sub">AI花艺师</span>
         <button
           onClick={openNewChat}
@@ -675,9 +684,11 @@ export default function Agent() {
         {loading && (
           <div className="px-4 pb-3">
             <div className="flex items-start gap-2">
-              <div className="mt-1 flex h-7 w-7 items-center justify-center rounded-full border border-gold bg-white text-gold">
-                <IconFlower width={15} height={15} />
-              </div>
+              <img
+              src="/images/brand/logo.jpg"
+              alt="跳舞兰"
+              className="mt-1 h-7 w-7 rounded-full border border-gold bg-white object-cover"
+            />
               <div className="rounded-[2px] border border-line bg-white px-4 py-3">
                 <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sub" />
                 <span
@@ -711,7 +722,7 @@ export default function Agent() {
           className="press flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[2px] bg-gold text-[#FAF8F5]"
           aria-label="发送"
         >
-          <IconPlus width={20} height={20} />
+          <IconSend width={20} height={20} />
         </button>
       </div>
 

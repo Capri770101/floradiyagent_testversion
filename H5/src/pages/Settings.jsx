@@ -85,7 +85,14 @@ export default function Settings() {
         >
           退出登录
         </Button>
-        <p className="mt-4 text-center text-[10px] text-sub/60">MAISON·FLORA v1.0</p>
+        <div className="mt-4 text-center">
+          <img
+            src="/images/brand/logo.jpg"
+            alt="跳舞兰"
+            className="mx-auto h-8 w-8 rounded-full border border-line bg-white object-cover"
+          />
+          <p className="mt-2 text-[10px] text-sub/60">MAISON·FLORA v1.0</p>
+        </div>
       </div>
     </div>
   )

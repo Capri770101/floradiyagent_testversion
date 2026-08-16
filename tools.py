@@ -200,6 +200,20 @@ def search_plans(keyword: str, _context: dict | None = None) -> str:
     if _context:
         location = _context.get("location") or (req.location if req else None)
     plans = repo.search_plans(keyword, requirement=req, location=location)
+    # 个人已验证 DIY 方案融合：同一需求的已确认方案优先于商家预设（用户信任自己的设计，
+    # 也可通过「重新做上次那束花」类需求被再次召回）。按 user_id 隔离，跨用户不可见。
+    uid = (_context or {}).get("user_id", "")
+    diy_hits: list[dict] = []
+    if uid:
+        try:
+            from storage.diy import search_diy_plans as _search_diy
+
+            diy_hits = _search_diy(uid, req)
+        except Exception:  # noqa: BLE001
+            logger.exception("[tools] 个人 DIY 方案检索失败")
+    if diy_hits:
+        combined = _rank_plans(diy_hits, req) + _rank_plans(plans, req)
+        return json.dumps(combined[:3], ensure_ascii=False)
     return json.dumps(_rank_plans(plans, req), ensure_ascii=False)
 
 
@@ -214,8 +228,15 @@ def search_plans(keyword: str, _context: dict | None = None) -> str:
     tags=["plan"],
 )
 def get_plan_detail(plan_id: str) -> str:
-    """获取方案详情。"""
+    """获取方案详情（DIY_ 前缀回落 diy_plans 资产库）。"""
     plan = repo.get_plan(plan_id)
+    if not plan and str(plan_id).startswith("DIY_"):
+        try:
+            from storage.diy import get_diy_plan
+
+            plan = get_diy_plan(plan_id)
+        except Exception:  # noqa: BLE001
+            plan = None
     return json.dumps(plan or {"error": "not found"}, ensure_ascii=False)
 
 
@@ -231,7 +252,7 @@ def get_plan_detail(plan_id: str) -> str:
         "properties": {
             "domain": {
                 "type": "string",
-                "description": "检索域：flower(花材) | style(风格) | pairing(搭配规则) | budget(预算) | packaging(包装) | shop(商家智库) | scene(场景) | all(全部)",
+                "description": "检索域：flower(花材) | style(风格) | pairing(搭配规则) | budget(预算) | packaging(包装) | shop(商家智库) | scene(场景) | proven(用户验证过的实战方案) | all(全部)",
             },
             "query": {"type": "string", "description": "关键词或自然语言，如 母亲/生日/北欧/200元/能做婚礼布置的店"},
         },

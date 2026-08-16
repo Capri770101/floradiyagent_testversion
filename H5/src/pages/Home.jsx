@@ -113,8 +113,13 @@ export default function Home() {
         <button
           onClick={openMenu}
           aria-label="菜单"
-          className="press -mr-1 flex items-center gap-1 p-1 text-ink"
+          className="press -mr-1 flex items-center gap-1.5 p-1 text-ink"
         >
+          <img
+            src="/images/brand/logo.jpg"
+            alt="跳舞兰"
+            className="h-6 w-6 rounded-full border border-line bg-white object-cover"
+          />
           <span className="font-serif-cn text-[15px] tracking-[2px]">
             MAISON<span className="text-gold">·</span>FLORA
           </span>
@@ -187,18 +192,30 @@ export default function Home() {
                 </button>
               ))}
             </div>
-            <p className="mt-auto px-5 py-4 text-[10px] tracking-[0.2em] text-stone">
-              MAISON·FLORA
-              <br />
-              Atelier de Fleurs
+            <p className="mt-auto px-5 py-4 text-center">
+              <img
+                src="/images/brand/logo.jpg"
+                alt="跳舞兰"
+                className="mx-auto h-9 w-9 rounded-full border border-line bg-white object-cover"
+              />
+              <span className="mt-2 block text-[10px] tracking-[0.2em] text-stone">
+                MAISON·FLORA
+                <br />
+                Atelier de Fleurs
+              </span>
             </p>
           </div>
         </div>
       )}
 
       {/* Hero（参考稿 .hero：居中 衬线大字 + 金线 + 金线花卉） */}
-      <div className="px-6 pb-2 pt-7 text-center">
-        <p className="eyebrow">Atelier de Fleurs · 2026</p>
+      <div className="px-6 pb-2 pt-6 text-center">
+        <img
+          src="/images/brand/logo.jpg"
+          alt="跳舞兰"
+          className="mx-auto h-12 w-12 rounded-full border border-line bg-white object-cover shadow-soft"
+        />
+        <p className="eyebrow mt-3">Atelier de Fleurs · 2026</p>
         <h1 className="mt-3 font-serif-cn text-[36px] font-normal leading-[1.15] text-ink">
           为懂得欣赏
           <br />

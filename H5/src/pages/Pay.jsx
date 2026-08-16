@@ -136,7 +136,14 @@ export default function Pay() {
             {recipient.address ? ` · ${recipient.address}` : ''}
           </p>
         )}
-        <p className="mt-1 px-1 text-[12px] text-sub">收款方 MAISON·FLORA</p>
+        <p className="mt-1 flex items-center gap-1.5 px-1 text-[12px] text-sub">
+          <img
+            src="/images/brand/logo.jpg"
+            alt="跳舞兰"
+            className="h-4 w-4 rounded-full border border-line bg-white object-cover"
+          />
+          收款方 MAISON·FLORA
+        </p>
 
         <h2 className="mt-7 px-1 text-[15px] font-medium text-dark">支付方式</h2>
         <div className="mt-2 overflow-hidden rounded-card bg-white border border-line">

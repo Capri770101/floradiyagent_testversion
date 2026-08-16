@@ -94,6 +94,15 @@ def create_order(
     # 与 /orders 下单链路一致：自动抵扣最优优惠券（新人立减等）
     discount = apply_best_coupon(order_id, user_id, total)
 
+    # DIY 方案成交 → 升级 diy_plans 资产库状态（confirmed → ordered，累计成交数）
+    if plan_type == "diy":
+        try:
+            from storage.diy import mark_diy_plan_ordered
+
+            mark_diy_plan_ordered(plan["plan_id"])
+        except Exception:  # noqa: BLE001
+            logger.warning("[skill_order] 标记 DIY 方案成交失败", exc_info=True)
+
     pay_jump = {
         "order_id": order_id,
         "page_path": settings.pay_page_path,
