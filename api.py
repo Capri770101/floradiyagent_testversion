@@ -88,8 +88,8 @@ app.add_middleware(
 )
 
 
-#: H5 前端已下线（用户要求移除），服务现为纯 API。根路径重定向到交互式
-#: API 文档，便于直接调试 /chat 等端点。
+#: 本服务为纯 API（H5 为独立前端，由 Vite 构建后单独部署，不在此挂载）。
+#: 根路径重定向到交互式 API 文档，便于直接调试 /chat 等端点。
 @app.get("/")
 async def index() -> RedirectResponse:
     """根路径重定向到 API 文档。"""
