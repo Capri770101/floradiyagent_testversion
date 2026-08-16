@@ -217,6 +217,50 @@ _PLANS = [
         "style": "欧式",
         "category_id": "cat_giftbox",
     },
+    {
+        "plan_id": "P013",
+        "name": "香槟玫瑰告白花束",
+        "price": 229.0,
+        "desc": "香槟玫瑰混搭洋桔梗，温柔不张扬，告白纪念两相宜。",
+        "effect_image_url": "/generated/plan_P013.png",
+        "merchant_name": "花语花集",
+        "tags": ["香槟玫瑰", "告白", "温柔"],
+        "style": "韩式",
+        "category_id": "cat_love",
+    },
+    {
+        "plan_id": "P014",
+        "name": "禅意竹艺插花",
+        "price": 269.0,
+        "desc": "日式禅意插花，竹器留白，清雅克制，适合书房与茶室。",
+        "effect_image_url": "/generated/plan_P014.png",
+        "merchant_name": "半夏花房",
+        "tags": ["日式", "禅意", "插花"],
+        "style": "日式",
+        "category_id": "cat_giftbox",
+    },
+    {
+        "plan_id": "P015",
+        "name": "复古玫瑰礼盒",
+        "price": 459.0,
+        "desc": "复古色系玫瑰配丝绒礼盒，浓郁华美，宴会婚礼皆宜。",
+        "effect_image_url": "/generated/plan_P015.png",
+        "merchant_name": "暮色花园",
+        "tags": ["复古", "玫瑰", "礼盒"],
+        "style": "复古",
+        "category_id": "cat_giftbox",
+    },
+    {
+        "plan_id": "P016",
+        "name": "野趣雏菊小花束",
+        "price": 79.0,
+        "desc": "小雏菊配尤加利叶，野趣清新，随手一束治愈日常。",
+        "effect_image_url": "/generated/plan_P016.png",
+        "merchant_name": "拾野花铺",
+        "tags": ["雏菊", "野趣", "平价"],
+        "style": "自然",
+        "category_id": "cat_daily",
+    },
 ]
 
 _SHOPS = [
@@ -308,10 +352,294 @@ _SHOPS = [
         "lng": 114.131,
         "intro": "高端花艺定制，宴会布置与定制花篮。",
     },
+    {
+        "shop_id": "S009",
+        "name": "花语花集(福田CBD店)",
+        "distance_km": 1.6,
+        "price_range": "120-350",
+        "rating": 4.8,
+        "plan_ids": ["P013", "P005"],
+        "lat": 22.542,
+        "lng": 114.057,
+        "intro": "写字楼商圈花店，韩式温柔风，告白生日人气之选。",
+    },
+    {
+        "shop_id": "S010",
+        "name": "半夏花房",
+        "distance_km": 2.8,
+        "price_range": "150-450",
+        "rating": 4.7,
+        "plan_ids": ["P014", "P007"],
+        "lat": 22.549,
+        "lng": 114.066,
+        "intro": "日式禅意花房，极简留白，雅致礼盒与茶室插花。",
+    },
+    {
+        "shop_id": "S011",
+        "name": "暮色花园",
+        "distance_km": 4.2,
+        "price_range": "250-800",
+        "rating": 4.9,
+        "plan_ids": ["P015", "P009"],
+        "lat": 22.535,
+        "lng": 114.072,
+        "intro": "复古法式花艺工作室，婚礼宴会布置与高端花礼。",
+    },
+    {
+        "shop_id": "S012",
+        "name": "拾野花铺",
+        "distance_km": 1.9,
+        "price_range": "50-160",
+        "rating": 4.5,
+        "plan_ids": ["P016", "P004"],
+        "lat": 22.555,
+        "lng": 114.060,
+        "intro": "街角野趣花铺，自然系小花束，治愈日常。",
+    },
+    {
+        "shop_id": "S013",
+        "name": "白昼花研所",
+        "distance_km": 2.3,
+        "price_range": "100-300",
+        "rating": 4.6,
+        "plan_ids": ["P013", "P010"],
+        "lat": 22.546,
+        "lng": 114.052,
+        "intro": "明亮 ins 风花店，毕业季与圣诞节日花束人气店。",
+    },
+    {
+        "shop_id": "S014",
+        "name": "云上花礼",
+        "distance_km": 5.6,
+        "price_range": "200-700",
+        "rating": 4.8,
+        "plan_ids": ["P006", "P012"],
+        "lat": 22.531,
+        "lng": 114.080,
+        "intro": "高端商务花礼定制，企业订花与重要节日礼赠。",
+    },
+    {
+        "shop_id": "S015",
+        "name": "南巷花事",
+        "distance_km": 0.9,
+        "price_range": "40-130",
+        "rating": 4.4,
+        "plan_ids": ["P016", "P011"],
+        "lat": 22.561,
+        "lng": 114.050,
+        "intro": "平价社区花店，日常陪伴与探病花束随手可得。",
+    },
+    {
+        "shop_id": "S016",
+        "name": "半亩花园",
+        "distance_km": 3.4,
+        "price_range": "90-280",
+        "rating": 4.7,
+        "plan_ids": ["P011", "P008", "P016"],
+        "lat": 22.553,
+        "lng": 114.043,
+        "intro": "北欧自然风花园店，绿植与居家花艺搭配。",
+    },
 ]
 
 # 生成占位效果图的方案（与 MockRepository 保持一致）
-_PLACEHOLDER_PLANS = ["P001", "P002", "P003", "P007", "P008", "P009", "P010", "P011", "P012"]
+_PLACEHOLDER_PLANS = ["P001", "P002", "P003", "P007", "P008", "P009", "P010", "P011", "P012", "P013", "P014", "P015", "P016"]
+
+# 商家智库档案（1:1 shops）。styles/scenes 的 style_id/scene_id 分别引用
+# knowledge/styles.json（S_*）与 knowledge/scenes.json（SC_*）的实体 id。
+_SHOP_PROFILES = [
+    {
+        "shop_id": "S001",
+        "brand_story": "发源于盐田老街区的社区花店，靠精准守时的同城速递与精致包装积累口碑，是附近居民节日订花的首选。",
+        "price_level": "中端",
+        "packaging": "雾面韩素纸 + 雪纺丝带，强调留白与高级感。",
+        "services": ["同城速递", "节日定制", "每周一花订阅"],
+        "strengths": "同城准时送达、节日主题花束成熟、包装精致",
+        "keywords": "盐田,同城速递,节日花束,康乃馨,精致包装",
+        "styles": [("S_KOREAN", 1), ("S_INS", 2)],
+        "scenes": [("SC_MOTHER", 1), ("SC_VALENTINE", 2), ("SC_ANNIVERSARY", 2)],
+    },
+    {
+        "shop_id": "S002",
+        "name_hint": "绿野花艺",
+        "brand_story": "主打自然风花艺与绿植的清新小店，鲜切花与绿植搭配是招牌，适合喜欢清新日常的顾客。",
+        "price_level": "经济",
+        "packaging": "牛皮纸 + 麻绳，或透明玻璃纸露出花材质感。",
+        "services": ["同城速递", "绿植养护咨询"],
+        "strengths": "自然野趣、绿植与鲜切花搭配、性价比高",
+        "keywords": "绿植,自然风,桌面盆栽,平价",
+        "styles": [("S_NATURAL", 1), ("S_NORDIC", 2)],
+        "scenes": [("SC_SELF", 1), ("SC_HOUSEWARMING", 2), ("SC_GETWELL", 2)],
+    },
+    {
+        "shop_id": "S003",
+        "name_hint": "都市花房",
+        "brand_story": "定位高端花艺空间，主理人出身婚礼花艺，节日礼盒与商务花艺并重，服务品质与花材等级在商圈内有口皆碑。",
+        "price_level": "高端",
+        "packaging": "品牌定制礼盒与缎带，仪式感强，适合商务馈赠。",
+        "services": ["商务订花", "节日礼盒", "同城速递"],
+        "strengths": "高端花材、商务花艺成熟、礼盒仪式感强",
+        "keywords": "高端,商务,礼盒,都市,节日",
+        "styles": [("S_VINTAGE", 1), ("S_JAPANESE", 2)],
+        "scenes": [("SC_ANNIVERSARY", 1), ("SC_WEDDING", 2), ("SC_MOTHER", 2)],
+    },
+    {
+        "shop_id": "S004",
+        "name_hint": "巷陌花集",
+        "brand_story": "街角平价花铺，主打日常随手一束的小确幸，用不高的预算治愈每一天，附近上班族午休常来带一束。",
+        "price_level": "经济",
+        "packaging": "简洁牛皮纸手包，回归花材本身。",
+        "services": ["同城速递", "散花零售"],
+        "strengths": "平价亲民、日常花束、街角可达",
+        "keywords": "平价,日常,街角,小清新,满天星",
+        "styles": [("S_NATURAL", 1), ("S_INS", 2)],
+        "scenes": [("SC_SELF", 1), ("SC_GETWELL", 2), ("SC_APOLOGY", 2)],
+    },
+    {
+        "shop_id": "S005",
+        "name_hint": "兰庭花礼",
+        "brand_story": "中高端花礼定制店，坚持选用名品花材（进口郁金香、重瓣牡丹），雅致包装与花艺功力兼备，重要礼赠场合的老牌选择。",
+        "price_level": "高端",
+        "packaging": "雅致花纸与缎带，色系统一克制，凸显名品花材。",
+        "services": ["花礼定制", "同城速递", "企业团购"],
+        "strengths": "名品花材、花礼定制经验丰富、雅致耐看",
+        "keywords": "名品,郁金香,牡丹,雅致,定制",
+        "styles": [("S_JAPANESE", 1), ("S_NORDIC", 2)],
+        "scenes": [("SC_CONFESS", 1), ("SC_BIRTHDAY", 2), ("SC_ANNIVERSARY", 2)],
+    },
+    {
+        "shop_id": "S006",
+        "name_hint": "玫瑰花园",
+        "brand_story": "玫瑰主题花店，专注全品类玫瑰与法式礼盒，从肯尼亚玫瑰到国产多头玫瑰一应俱全，浪漫场合的人气选择。",
+        "price_level": "中端",
+        "packaging": "法式礼盒与丝绒缎带，浓郁浪漫。",
+        "services": ["同城速递", "节日定制", "花束加急"],
+        "strengths": "全品类玫瑰、法式礼盒、告白氛围感强",
+        "keywords": "玫瑰,法式,礼盒,告白,浪漫",
+        "styles": [("S_VINTAGE", 1), ("S_KOREAN", 2)],
+        "scenes": [("SC_VALENTINE", 1), ("SC_ANNIVERSARY", 1), ("SC_CONFESS", 2)],
+    },
+    {
+        "shop_id": "S007",
+        "name_hint": "山茶花集",
+        "brand_story": "南山街角的小众花店，偏爱少见花材与清新手作，花艺师每周上新不重样，是花艺爱好者的淘货地。",
+        "price_level": "经济",
+        "packaging": "手作感包装，随花材气质变化，常有惊喜。",
+        "services": ["散花零售", "花艺小课"],
+        "strengths": "小众花材、手作感、上新快",
+        "keywords": "小众,绣球,手作,清新,南山",
+        "styles": [("S_NATURAL", 1), ("S_NORDIC", 2)],
+        "scenes": [("SC_SELF", 1), ("SC_BIRTHDAY", 2), ("SC_GETWELL", 2)],
+    },
+    {
+        "shop_id": "S008",
+        "name_hint": "花间小筑",
+        "brand_story": "高端花艺定制工作室，主攻宴会布置与定制花篮，承接过多场高端宴会与开业典礼，作品大气华丽。",
+        "price_level": "高端",
+        "packaging": "定制级包装与花器，整体造型完整华丽。",
+        "services": ["宴会布置", "开业花篮", "花艺定制"],
+        "strengths": "宴会布置经验丰富、定制花篮、作品大气",
+        "keywords": "宴会,花篮,开业,乔迁,高端定制",
+        "styles": [("S_VINTAGE", 1), ("S_JAPANESE", 2)],
+        "scenes": [("SC_WEDDING", 1), ("SC_HOUSEWARMING", 2), ("SC_NEWYEAR", 2)],
+    },
+    {
+        "shop_id": "S009",
+        "name_hint": "花语花集",
+        "brand_story": "福田 CBD 商圈里的韩式花店，主打温柔克制的告白与生日花束，写字楼白领的浪漫补给站。",
+        "price_level": "中端",
+        "packaging": "雾面韩素纸 + 雪纺带，低饱和配色，ins 感十足。",
+        "services": ["同城速递", "节日定制", "写字楼配送"],
+        "strengths": "韩式温柔风、商圈配送快、告白花束人气高",
+        "keywords": "CBD,韩式,香槟玫瑰,告白,生日",
+        "styles": [("S_KOREAN", 1), ("S_INS", 2)],
+        "scenes": [("SC_CONFESS", 1), ("SC_BIRTHDAY", 1), ("SC_VALENTINE", 2)],
+    },
+    {
+        "shop_id": "S010",
+        "name_hint": "半夏花房",
+        "brand_story": "日式禅意花房，坚持极简留白与竹器插花，把茶室与书房的清雅带进日常，适合偏爱克制美学的顾客。",
+        "price_level": "中高端",
+        "packaging": "竹器、陶器与素色和纸，去繁就简。",
+        "services": ["插花课程", "茶室花艺", "同城速递"],
+        "strengths": "日式禅意、竹器插花、极简留白",
+        "keywords": "日式,禅意,插花,极简,留白",
+        "styles": [("S_JAPANESE", 1), ("S_NORDIC", 2)],
+        "scenes": [("SC_ANNIVERSARY", 1), ("SC_HOUSEWARMING", 2), ("SC_SELF", 2)],
+    },
+    {
+        "shop_id": "S011",
+        "name_hint": "暮色花园",
+        "brand_story": "复古法式花艺工作室，主理人师从欧洲花艺学校，擅用浓郁色系与丝绒质感，婚礼与宴会布置是绝对强项。",
+        "price_level": "高端",
+        "packaging": "丝绒缎带与复古花纸，浓郁华美。",
+        "services": ["婚礼布置", "宴会花艺", "高端花礼定制"],
+        "strengths": "法式复古、婚礼宴会布置、花材等级高",
+        "keywords": "复古,法式,婚礼,宴会,丝绒",
+        "styles": [("S_VINTAGE", 1), ("S_NATURAL", 2)],
+        "scenes": [("SC_WEDDING", 1), ("SC_VALENTINE", 2), ("SC_ANNIVERSARY", 2)],
+    },
+    {
+        "shop_id": "S012",
+        "name_hint": "拾野花铺",
+        "brand_story": "街角野趣花铺，像从田野里采撷来的小花束，清新治愈又不贵，是年轻人随手悦己的首选。",
+        "price_level": "经济",
+        "packaging": "牛皮纸松散包裹，露出枝干线条。",
+        "services": ["散花零售", "同城速递"],
+        "strengths": "野趣自然、价格亲民、治愈感强",
+        "keywords": "野趣,雏菊,平价,治愈,自然",
+        "styles": [("S_NATURAL", 1), ("S_NORDIC", 2)],
+        "scenes": [("SC_SELF", 1), ("SC_GETWELL", 2), ("SC_APOLOGY", 2)],
+    },
+    {
+        "shop_id": "S013",
+        "name_hint": "白昼花研所",
+        "brand_story": "明亮 ins 风花店，色彩活泼拍照出片，毕业季与圣诞节的节日花束是店里最忙的时候。",
+        "price_level": "中端",
+        "packaging": "亮色包装纸与可爱贴纸，ins 打卡感强。",
+        "services": ["节日定制", "拍照打卡布置", "同城速递"],
+        "strengths": "ins 风出片、毕业季圣诞节点人气、色彩活泼",
+        "keywords": "ins,明亮,毕业,圣诞,打卡",
+        "styles": [("S_INS", 1), ("S_NORDIC", 2)],
+        "scenes": [("SC_GRADUATION", 1), ("SC_CHRISTMAS", 1), ("SC_BIRTHDAY", 2)],
+    },
+    {
+        "shop_id": "S014",
+        "name_hint": "云上花礼",
+        "brand_story": "高端商务花礼定制商，服务多家企业的年度礼赠与年会花艺，讲究排面与交付准时。",
+        "price_level": "高端",
+        "packaging": "品牌礼盒与烫金缎带，商务仪式感拉满。",
+        "services": ["企业订花", "年会花艺", "节日礼赠"],
+        "strengths": "企业客户成熟、礼赠体面、交付准时",
+        "keywords": "商务,企业,礼赠,高端,牡丹",
+        "styles": [("S_JAPANESE", 1), ("S_VINTAGE", 2)],
+        "scenes": [("SC_NEWYEAR", 1), ("SC_TEACHER", 1), ("SC_HOUSEWARMING", 2)],
+    },
+    {
+        "shop_id": "S015",
+        "name_hint": "南巷花事",
+        "brand_story": "社区平价花店，就在南巷口，买菜路过的功夫就能带一束回家，探病、道歉、日常都需要它。",
+        "price_level": "经济",
+        "packaging": "简素花纸快包，快速不将就。",
+        "services": ["同城速递", "散花零售"],
+        "strengths": "社区可达、平价、日常需求全覆盖",
+        "keywords": "社区,平价,日常,探病,随手",
+        "styles": [("S_NATURAL", 1), ("S_INS", 2)],
+        "scenes": [("SC_SELF", 1), ("SC_GETWELL", 2), ("SC_BIRTHDAY", 2)],
+    },
+    {
+        "shop_id": "S016",
+        "name_hint": "半亩花园",
+        "brand_story": "北欧自然风花园店，绿植与居家花艺的搭配尤其擅长，搬家乔迁与家居软装是主场景。",
+        "price_level": "中端",
+        "packaging": "素色牛皮纸与玻璃花器，突出材质与线条。",
+        "services": ["绿植配送", "家居花艺", "乔迁布置"],
+        "strengths": "北欧风、绿植花艺搭配、乔迁场景专业",
+        "keywords": "北欧,绿植,居家,乔迁,自然",
+        "styles": [("S_NORDIC", 1), ("S_NATURAL", 2)],
+        "scenes": [("SC_HOUSEWARMING", 1), ("SC_SELF", 2), ("SC_MOTHER", 2)],
+    },
+]
 
 
 def _now() -> str:
@@ -366,13 +694,36 @@ def seed_catalog() -> None:
                     "INSERT OR IGNORE INTO shop_plans(shop_id, plan_id) VALUES (?,?)",
                     (s["shop_id"], pid),
                 )
+        # 商家智库档案（shop_profiles + shop_styles + shop_scenes）
+        for p in _SHOP_PROFILES:
+            conn.execute(
+                """INSERT OR IGNORE INTO shop_profiles
+                   (shop_id, brand_story, price_level, packaging, services, strengths, keywords, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    p["shop_id"], p["brand_story"], p["price_level"], p["packaging"],
+                    json.dumps(p["services"], ensure_ascii=False), p["strengths"],
+                    p["keywords"], _now(), _now(),
+                ),
+            )
+            for style_id, level in p["styles"]:
+                conn.execute(
+                    "INSERT OR IGNORE INTO shop_styles(shop_id, style_id, level) VALUES (?,?,?)",
+                    (p["shop_id"], style_id, level),
+                )
+            for scene_id, level in p["scenes"]:
+                conn.execute(
+                    "INSERT OR IGNORE INTO shop_scenes(shop_id, scene_id, level) VALUES (?,?,?)",
+                    (p["shop_id"], scene_id, level),
+                )
     # 生成占位效果图（dev/演示用，不依赖真实生图）
     for pid in _PLACEHOLDER_PLANS:
         try:
             tasks._write_mock_placeholder(f"plan_{pid}")
         except Exception:  # pragma: no cover
             logger.warning("占位图生成失败: %s", pid)
-    logger.info("目录种子数据已灌入：%d 方案 / %d 店铺", len(_PLANS), len(_SHOPS))
+    logger.info("目录种子数据已灌入：%d 方案 / %d 店铺 / %d 商家智库档案",
+                len(_PLANS), len(_SHOPS), len(_SHOP_PROFILES))
 
 
 # --------------------------------------------------------------------------- #
@@ -402,7 +753,141 @@ def _row_to_shop(row: Any, plan_ids: list[str]) -> dict[str, Any]:
     d = dict(row)
     d["shop_id"] = d.pop("id")
     d["plan_ids"] = plan_ids
+    # 美团式经营信息推导（演示值，与 api._shop_card 同规则）：起送价 / 配送费。
+    # 真实上线后由商家后台维护，此处保证 search_shops（Agent 推荐卡片）等
+    # 非 HTTP 直连数据源同样携带完整字段，避免前端「起送 ¥—」。
+    m = re.match(r"\s*(\d+)\s*-\s*(\d+)\s*", str(d.get("price_range", "")))
+    lo = float(m.group(1)) if m else None
+    dist = float(d.get("distance_km") or 1.0)
+    d.setdefault("min_delivery", (int(lo) // 10 * 10) if lo else 30)
+    d.setdefault("delivery_fee", 3 if dist <= 1 else 5 if dist <= 2.5 else 8)
     return d
+
+
+# --------------------------------------------------------------------------- #
+# 商家智库档案读取（shop_profiles / shop_styles / shop_scenes）
+# --------------------------------------------------------------------------- #
+
+
+def _resolve_style_names() -> dict[str, str]:
+    """从 knowledge/styles.json 读取 style_id -> 名称 映射（含子风格）。"""
+    try:
+        from knowledge import store as kstore
+
+        styles: dict[str, str] = {}
+        for entry in kstore._load("style"):
+            styles[entry["id"]] = entry["name"]
+            for sub in entry.get("substyles", []):
+                styles[sub["id"]] = sub["name"]
+        return styles
+    except Exception:  # pragma: no cover
+        return {}
+
+
+def _resolve_scene_names() -> dict[str, str]:
+    """从 knowledge/scenes.json 读取 scene_id -> 名称 映射。"""
+    try:
+        from knowledge import store as kstore
+
+        return {e["id"]: e["name"] for e in kstore._load("scene") if e.get("id")}
+    except Exception:  # pragma: no cover
+        return {}
+
+
+def _row_to_profile(row: Any) -> dict[str, Any]:
+    """行 -> 智库档案 dict（services 反序列化；styles/scenes 由调用方补充）。"""
+    d = dict(row)
+    try:
+        d["services"] = json.loads(d["services"]) if d.get("services") else []
+    except (json.JSONDecodeError, TypeError):
+        d["services"] = []
+    return d
+
+
+def get_shop_profile(shop_id: str) -> dict[str, Any] | None:
+    """按 shop_id 取商家智库档案（含 styles/scenes 关联与名称映射），无档案返回 None。"""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT * FROM shop_profiles WHERE shop_id=?", (shop_id,)
+    ).fetchone()
+    if not row:
+        return None
+    profile = _row_to_profile(row)
+    style_names = _resolve_style_names()
+    scene_names = _resolve_scene_names()
+    profile["styles"] = [
+        {"style_id": r["style_id"], "name": style_names.get(r["style_id"], r["style_id"]), "level": r["level"]}
+        for r in conn.execute(
+            "SELECT style_id, level FROM shop_styles WHERE shop_id=? ORDER BY level ASC, style_id",
+            (shop_id,),
+        )
+    ]
+    profile["scenes"] = [
+        {"scene_id": r["scene_id"], "name": scene_names.get(r["scene_id"], r["scene_id"]), "level": r["level"]}
+        for r in conn.execute(
+            "SELECT scene_id, level FROM shop_scenes WHERE shop_id=? ORDER BY level ASC, scene_id",
+            (shop_id,),
+        )
+    ]
+    return profile
+
+
+def list_shop_profiles() -> list[dict[str, Any]]:
+    """全部商家智库档案（按 shop_id 排序）。"""
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM shop_profiles ORDER BY shop_id").fetchall()
+    return [_row_to_profile(r) for r in rows]
+
+
+def list_shop_profiles_full() -> list[dict[str, Any]]:
+    """全部商家智库档案（含 styles/scenes 名称映射，供知识库向量检索）。"""
+    profiles = list_shop_profiles()
+    out: list[dict[str, Any]] = []
+    for p in profiles:
+        full = get_shop_profile(p["shop_id"])
+        if full:
+            out.append(full)
+    return out
+
+
+def search_shops_by_profile(keyword: str) -> list[dict[str, Any]]:
+    """按智库档案文本检索商家：匹配品牌故事/卖点/包装/服务/关键词/风格名/场景名。
+
+    返回店铺基础信息 + 档案（供 AI 工具与店铺详情页使用），按命中度粗略排序。
+    """
+    kw = (keyword or "").strip().lower()
+    style_names = _resolve_style_names()
+    scene_names = _resolve_scene_names()
+    conn = get_conn()
+    rows = conn.execute("SELECT * FROM shop_profiles").fetchall()
+    hits: list[tuple[dict[str, Any], int]] = []
+    for row in rows:
+        profile = _row_to_profile(row)
+        blob = " ".join(
+            [
+                profile.get("brand_story", ""),
+                profile.get("packaging", ""),
+                profile.get("strengths", ""),
+                profile.get("keywords", ""),
+                " ".join(profile.get("services", [])),
+            ]
+        ).lower()
+        if kw and kw not in blob:
+            style_rows = conn.execute(
+                "SELECT style_id FROM shop_styles WHERE shop_id=?", (row["shop_id"],)
+            ).fetchall()
+            scene_rows = conn.execute(
+                "SELECT scene_id FROM shop_scenes WHERE shop_id=?", (row["shop_id"],)
+            ).fetchall()
+            names = [style_names.get(r["style_id"], "") for r in style_rows] + [
+                scene_names.get(r["scene_id"], "") for r in scene_rows
+            ]
+            if not any(kw in n.lower() for n in names if n):
+                continue
+        shop = DBCatalogRepository().get_shop(row["shop_id"])
+        hits.append(({**shop, "profile": get_shop_profile(row["shop_id"])}, len(blob)))
+    hits.sort(key=lambda x: len(x[0]["profile"].get("styles", [])) + len(x[0]["profile"].get("scenes", [])), reverse=True)
+    return [h[0] for h in hits]
 
 
 # --------------------------------------------------------------------------- #
@@ -610,24 +1095,57 @@ class DBCatalogRepository:
     """
 
     def search_plans(
-        self, keyword: str, requirement: Any | None = None
+        self, keyword: str, requirement: Any | None = None,
+        location: dict[str, float] | None = None, max_km: float = 5.0,
     ) -> list[dict[str, Any]]:
+        """搜索商家预设方案。
+
+        location 非空时限定「配送范围内（≤max_km）店铺承载的方案」：
+        先按用户真实定位过滤店铺，再取这些店关联的方案检索，保证推给用户的
+        花束都来自能配送到用户当前位置的店铺（用户无定位时回退全量）。
+        """
         conn = get_conn()
         kw = (keyword or "").lower()
+        in_range: list[str] = []
+        if location and location.get("lat") is not None and location.get("lng") is not None:
+            shops = conn.execute("SELECT * FROM shops").fetchall()
+            in_range = [
+                s["id"] for s in shops
+                if s["lat"] is not None
+                and _haversine(location["lat"], location["lng"], s["lat"], s["lng"]) <= max_km
+            ]
+            if not in_range:
+                return []  # 配送范围内无店铺 → 无方案可推
+            scope = (
+                " AND id IN (SELECT plan_id FROM shop_plans WHERE shop_id IN ("
+                + ",".join("?" * len(in_range)) + "))"
+            )
+        else:
+            scope = ""
         if not kw:
-            rows = conn.execute("SELECT * FROM plans").fetchall()
+            rows = (
+                conn.execute(
+                    f"SELECT * FROM plans WHERE 1=1{scope}", in_range
+                ).fetchall()
+                if in_range
+                else conn.execute("SELECT * FROM plans").fetchall()
+            )
         else:
             rows = conn.execute(
-                "SELECT * FROM plans WHERE lower(name) LIKE ? OR lower(desc) LIKE ?",
-                (f"%{kw}%", f"%{kw}%"),
+                f"SELECT * FROM plans WHERE (lower(name) LIKE ? OR lower(desc) LIKE ?){scope}",
+                [f"%{kw}%", f"%{kw}%"] + (in_range if in_range else []),
             ).fetchall()
             # 标签命中（轻量，覆盖关键词在标签而非名称的情况）
             tagged = conn.execute(
-                "SELECT * FROM plans WHERE tags LIKE ?", (f"%{kw}%",)
+                f"SELECT * FROM plans WHERE tags LIKE ?{scope}",
+                [f"%{kw}%"] + (in_range if in_range else []),
             ).fetchall()
             seen = {r["id"] for r in rows}
             rows = list(rows) + [r for r in tagged if r["id"] not in seen]
         plans = [_row_to_plan(r) for r in rows]
+        # 附上承载店铺 id（首个关联店），供前端商品卡「进店」与下单兜底
+        for p in plans:
+            p.setdefault("shop_id", plan_shop_id(p["plan_id"]))
         return _filter_plans_by_requirement(plans, requirement)
 
     def get_plan(self, plan_id: str) -> dict[str, Any] | None:

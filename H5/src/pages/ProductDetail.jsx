@@ -8,6 +8,7 @@ import { IconHeart, IconStar } from '../components/icons'
 import { getPlan, addCart, createOrder, favoriteStatus, addFavorite, removeFavorite, getReviews } from '../api/shop'
 import { getUserId } from '../api/chat'
 import { isLoggedIn } from '../api/auth'
+import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
 import { itemImagePath } from '../assets/imageMap'
@@ -73,9 +74,9 @@ export default function ProductDetail() {
         price: product.price,
         shop: product.merchant_name || '精选花店',
       })
-      alert('已加入购物车')
+      toast('已加入购物车')
     } catch (e) {
-      alert('加入失败：' + e.message)
+      toast('加入失败：' + e.message, 'error')
     } finally {
       setBusy(false)
     }
@@ -97,7 +98,7 @@ export default function ProductDetail() {
       ])
       nav('/order', { state: { orderId: order.order_id } })
     } catch (e) {
-      alert('下单失败：' + e.message)
+      toast('下单失败：' + e.message, 'error')
     } finally {
       setBusy(false)
     }

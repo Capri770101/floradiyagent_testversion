@@ -1,5 +1,10 @@
 """knowledge/store.py —— 花卉 DIY 知识库加载与向量混合检索。
 
+域说明：
+- 花材/风格/搭配/预算/包装/场景：JSON 文件域（flowers/styles/pairings/budget/packaging/scenes.json）。
+- 商家智库（shop）：特殊域，数据来自 DB 的 shop_profiles 档案（含风格/场景名称），
+  与 JSON 域共用同一套混合检索，AI 可用自然语言召回「韩式花店 / 能做婚礼布置的店」等商家实体。
+
 升级说明（相对旧版纯关键词检索）：
 - 检索升级为「向量空间模型（TF-IDF + 字符 n-gram 切词）+ 余弦相似度」的语义检索（RAG 思路），
   但对外接口 query_knowledge(domain, query) 的签名、返回结构完全不变，上层 tools.py / 工具零改动。
@@ -24,7 +29,7 @@ from config import settings
 
 logger = logging.getLogger("knowledge")
 
-#: 各域对应的 JSON 文件名
+#: 各域对应的 JSON 文件名（shop 为特殊域：数据来自 DB 商家智库，见 _load_shops）
 _DOMAINS: dict[str, str] = {
     "flower": "flowers.json",
     "style": "styles.json",
@@ -32,6 +37,7 @@ _DOMAINS: dict[str, str] = {
     "budget": "budget.json",
     "packaging": "packaging.json",
     "scene": "scenes.json",
+    "shop": "",  # 商家智库（storage.catalog 提供，惰性加载）
 }
 
 _BASE_DIR = Path(__file__).resolve().parent
@@ -140,10 +146,34 @@ class _VectorSpace:
 # --------------------------------------------------------------------------- #
 # 加载与缓存
 # --------------------------------------------------------------------------- #
+def _load_shops() -> list[dict[str, Any]]:
+    """惰性加载商家智库档案（来自 DB 的 shop_profiles，含风格/场景名称）。
+
+    惰性 import storage.catalog：catalog 仅在函数内引用 knowledge，
+    双向依赖均为运行时导入，无循环依赖问题。
+    """
+    if "shop" in _cache:
+        return _cache["shop"]
+    data: list[dict[str, Any]] = []
+    try:
+        from storage.catalog import DBCatalogRepository, list_shop_profiles_full
+
+        repo = DBCatalogRepository()
+        for entry in list_shop_profiles_full():
+            shop = repo.get_shop(entry["shop_id"])
+            data.append({**entry, "id": entry["shop_id"], "name": shop["name"] if shop else entry["shop_id"]})
+    except Exception:  # pragma: no cover
+        logger.warning("[knowledge] 商家智库加载失败（DB 未就绪？）", exc_info=True)
+    _cache["shop"] = data
+    return data
+
+
 def _load(domain: str) -> list[dict[str, Any]]:
     """加载某域数据（带内存缓存，避免重复读盘）。"""
     if domain in _cache:
         return _cache[domain]
+    if domain == "shop":
+        return _load_shops()
     path = _BASE_DIR / _DOMAINS[domain]
     if not path.exists():
         logger.warning("[knowledge] 数据文件缺失: %s", path)
@@ -155,14 +185,23 @@ def _load(domain: str) -> list[dict[str, Any]]:
     return data
 
 
+def _collect_strings(value: Any, out: list[str]) -> None:
+    """递归收集 dict/list 里的所有字符串（嵌套结构如 styles/scenes 名称也纳入索引文本）。"""
+    if isinstance(value, str):
+        out.append(value)
+    elif isinstance(value, dict):
+        for v in value.values():
+            _collect_strings(v, out)
+    elif isinstance(value, list):
+        for v in value:
+            _collect_strings(v, out)
+
+
 def _entry_text(entry: dict[str, Any]) -> str:
-    """把一条知识的可检索字段拼成一段文本，用于构建向量。"""
+    """把一条知识的可检索字段拼成一段文本，用于构建向量（递归含嵌套名称）。"""
     parts: list[str] = []
     for v in entry.values():
-        if isinstance(v, str):
-            parts.append(v)
-        elif isinstance(v, list):
-            parts.extend(str(x) for x in v)
+        _collect_strings(v, parts)
     return " ".join(parts)
 
 
@@ -226,7 +265,7 @@ def query_knowledge(domain: str = "all", query: str = "") -> dict[str, Any]:
     """知识库检索（向量混合检索，接口向后兼容）。
 
     Args:
-        domain: "all" 或 flower/style/pairing/budget/packaging/scene 之一。
+        domain: "all" 或 flower/style/pairing/budget/packaging/scene/shop 之一。
         query: 自然语言或关键词。
             - 空串：返回该域全部（上层枚举场景/风格/预算档依赖此行为）。
             - 短单 token：精确关键词匹配（向后兼容内部查找与旧测试）。

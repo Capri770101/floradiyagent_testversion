@@ -4,6 +4,7 @@ import { IconCheck } from '../components/icons'
 import { TopBar } from '../components/TopBar'
 import { getCart, updateCart, removeCart, createOrder } from '../api/shop'
 import { getUserId } from '../api/chat'
+import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
 import { itemImagePath } from '../assets/imageMap'
@@ -50,7 +51,7 @@ export default function Cart() {
   const onCheckout = async () => {
     const checked = items.filter((it) => it.selected)
     if (checked.length === 0) {
-      alert('请先选择要结算的商品')
+      toast('请先选择要结算的商品')
       return
     }
     setBusy(true)
@@ -68,7 +69,7 @@ export default function Cart() {
       )
       nav('/order', { state: { orderId: order.order_id } })
     } catch (e) {
-      alert('下单失败：' + e.message)
+      toast('下单失败：' + e.message, 'error')
     } finally {
       setBusy(false)
     }

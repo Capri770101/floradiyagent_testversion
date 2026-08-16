@@ -83,6 +83,50 @@ def _requirement_from_context(_context: dict | None) -> FlowerRequirement | None
     return req if isinstance(req, FlowerRequirement) else None
 
 
+def _req_clear(req: FlowerRequirement | None) -> bool:
+    """需求是否已基本明确（送谁/场合/预算/风格/色系至少一项）。
+
+    只有需求明确后才允许触发「产品推荐 / 店铺推荐」，避免用户在闲聊或
+    只问知识时被硬塞卡片。
+    """
+    return bool(
+        req
+        and (
+            req.recipient or req.occasion or req.budget_num is not None
+            or req.budget_anchor or req.scene or req.style or req.colors
+        )
+    )
+
+
+def _rank_plans(plans: list[dict], req: FlowerRequirement | None) -> list[dict]:
+    """相关性排序并截断：命中预算/色系/对象者优先，最多返回 3 款。
+
+    保证「推荐的产品符合需求描述」，且卡片不超过 3 个。
+    """
+    def score(p: dict) -> int:
+        s = 0
+        if not req:
+            return s
+        if req.budget_min is not None:
+            lo, hi = req.budget_min, req.budget_max or req.budget_min
+            if lo <= p.get("price", 0) <= hi * 1.5:
+                s += 10
+        if req.colors:
+            blob = (
+                (p.get("name") or "") + (p.get("desc") or "")
+                + " ".join(p.get("tags") or [])
+            ).lower()
+            if any(c.lower() in blob for c in req.colors):
+                s += 5
+        if req.recipient:
+            blob = (p.get("name") or "") + (p.get("desc") or "")
+            if req.recipient.lower() in blob.lower():
+                s += 3
+        return s
+
+    return sorted(plans, key=score, reverse=True)[:3]
+
+
 def _store_diy_plan(plan: dict, _context: dict | None) -> None:
     """把最新 DIY 方案写入当前会话（会话级，替代旧全局变量，杜绝多用户串号）。
 
@@ -141,10 +185,22 @@ def _resolve_session_plan(plan: str | None, _context: dict | None) -> dict | Non
     tags=["plan"],
 )
 def search_plans(keyword: str, _context: dict | None = None) -> str:
-    """搜索商家预设方案（按结构化需求软过滤）。"""
+    """搜索商家预设方案（按结构化需求软过滤；有定位时限定配送范围内店铺的方案）。
+
+    需求不明确时不返回方案（返回引导文案），防止闲聊/知识问答被硬塞卡片；
+    命中结果按相关性排序并截断到 3 款（预算/色系/对象命中者优先）。
+    """
     req = _requirement_from_context(_context)
-    plans = repo.search_plans(keyword, requirement=req)
-    return json.dumps(plans, ensure_ascii=False)
+    if not _req_clear(req):
+        return json.dumps(
+            {"error": "需求还不明确，请先告诉我送给谁、什么场合或大概预算，我再为你挑选合适的花束。"},
+            ensure_ascii=False,
+        )
+    location = None
+    if _context:
+        location = _context.get("location") or (req.location if req else None)
+    plans = repo.search_plans(keyword, requirement=req, location=location)
+    return json.dumps(_rank_plans(plans, req), ensure_ascii=False)
 
 
 @register_tool(
@@ -167,16 +223,17 @@ def get_plan_detail(plan_id: str) -> str:
     name="retrieve_knowledge",
     description=(
         "检索花卉 DIY 知识库：花材(花语/色系/季节/价格档/搭配性)、风格体系、搭配规则、"
-        "预算映射、包装器型。在设计方案前调用以获取可靠的领域知识，避免凭空编造。"
+        "预算映射、包装器型、商家智库（店铺的风格/擅长场景/价位/服务/卖点）。"
+        "在设计方案前调用以获取可靠的领域知识，避免凭空编造；找店铺时用 shop 域。"
     ),
     parameters={
         "type": "object",
         "properties": {
             "domain": {
                 "type": "string",
-                "description": "检索域：flower(花材) | style(风格) | pairing(搭配规则) | budget(预算) | packaging(包装) | all(全部)",
+                "description": "检索域：flower(花材) | style(风格) | pairing(搭配规则) | budget(预算) | packaging(包装) | shop(商家智库) | scene(场景) | all(全部)",
             },
-            "query": {"type": "string", "description": "关键词或自然语言，如 母亲/生日/北欧/200元"},
+            "query": {"type": "string", "description": "关键词或自然语言，如 母亲/生日/北欧/200元/能做婚礼布置的店"},
         },
         "required": ["domain", "query"],
     },
@@ -1151,9 +1208,18 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
                 {"error": "生成效果图前必须先获得用户明确同意（请先询问用户）"},
                 ensure_ascii=False,
             )
-        if memory.get_session_flag(uid, sid, "image_submitted") == "1":
+        # 防重按「方案」而非「会话」：image_submitted 存已生图方案的 plan_id，
+        # 同一方案只生一次；方案调整（revise_diy_plan 生成新 plan_id）后自动放行再生。
+        submitted_pid = memory.get_session_flag(uid, sid, "image_submitted")
+        diy_pid = (diy or {}).get("plan_id")
+        if submitted_pid and submitted_pid == diy_pid:
             return json.dumps(
-                {"error": "本轮确认已提交过效果图任务，如需重新生成请再次征求用户确认"},
+                {
+                    "error": (
+                        "当前方案的效果图已生成过了，如需重新生成请先调整方案"
+                        "（revise_diy_plan 会生成新版本）。"
+                    )
+                },
                 ensure_ascii=False,
             )
 
@@ -1180,7 +1246,7 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
         prompt = plan
     task_id = tasks.create_image_task(prompt)
     if sid:
-        memory.set_session_flag(uid, sid, "image_submitted", "1")
+        memory.set_session_flag(uid, sid, "image_submitted", (diy or {}).get("plan_id") or "1")
     result: dict[str, Any] = {
         "task_id": task_id,
         "status": "submitted",
@@ -1254,12 +1320,18 @@ def respond_to_user(
     tags=["shop"],
 )
 def search_shops(plan: str = "latest", _context: dict | None = None) -> str:
-    """推荐店铺（结合用户位置与结构化需求排序）。
+    """推荐店铺（结合用户位置与结构化需求排序，最多 3 家）。
 
     方案引用经 _resolve_session_plan 解析到「会话最近引用方案」（不再取全局首方案），
     解析结果写回 selected_plan，保证后续 create_order(plan_id="latest") 下单到同一方案。
+    需求不明确时不推荐（返回引导文案），防止闲聊/知识问答被硬塞店铺卡片。
     """
     req = _requirement_from_context(_context)
+    if not _req_clear(req):
+        return json.dumps(
+            {"error": "需求还不明确，请先告诉我送给谁、什么场合或大概预算，我再为你推荐合适的店铺。"},
+            ensure_ascii=False,
+        )
     location = None
     if _context:
         location = _context.get("location") or (req.location if req else None)
@@ -1269,7 +1341,7 @@ def search_shops(plan: str = "latest", _context: dict | None = None) -> str:
     if plan_obj and sid:
         memory.set_session_json(uid, sid, "selected_plan", plan_obj)
     shops = repo.list_shops(plan_obj, location, requirement=req)
-    return json.dumps(shops, ensure_ascii=False)
+    return json.dumps(shops[:3], ensure_ascii=False)
 
 
 @register_tool(

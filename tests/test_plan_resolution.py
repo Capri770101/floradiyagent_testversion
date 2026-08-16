@@ -8,6 +8,7 @@ import pytest
 
 import skills  # noqa: F401 —— 触发 create_order 技能注册
 import tools as tools_mod
+from requirements import FlowerRequirement
 from storage import memory as mem
 from storage.db import init_db
 from tools import generate_diy_plan, generate_effect_image, search_shops
@@ -21,7 +22,13 @@ def _db():
 
 def _ctx(uid: str) -> dict:
     sid = mem.get_or_create_session(uid)
-    return {"user_id": uid, "session_id": sid, "location": None}
+    # search_plans / search_shops 有「需求明确」闸门：无 requirement 时拒绝推荐
+    return {
+        "user_id": uid,
+        "session_id": sid,
+        "location": None,
+        "requirement": FlowerRequirement(recipient="母亲", budget_num=200),
+    }
 
 
 def test_order_uses_session_diy_plan_not_first_default() -> None:

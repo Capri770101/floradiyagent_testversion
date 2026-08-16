@@ -9,6 +9,7 @@
 交付级数据模型（含电商 + 智能体记忆 + 多会话）：
 - 用户/地址：users、addresses
 - 商品目录：categories、plans、shops、shop_plans（多对多）
+- 商家智库：shop_profiles（1:1 档案）、shop_styles / shop_scenes（风格/场景多对多，供 AI 检索）
 - 智能体记忆与多会话：sessions（= 会话，含 title/preview）、messages、session_flags、memories
 - 电商交易：cart_items、orders、order_items、payments、reviews
 - 任务：image_tasks
@@ -88,6 +89,36 @@ CREATE TABLE IF NOT EXISTS shop_plans (
     shop_id  TEXT NOT NULL,
     plan_id  TEXT NOT NULL,
     PRIMARY KEY (shop_id, plan_id)
+);
+
+-- 商家智库 · 主档（1:1 shops）：以商家为单位沉淀品牌定位/风格/能力等知识，
+-- 供 AI 检索（query_knowledge 的 shop 域）与店铺详情页展示
+CREATE TABLE IF NOT EXISTS shop_profiles (
+    shop_id     TEXT PRIMARY KEY,               -- -> shops.id
+    brand_story TEXT,                           -- 品牌故事 / 定位（自然语言档案）
+    price_level TEXT,                           -- 经济 | 中端 | 高端 | 轻奢
+    packaging   TEXT,                           -- 包装特色（自然语言）
+    services    TEXT,                           -- JSON 数组：服务能力（同城速递/宴会布置/花艺课…）
+    strengths   TEXT,                           -- 卖点 / 特色（自然语言，供向量检索）
+    keywords    TEXT,                           -- 运营补充关键词（逗号分隔，供关键词命中）
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+-- 商家智库 · 风格（多对多，style_id 引用 knowledge/styles.json 的 S_* 主风格 id）
+CREATE TABLE IF NOT EXISTS shop_styles (
+    shop_id  TEXT NOT NULL,                     -- -> shops.id
+    style_id TEXT NOT NULL,                     -- S_KOREAN / S_NORDIC / ...
+    level    INTEGER NOT NULL DEFAULT 1,        -- 1=主打 2=次要
+    PRIMARY KEY (shop_id, style_id)
+);
+
+-- 商家智库 · 场景（多对多，scene_id 引用 knowledge/scenes.json 的 SC_* 场景 id）
+CREATE TABLE IF NOT EXISTS shop_scenes (
+    shop_id  TEXT NOT NULL,                     -- -> shops.id
+    scene_id TEXT NOT NULL,                     -- SC_VALENTINE / SC_WEDDING / ...
+    level    INTEGER NOT NULL DEFAULT 1,        -- 1=擅长 2=可做
+    PRIMARY KEY (shop_id, scene_id)
 );
 
 -- 会话（= 智能体一次对话；多会话由此表承载，title/preview 供前端列表展示）
@@ -299,6 +330,8 @@ CREATE INDEX IF NOT EXISTS idx_point_records_user    ON point_records(user_id, c
 CREATE INDEX IF NOT EXISTS idx_addresses_user        ON addresses(user_id, is_default);
 CREATE INDEX IF NOT EXISTS idx_shop_plans_plan      ON shop_plans(plan_id);
 CREATE INDEX IF NOT EXISTS idx_plans_category       ON plans(category_id);
+CREATE INDEX IF NOT EXISTS idx_shop_styles_style    ON shop_styles(style_id);
+CREATE INDEX IF NOT EXISTS idx_shop_scenes_scene    ON shop_scenes(scene_id);
 """
 
 #: 旧库增量迁移：给已存在的表补缺失列（仅开发期存量数据需要）

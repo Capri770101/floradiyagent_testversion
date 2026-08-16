@@ -35,7 +35,7 @@ def design(requirements: str = typer.Argument(..., help="用户 DIY 需求描述
 
 @app.command()
 def knowledge(
-    domain: str = typer.Option("all", "--domain", "-d", help="flower|style|pairing|budget|packaging|scene|all"),
+    domain: str = typer.Option("all", "--domain", "-d", help="flower|style|pairing|budget|packaging|scene|shop|all"),
     query: str = typer.Option(..., "--query", "-q", help="关键词或自然语言（多词触发向量语义召回）"),
 ) -> None:
     """检索知识库（向量混合检索）。"""

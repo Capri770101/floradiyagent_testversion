@@ -99,6 +99,13 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60 * 24 * 7  # JWT 有效期（默认 7 天）
     auth_required: bool = False  # True=强制鉴权；False=dev 模式（/chat 仍可用 user_id 直连）
 
+    # ---- 手机号注册/登录（短信验证码）----
+    # 未接真实短信通道时，dev 模式使用固定验证码（sms_dev_code）即可跑通全链路；
+    # 生产接入通道后，把 issue 验证码的实现替换为真实发送即可（接口不变）。
+    sms_dev_code: str = "123456"          # dev 固定验证码（sms_provider=dev 时生效）
+    sms_provider: str = "dev"             # dev | real（real 需自行实现发送通道）
+    phone_code_ttl_seconds: int = 300     # 验证码有效期（秒）
+
     # ---- 订单支付超时（分钟）----
     # created / pending_payment 的订单超过该时长未支付，读取时懒过期自动取消（并返还优惠券）。
     order_pay_timeout_minutes: int = 30

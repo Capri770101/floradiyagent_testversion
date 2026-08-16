@@ -53,9 +53,9 @@ export function normalizePlan(plan) {
   }
 }
 
-function Section({ title, children }) {
+function Section({ title, children, className = 'mt-3' }) {
   return (
-    <div className="mt-3">
+    <div className={className}>
       <p className="text-[12px] font-medium text-dark">{title}</p>
       <div className="mt-1 text-[12px] leading-[22px] text-ink">{children}</div>
     </div>
@@ -85,8 +85,20 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
   const [addFlower, setAddFlower] = useState('')
   const [removed, setRemoved] = useState([])
   const p = normalizePlan(plan)
+  const steps = Array.isArray(p.diySteps)
+    ? p.diySteps.filter(Boolean)
+    : String(p.diySteps || '')
+        .split(/\n+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
   const [imgState, setImgState] = useState({ status: 'none', url: null })
   if (!p) return null
+
+  // 头部价格：从「约 200 元（入门 / 日常档）」这类整串中拆出数字主价与档位小字，
+  // 避免右侧一整串大字影响卡片头部排版。
+  const priceText = String(p.price ?? '')
+  const priceNum = (priceText.match(/约?\s*¥?\s*(\d+(?:\.\d+)?)/) || [])[1] || null
+  const priceTier = (priceText.match(/[（(]([^（）()]*)[）)]/) || [])[1] || null
 
   // 效果图状态随 img prop 变化（生图在方案卡之后才完成，prop 是异步挂上的）：
   // result_url → 直接渲染；仅 task_id → 每 2s 轮询 /tasks 直至 done/failed。
@@ -141,86 +153,123 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
           </p>
         </div>
         {p.price != null && (
-          <span className="text-[16px] font-medium text-ink">¥{p.price}</span>
+          <div className="shrink-0 text-right">
+            {priceNum ? (
+              <>
+                <p className="text-[15px] font-medium leading-tight text-ink">
+                  ¥{priceNum}
+                </p>
+                {priceTier && (
+                  <p className="mt-0.5 text-[10px] leading-tight text-sub">
+                    {priceTier}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-[12px] leading-tight text-sub">{p.price}</p>
+            )}
+          </div>
         )}
         <Chevron open={open} />
       </button>
 
       {open && (
         <div className="border-t border-line px-4 pb-4 pt-3">
-          {/* 效果图状态提示：生图完成后的图片渲染在下方「方案效果图」占位符位置，
-              这里只保留进行中 / 失败的状态文案，避免出现两处图片 */}
-          {imgState.status === 'pending' && (
-            <div className="mb-2">
-              <div className="h-1 w-full overflow-hidden rounded-full bg-pink-2">
-                <div className="h-full w-1/3 animate-pulse rounded-full bg-pink" />
-              </div>
-              <p className="mt-1.5 text-[11px] text-sub">
-                效果图生成中，约需 30 秒…
-              </p>
+          {/* 效果图：生成本次效果图完成后 → 全宽大图替换占位；
+              生成中 → 占位 + 进度条；失败 → 提示可重试 */}
+          {imgState.status === 'done' && imgState.url ? (
+            <div className="overflow-hidden rounded-[4px] border border-line">
+              <SmartImage
+                src={imgState.url}
+                imgKey="diy_main"
+                className="aspect-[4/3] w-full object-cover"
+                alt="方案效果图"
+              />
             </div>
-          )}
-          {imgState.status === 'failed' && (
-            <p className="mb-2 text-[11px] text-pink">
-              效果图生成失败了，可以让我重新生成试试。
-            </p>
+          ) : (
+            <div className="flex items-center gap-3">
+              <SmartImage
+                src={null}
+                imgKey="diy_main"
+                className="h-[92px] w-[92px] shrink-0 rounded-[4px]"
+                alt="方案效果图占位"
+              />
+              {imgState.status === 'pending' && (
+                <div className="flex-1">
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-pink-2">
+                    <div className="h-full w-1/3 animate-pulse rounded-full bg-pink" />
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-sub">
+                    效果图生成中，约需 30 秒…
+                  </p>
+                </div>
+              )}
+              {imgState.status === 'failed' && (
+                <p className="flex-1 text-[11px] text-pink">
+                  效果图生成失败了，可以让我重新生成试试。
+                </p>
+              )}
+            </div>
           )}
 
-          <div className="flex gap-3">
-            <SmartImage
-              src={imgState.status === 'done' ? imgState.url : null}
-              imgKey="diy_main"
-              className="h-[104px] w-[92px] shrink-0 rounded-[4px]"
-              alt="方案效果图"
-            />
-            <div className="flex-1">
-              <Section title="花卉组成">
-                {p.flowers.length ? (
-                  <ul className="space-y-1">
-                    {p.flowers.map((f, i) => (
-                      <li key={i}>
-                        <span className="text-[11px] text-sub">
-                          {f.role || '花材'}：
-                        </span>
-                        <span className="text-ink">{f.name}</span>
-                        {f.flower_language && f.flower_language.length > 0 && (
-                          <span className="ml-1 text-[11px] text-sub">
-                            （{f.flower_language.join('、')}）
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="text-sub">—</span>
-                )}
-                {p.colorScheme && p.colorScheme.length > 0 && (
-                  <div className="mt-2 flex items-center gap-1.5">
-                    {p.colorScheme.map((c, i) => (
-                      <span
-                        key={i}
-                        className="h-3.5 w-3.5 rounded-full border border-line"
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </Section>
-            </div>
+          <Section title="花卉组成">
+            {p.flowers.length ? (
+              <ul className="space-y-1">
+                {p.flowers.map((f, i) => (
+                  <li key={i}>
+                    <span className="text-[11px] text-sub">
+                      {f.role || '花材'}：
+                    </span>
+                    <span className="text-ink">{f.name}</span>
+                    {f.flower_language && f.flower_language.length > 0 && (
+                      <span className="ml-1 text-[11px] text-sub">
+                        （{f.flower_language.join('、')}）
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <span className="text-sub">—</span>
+            )}
+            {p.colorScheme && p.colorScheme.length > 0 && (
+              <div className="mt-2 flex items-center gap-1.5">
+                {p.colorScheme.map((c, i) => (
+                  <span
+                    key={i}
+                    className="h-3.5 w-3.5 rounded-full border border-line"
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* 花语寓意 + 包装形式 并排两列 */}
+          <div className="grid grid-cols-2 gap-3">
+            <Section title="花语寓意" className="mt-3">
+              <span className="whitespace-pre-line">{p.meaning || '—'}</span>
+            </Section>
+            <Section title="包装形式" className="mt-3">
+              <span>{p.packaging || '—'}</span>
+            </Section>
           </div>
 
-          <Section title="花语寓意">
-            <span className="whitespace-pre-line">{p.meaning || '—'}</span>
-          </Section>
-
-          <Section title="包装形式">
-            <span>{p.packaging || '—'}</span>
-          </Section>
-
           <Section title="DIY 操作步骤">
-            <span className="whitespace-pre-line">
-              {Array.isArray(p.diySteps) ? p.diySteps.join('\n') : p.diySteps || '—'}
-            </span>
+            {steps.length ? (
+              <ol className="space-y-1.5">
+                {steps.map((s, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className="mt-[3px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-pink text-[10px] font-medium text-white">
+                      {i + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 text-ink">{s}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <span className="text-sub">—</span>
+            )}
           </Section>
 
           <Section title="养护建议">
@@ -243,9 +292,12 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
           )}
 
           {p.cardMessage && (
-            <Section title="贺卡寄语">
-              <span className="text-sub">{p.cardMessage}</span>
-            </Section>
+            <div className="mt-3 rounded-[2px] border-l-2 border-gold bg-sand/40 py-1.5 pl-2.5 pr-2">
+              <p className="text-[12px] font-medium text-dark">贺卡寄语</p>
+              <p className="mt-0.5 text-[12px] leading-[22px] text-sub">
+                {p.cardMessage}
+              </p>
+            </div>
           )}
 
           <div className="mt-3 flex gap-3">

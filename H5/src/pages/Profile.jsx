@@ -18,7 +18,34 @@ import {
   register,
   getProfile,
   clearSession,
+  sendPhoneCode,
+  phoneLogin,
+  wxLogin,
 } from '../api/auth'
+
+// 微信图标（品牌绿，经典双气泡）
+const WeChatIcon = (p) => (
+  <svg viewBox="0 0 24 24" width={p.width || 15} height={p.height || 15} fill="#07C160" aria-hidden="true">
+    <path d="M8.7 4C4.9 4 2 6.6 2 9.9c0 1.9 1 3.6 2.7 4.7l-.7 2.1 2.4-1.2c.8.2 1.6.4 2.4.4.3 0 .6 0 .9-.1-.1-.6-.2-1.2-.2-1.9 0-3.2 2.9-5.7 6.5-5.7h.5C15.4 5.9 12.3 4 8.7 4zM6.3 8.4a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8zm5 0a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8zM22 13.9c0-2.8-2.5-5-5.6-5s-5.6 2.2-5.6 5 2.5 5 5.6 5c.7 0 1.4-.1 2-.3l2 1-.6-1.8c1.4-.9 2.2-2.3 2.2-3.9zm-7.4-.7a.8.8 0 1 1 0-1.5.8.8 0 0 1 0 1.5zm3.6 0a.8.8 0 1 1 0-1.5.8.8 0 0 1 0 1.5z" />
+  </svg>
+)
+
+// 手机图标（lucide 风格）
+const PhoneIcon = (p) => (
+  <svg
+    viewBox="0 0 24 24"
+    width={p.width || 15}
+    height={p.height || 15}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+  </svg>
+)
 
 // 08 我的
 const STATUS_META = {
@@ -57,7 +84,13 @@ export default function Profile() {
   const location = useLocation()
   const [user, setUser] = useState(null) // { id, nickname }
   const [mode, setMode] = useState('login') // login | register
+  const [authTab, setAuthTab] = useState('phone') // phone | account（手机号/微信一键登录优先）
+  const [loginOpen, setLoginOpen] = useState(false) // 登录方式选择弹层
+  const [showForm, setShowForm] = useState(false) // 是否展开手机号/账号表单
   const [form, setForm] = useState({ username: '', password: '', nickname: '' })
+  const [phoneForm, setPhoneForm] = useState({ phone: '', code: '' })
+  const [countdown, setCountdown] = useState(0) // 验证码发送倒计时（秒）
+  const [codeBusy, setCodeBusy] = useState(false)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const [orders, setOrders] = useState([])
@@ -101,6 +134,69 @@ export default function Profile() {
     clearSession()
     setUser(null)
     setForm({ username: '', password: '', nickname: '' })
+    setPhoneForm({ phone: '', code: '' })
+    setShowForm(false)
+    setLoginOpen(false)
+  }
+
+  // 手机号验证码倒计时
+  useEffect(() => {
+    if (countdown <= 0) return
+    const t = setTimeout(() => setCountdown((c) => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [countdown])
+
+  const sendCode = async () => {
+    if (!/^1\d{10}$/.test(phoneForm.phone)) {
+      setErr('请输入正确的 11 位手机号')
+      return
+    }
+    if (countdown > 0 || codeBusy) return
+    setErr('')
+    setCodeBusy(true)
+    try {
+      const data = await sendPhoneCode(phoneForm.phone)
+      toast(data.dev_code ? `验证码：${data.dev_code}（开发模式）` : '验证码已发送')
+      setCountdown(60)
+    } catch (e) {
+      setErr(e.message || '获取验证码失败')
+    } finally {
+      setCodeBusy(false)
+    }
+  }
+
+  const submitPhone = async (e) => {
+    e.preventDefault()
+    setErr('')
+    setBusy(true)
+    try {
+      const data = await phoneLogin(phoneForm)
+      setUser({ id: data.user_id, nickname: data.nickname || data.phone, role: data.role || '' })
+      getProfile().then(setUser).catch(() => {})
+      if (!getLocation()) setShowLoc(true)
+      const from = location.state?.from
+      if (from && from !== '/profile') nav(from, { replace: true })
+    } catch (e) {
+      setErr(e.message || '登录失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const doWxLogin = async () => {
+    setBusy(true)
+    try {
+      const data = await wxLogin()
+      setUser({ id: data.user_id, nickname: data.nickname, role: data.role || '' })
+      getProfile().then(setUser).catch(() => {})
+      if (!getLocation()) setShowLoc(true)
+      const from = location.state?.from
+      if (from && from !== '/profile') nav(from, { replace: true })
+    } catch (e) {
+      toast(e.message || '微信登录失败', 'error')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const loadOrders = useCallback(async () => {
@@ -181,21 +277,22 @@ export default function Profile() {
       {user ? (
         <div className="mt-4 flex items-center gap-3 px-5">
           <SmartImage imgKey="avatar" className="h-[56px] w-[56px] rounded-full" />
-          <div className="flex-1">
-            <p className="text-[16px] font-medium text-ink">{user.nickname || user.id}</p>
-            <p className="mt-1 text-[10px] text-sub">{user.id}</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[16px] font-medium text-ink">{user.nickname || user.id}</p>
+            <p className="mt-1 truncate text-[10px] text-sub">{user.id}</p>
           </div>
-          <Button
-            variant="secondary"
-            className="!h-[30px] !rounded-pill !border-line !text-[12px] !text-sub"
-            onClick={logout}
+          <button
+            onClick={() => nav('/settings')}
+            aria-label="账号与安全"
+            className="press flex h-[34px] items-center gap-1 rounded-full border border-line bg-white px-3 text-[12px] text-sub"
           >
-            退出
-          </Button>
+            账号与安全
+            <IconArrow width={12} height={12} className="rotate-90 text-sub" />
+          </button>
         </div>
-      ) : (
+      ) : showForm ? (
         <form
-          onSubmit={submit}
+          onSubmit={authTab === 'phone' ? submitPhone : submit}
           className="relative mx-5 mt-4 overflow-hidden rounded-[4px] bg-white p-4 border border-line"
         >
           <FloraSprig
@@ -205,51 +302,173 @@ export default function Profile() {
           <div className="mb-4 flex items-baseline justify-between border-b border-line pb-2.5">
             <p className="eyebrow">Atelier</p>
             <div className="flex gap-4">
-              {['login', 'register'].map((m) => (
+              {[
+                { key: 'phone', label: '手机号登录' },
+                { key: 'account', label: '账号登录' },
+              ].map((t) => (
                 <button
-                  key={m}
+                  key={t.key}
                   type="button"
-                  onClick={() => setMode(m)}
+                  onClick={() => {
+                    setAuthTab(t.key)
+                    setErr('')
+                  }}
                   className={
-                    mode === m
+                    authTab === t.key
                       ? 'border-b border-gold pb-1 text-[14px] font-medium text-gold'
                       : 'pb-1 text-[14px] text-sub'
                   }
                 >
-                  {m === 'login' ? '登录' : '注册'}
+                  {t.label}
                 </button>
               ))}
             </div>
           </div>
-          <input
-            placeholder="用户名"
-            value={form.username}
-            onChange={(e) => setForm({ ...form, username: e.target.value })}
-            className="maison-field mb-2"
-          />
-          {mode === 'register' && (
-            <input
-              placeholder="昵称（可选）"
-              value={form.nickname}
-              onChange={(e) => setForm({ ...form, nickname: e.target.value })}
-              className="maison-field mb-2"
-            />
+          {authTab === 'account' ? (
+            <>
+              <div className="mb-2 flex gap-4">
+                {['login', 'register'].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMode(m)}
+                    className={
+                      mode === m
+                        ? 'border-b border-gold pb-0.5 text-[12px] font-medium text-gold'
+                        : 'pb-0.5 text-[12px] text-sub'
+                    }
+                  >
+                    {m === 'login' ? '登录' : '注册'}
+                  </button>
+                ))}
+              </div>
+              <input
+                placeholder="用户名"
+                value={form.username}
+                onChange={(e) => setForm({ ...form, username: e.target.value })}
+                className="maison-field mb-2"
+              />
+              {mode === 'register' && (
+                <input
+                  placeholder="昵称（可选）"
+                  value={form.nickname}
+                  onChange={(e) => setForm({ ...form, nickname: e.target.value })}
+                  className="maison-field mb-2"
+                />
+              )}
+              <input
+                placeholder="密码（≥6 位）"
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                className="maison-field mb-2"
+              />
+              {err && <p className="mb-2 text-[11px] text-pink">{err}</p>}
+              <Button type="submit" className="w-full" disabled={busy}>
+                {busy ? '处理中…' : mode === 'login' ? '登录' : '注册并登录'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <input
+                placeholder="手机号"
+                inputMode="numeric"
+                maxLength={11}
+                value={phoneForm.phone}
+                onChange={(e) => setPhoneForm({ ...phoneForm, phone: e.target.value.replace(/\D/g, '') })}
+                className="maison-field mb-2"
+              />
+              <div className="mb-2 flex gap-2">
+                <input
+                  placeholder="验证码"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={phoneForm.code}
+                  onChange={(e) => setPhoneForm({ ...phoneForm, code: e.target.value.replace(/\D/g, '') })}
+                  className="maison-field flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={sendCode}
+                  disabled={countdown > 0 || codeBusy}
+                  className="press w-[104px] shrink-0 rounded-[2px] border border-gold/40 bg-white text-[12px] text-gold disabled:opacity-50"
+                >
+                  {countdown > 0 ? `${countdown}s 后重发` : '获取验证码'}
+                </button>
+              </div>
+              {err && <p className="mb-2 text-[11px] text-pink">{err}</p>}
+              <Button type="submit" className="w-full" disabled={busy}>
+                {busy ? '处理中…' : '手机号登录 / 注册'}
+              </Button>
+            </>
           )}
-          <input
-            placeholder="密码（≥6 位）"
-            type="password"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            className="maison-field mb-2"
-          />
-          {err && <p className="mb-2 text-[11px] text-pink">{err}</p>}
-          <Button type="submit" className="w-full" disabled={busy}>
-            {busy ? '处理中…' : mode === 'login' ? '登录' : '注册并登录'}
-          </Button>
+          <button
+            type="button"
+            onClick={() => setShowForm(false)}
+            className="mt-3 w-full text-center text-[12px] text-sub"
+          >
+            返回登录方式
+          </button>
           <p className="mt-2 text-[10px] text-sub">
-            登录后，你的对话、购物车、订单都将按账号隔离保存。
+            未注册的手机号 / 微信将自动创建账号，登录后对话、购物车、订单按账号隔离保存。
           </p>
         </form>
+      ) : (
+        <div className="relative mx-5 mt-4 overflow-hidden rounded-[4px] bg-white p-6 text-center border border-line">
+          <FloraSprig
+            className="pointer-events-none absolute -right-2 -bottom-3 text-gold/20"
+            style={{ width: 72, height: 72 }}
+          />
+          <p className="eyebrow">Atelier</p>
+          <p className="mt-2 font-serif-cn text-[20px] text-ink">欢迎来到 MAISON·FLORA</p>
+          <p className="mt-1 text-[11px] text-sub">登录后对话、购物车、订单按账号隔离保存</p>
+          <Button className="mt-5 w-full" onClick={() => setLoginOpen(true)}>
+            手机号 / 微信登录
+          </Button>
+          <p className="mt-3 text-[10px] text-sub/70">未注册的手机号 / 微信将自动创建账号</p>
+        </div>
+      )}
+
+      {/* 登录方式选择弹层：微信 / 手机号 */}
+      {loginOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+          onClick={() => setLoginOpen(false)}
+        >
+          <div
+            className="w-full max-w-h5 rounded-t-[4px] bg-white px-5 pb-8 pt-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto mb-4 h-[2px] w-9 bg-gold" />
+            <h3 className="text-[17px] font-medium text-ink">选择登录方式</h3>
+            <p className="mt-1 text-[11px] text-sub">未注册的手机号 / 微信将自动创建账号</p>
+            <button
+              onClick={() => {
+                setLoginOpen(false)
+                doWxLogin()
+              }}
+              disabled={busy}
+              className="press mt-5 flex h-[46px] w-full items-center justify-center gap-2 rounded-[2px] bg-[#07C160] text-[14px] font-medium tracking-wide text-white disabled:opacity-60"
+            >
+              <WeChatIcon width={16} height={16} />
+              微信登录
+            </button>
+            <button
+              onClick={() => {
+                setLoginOpen(false)
+                setAuthTab('phone')
+                setShowForm(true)
+              }}
+              className="press mt-3 flex h-[46px] w-full items-center justify-center gap-2 rounded-[2px] bg-gold text-[14px] font-medium tracking-wide text-[#FAF8F5]"
+            >
+              <PhoneIcon width={15} height={15} />
+              手机号登录 / 注册
+            </button>
+            <button onClick={() => setLoginOpen(false)} className="mt-4 w-full text-center text-[12px] text-sub">
+              暂不登录，随便逛逛
+            </button>
+          </div>
+        </div>
       )}
 
       {/* 会员卡 */}
@@ -435,6 +654,18 @@ export default function Profile() {
           ))}
         </div>
       </div>
+
+      {/* 退出登录（仅登录态显示；底部独立入口，避免头像栏拥挤） */}
+      {user && (
+        <div className="mt-6 px-5">
+          <button
+            onClick={logout}
+            className="w-full rounded-[4px] border border-line bg-white py-3 text-center text-[13px] tracking-wide text-burgundy"
+          >
+            退出登录
+          </button>
+        </div>
+      )}
 
       {/* 评价弹窗 */}
       {reviewTarget && (

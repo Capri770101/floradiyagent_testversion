@@ -9,7 +9,7 @@ import { listPlans, listShops, getCart, addCart } from '../api/shop'
 import { getUserId } from '../api/chat'
 import { isLoggedIn, getProfile } from '../api/auth'
 import { toast } from '../utils/toast'
-import { getLocation, locationName, setLocation } from '../utils/location'
+import { getLocation, setLocation } from '../utils/location'
 import { imgColor } from '../utils/color'
 import { itemImagePath } from '../assets/imageMap'
 
@@ -97,17 +97,28 @@ export default function Home() {
 
   return (
     <div className="min-h-full bg-bg pb-4">
-      {/* 顶部品牌条：MAISON·FLORA + ≡ 菜单（参考稿 .topbar） */}
-      <div className="flex items-center justify-between px-5 pb-4 pt-3">
-        <p className="font-serif-cn text-[19px] font-medium tracking-[2px] text-ink">
-          MAISON<span className="text-gold">·</span>FLORA
-        </p>
+      {/* 顶部定位条（美团外卖风格：左上角具体位置 + 下拉箭头；右侧菜单） */}
+      <div className="flex items-center justify-between px-5 pb-3 pt-3">
+        <button
+          onClick={() => setPickerOpen(true)}
+          aria-label="选择位置"
+          className="press flex min-w-0 items-center gap-1.5 py-1 text-ink"
+        >
+          <IconPin width={17} height={17} className="shrink-0 text-gold" />
+          <span className="max-w-[160px] truncate text-[15px] font-medium">
+            {loc?.name ? `深圳 · ${loc.name}` : '选择位置'}
+          </span>
+          <IconArrow width={11} height={11} className="shrink-0 rotate-90 text-sub" />
+        </button>
         <button
           onClick={openMenu}
           aria-label="菜单"
-          className="press -mr-1 p-1 text-ink"
+          className="press -mr-1 flex items-center gap-1 p-1 text-ink"
         >
-          <IconMenu width={22} height={22} />
+          <span className="font-serif-cn text-[15px] tracking-[2px]">
+            MAISON<span className="text-gold">·</span>FLORA
+          </span>
+          <IconMenu width={20} height={20} className="ml-0.5 text-ink" />
         </button>
       </div>
 
@@ -185,18 +196,8 @@ export default function Home() {
         </div>
       )}
 
-      {/* 定位栏 */}
-      <button
-        onClick={() => setPickerOpen(true)}
-        className="press mx-5 flex h-[34px] w-fit items-center gap-1.5 rounded-[2px] border border-line bg-white px-3 text-[11px] text-ink"
-      >
-        <IconPin width={12} height={12} className="text-gold" />
-        <span className="max-w-[130px] truncate font-medium">{locationName() || '选择位置'}</span>
-        <IconArrow width={10} height={10} className="rotate-90 text-sub" />
-      </button>
-
       {/* Hero（参考稿 .hero：居中 衬线大字 + 金线 + 金线花卉） */}
-      <div className="px-6 pb-2 pt-10 text-center">
+      <div className="px-6 pb-2 pt-7 text-center">
         <p className="eyebrow">Atelier de Fleurs · 2026</p>
         <h1 className="mt-3 font-serif-cn text-[36px] font-normal leading-[1.15] text-ink">
           为懂得欣赏

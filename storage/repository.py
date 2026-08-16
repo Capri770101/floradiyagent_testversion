@@ -88,8 +88,15 @@ class Repository(ABC):
     """数据访问抽象。所有方法返回纯 dict / list[dict]，便于序列化为 UI data。"""
 
     @abstractmethod
-    def search_plans(self, keyword: str, requirement: Any | None = None) -> list[dict[str, Any]]:
-        """按关键词搜索商家预设方案；requirement 用于结构化软过滤。"""
+    def search_plans(
+        self,
+        keyword: str,
+        requirement: Any | None = None,
+        location: dict[str, float] | None = None,
+        max_km: float = 5.0,
+    ) -> list[dict[str, Any]]:
+        """按关键词搜索商家预设方案；requirement 用于结构化软过滤，
+        location 非空时限定「配送范围内（≤max_km）店铺承载」的方案。"""
 
     @abstractmethod
     def get_plan(self, plan_id: str) -> dict[str, Any] | None:
@@ -185,7 +192,11 @@ class MockRepository(Repository):
         ]
 
     def search_plans(
-        self, keyword: str, requirement: Any | None = None
+        self,
+        keyword: str,
+        requirement: Any | None = None,
+        location: dict[str, float] | None = None,
+        max_km: float = 5.0,
     ) -> list[dict[str, Any]]:
         kw = (keyword or "").lower()
         # 空关键词 = 浏览全部；非空但无命中 = 返回空（诚实，不兜底返全量）
@@ -197,6 +208,23 @@ class MockRepository(Repository):
                 for p in self._plans
                 if kw in p["name"].lower() or kw in p["desc"].lower() or any(kw in t for t in p["tags"])
             ]
+        # 配送范围过滤：有定位时只保留范围内店铺承载的方案（与 DB 实现对齐）
+        if location and location.get("lat") is not None and location.get("lng") is not None:
+            in_range_names = {
+                s["name"]
+                for s in self._shops
+                if s.get("lat") is not None
+                and _haversine(location["lat"], location["lng"], s["lat"], s["lng"]) <= max_km
+            }
+            plans = [p for p in plans if p.get("merchant_name") in in_range_names]
+        for p in plans:
+            p.setdefault(
+                "shop_id",
+                next(
+                    (s["shop_id"] for s in self._shops if s["name"] == p.get("merchant_name")),
+                    None,
+                ),
+            )
         return _filter_plans_by_requirement(plans, requirement)
 
     def get_plan(self, plan_id: str) -> dict[str, Any] | None:
@@ -279,10 +307,17 @@ class RemoteRepository(Repository):
         return params
 
     def search_plans(
-        self, keyword: str, requirement: Any | None = None
+        self,
+        keyword: str,
+        requirement: Any | None = None,
+        location: dict[str, float] | None = None,
+        max_km: float = 5.0,
     ) -> list[dict[str, Any]]:
         params: dict[str, Any] = {"keyword": keyword or ""}
         params.update(self._requirement_params(requirement))
+        if location:
+            params["lat"] = location.get("lat")
+            params["lng"] = location.get("lng")
         data = self._get_json(self.paths["plans"], params=params)
         return data or []
 

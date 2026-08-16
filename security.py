@@ -255,3 +255,126 @@ def get_user_profile(user_id: str) -> dict[str, Any] | None:
         (user_id,),
     ).fetchone()
     return dict(row) if row else None
+
+
+# --------------------------------------------------------------------------- #
+# 手机号注册/登录（验证码）+ 微信绑定
+# --------------------------------------------------------------------------- #
+
+#: 验证码内存存储：phone -> (code, expires_at)。单进程够用；多实例部署应换 Redis/DB。
+_PHONE_CODES: dict[str, tuple[str, float]] = {}
+
+
+def issue_phone_code(phone: str) -> str:
+    """为手机号生成验证码（幂等：5 分钟内重复获取沿用旧码，防止短信轰炸）。
+
+    sms_provider=dev：固定返回 settings.sms_dev_code（不真实发送）；
+    sms_provider=real：TODO 在此接入真实短信通道（接口不变）。
+    """
+    from config import settings
+
+    now = time.time()
+    old = _PHONE_CODES.get(phone)
+    if old and old[1] > now:
+        return old[0]
+    code = (
+        settings.sms_dev_code
+        if settings.sms_provider == "dev"
+        else f"{secrets.randbelow(1000000):06d}"
+    )
+    _PHONE_CODES[phone] = (code, now + settings.phone_code_ttl_seconds)
+    return code
+
+
+def verify_phone_code(phone: str, code: str) -> bool:
+    """校验手机号验证码（校验通过即销毁，防止重放）。"""
+    from config import settings
+
+    item = _PHONE_CODES.get(phone)
+    if not item:
+        return False
+    stored, expires = item
+    if time.time() > expires:
+        _PHONE_CODES.pop(phone, None)
+        return False
+    if not secrets.compare_digest(stored, code):
+        return False
+    _PHONE_CODES.pop(phone, None)
+    return True
+
+
+def phone_login_user(phone: str) -> tuple[str, str, bool]:
+    """手机号验证码登录/注册：按 phone 定位用户，无账号则自动创建。
+
+    Returns:
+        (user_id, token, is_new)。
+    """
+    from storage.db import get_conn, transaction
+
+    phone = (phone or "").strip()
+    if not phone:
+        raise ValueError("手机号不能为空")
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id FROM users WHERE phone = ? OR username = ? ORDER BY created_at LIMIT 1",
+        (phone, phone),
+    ).fetchone()
+    if row:
+        return row["id"], create_token(row["id"]), False
+
+    uid = "u_" + uuid.uuid4().hex[:12]
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    nickname = "用户" + phone[-4:]
+    with transaction() as c:
+        c.execute(
+            "INSERT INTO users(id, openid, username, nickname, phone, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (uid, uid, phone, nickname, phone, now, now),
+        )
+    return uid, create_token(uid), True
+
+
+def bind_wechat(user_id: str, openid: str) -> bool:
+    """把微信 openid 绑定到当前账号（users.openid 列）。
+
+    Raises:
+        ValueError: openid 已被其他账号绑定。
+    """
+    from storage.db import get_conn, transaction
+
+    conn = get_conn()
+    if not conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone():
+        raise ValueError("用户不存在")
+    owned = conn.execute("SELECT id FROM users WHERE openid = ? AND id != ?", (openid, user_id)).fetchone()
+    if owned:
+        raise ValueError("该微信已绑定其他账号")
+    with transaction() as c:
+        c.execute("UPDATE users SET openid = ?, updated_at = ? WHERE id = ?",
+                  (openid, datetime.now(UTC).isoformat(timespec="seconds"), user_id))
+        # 清理孤儿行：此前以微信 openid 直接建档（id=openid 且无账号凭据）的临时用户
+        c.execute(
+            "DELETE FROM users WHERE id = ? AND username IS NULL AND phone IS NULL AND id != ?",
+            (openid, user_id),
+        )
+    return True
+
+
+def wx_login_user(openid: str, nickname: str | None = None) -> tuple[str, str, bool]:
+    """微信 openid 登录：无账号自动建档（id=openid），保证 /auth/me 与业务表可用。
+
+    Returns:
+        (user_id, token, is_new)。
+    """
+    from storage.db import get_conn, transaction
+
+    conn = get_conn()
+    row = conn.execute("SELECT id FROM users WHERE openid = ?", (openid,)).fetchone()
+    if row:
+        return row["id"], create_token(row["id"]), False
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    with transaction() as c:
+        c.execute(
+            "INSERT INTO users(id, openid, nickname, created_at, updated_at) VALUES (?,?,?,?,?)",
+            (openid, openid, (nickname or "微信用户")[:30], now, now),
+        )
+    return openid, create_token(openid), True

@@ -4,6 +4,7 @@ import { TopBar } from '../components/TopBar'
 import { IconStar, IconCart, IconArrow, IconClock, IconPin } from '../components/icons'
 import { getShop, getCart, addCart, updateCart, removeCart } from '../api/shop'
 import { getUserId } from '../api/chat'
+import { toast } from '../utils/toast'
 import { PLACEHOLDER } from '../tokens'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
@@ -223,7 +224,7 @@ export default function ShopDetail() {
       })
       setQty(item.id, { item_id: created.item_id, qty: created.qty })
     } catch (e) {
-      alert('加入购物车失败：' + e.message)
+      toast('加入购物车失败：' + e.message, 'error')
     }
   }
 
@@ -234,7 +235,7 @@ export default function ShopDetail() {
       const updated = await updateCart(cur.item_id, { qty: cur.qty + 1 })
       setQty(item.id, { item_id: updated.item_id, qty: updated.qty })
     } catch (e) {
-      alert('操作失败：' + e.message)
+      toast('操作失败：' + e.message, 'error')
     }
   }
 
@@ -250,7 +251,7 @@ export default function ShopDetail() {
         setQty(item.id, { item_id: updated.item_id, qty: updated.qty })
       }
     } catch (e) {
-      alert('操作失败：' + e.message)
+      toast('操作失败：' + e.message, 'error')
     }
   }
 

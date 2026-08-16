@@ -26,13 +26,13 @@ import { PLACEHOLDER } from '../tokens'
 const GREETING = {
   role: 'assistant',
   content: '嗨～我是小兰，你的花艺设计助手',
-  lead: '告诉我你想送给谁、什么场合、预算多少，我来为你设计专属花束。',
+  lead: '告诉我你想送给谁、什么场合、预算多少，我先帮你挑几款现成的花束，也可以为你 DIY 定制专属花束。',
 }
 
 // 每一条助手回复都保证有文字：清理空行、纯空白/空回复时按 ui 类型给兜底文案，
 // 避免出现只有卡片没有文字的「哑消息」或空白气泡。
 const REPLY_FALLBACK = {
-  plan_card: '为你找到了一个方案，看看下面的卡片吧～',
+  plan_card: '为你挑了几款符合需求的现有花束，可以直接选，也可以让我为你 DIY 定制～',
   image_task: '效果图已生成，展开卡片查看吧～',
   shop_card: '为你推荐了几家不错的店铺，选一家下单吧～',
   order_card: '订单已创建，去支付完成下单吧～',
@@ -57,7 +57,7 @@ function flowersOf(plan) {
   return list
 }
 
-function ChatPlanCard({ plan, onConfirm, onAdjust }) {
+function ChatPlanCard({ plan, onConfirm, onAdjust, onDiy }) {
   const isShop = plan._type === 'shop'
   return (
     <div className="animate-fade-up mt-2 rounded-[4px] border border-line bg-white p-4">
@@ -90,10 +90,18 @@ function ChatPlanCard({ plan, onConfirm, onAdjust }) {
         </p>
       )}
       <div className="mt-3 flex gap-3">
-        {onAdjust && (
-          <Button variant="secondary" className="flex-1" onClick={onAdjust}>
-            调整方案
-          </Button>
+        {isShop ? (
+          onDiy && (
+            <Button variant="secondary" className="flex-1" onClick={onDiy}>
+              自己 DIY 定制
+            </Button>
+          )
+        ) : (
+          onAdjust && (
+            <Button variant="secondary" className="flex-1" onClick={onAdjust}>
+              调整方案
+            </Button>
+          )
         )}
         {onConfirm && (
           <Button variant="primary" className="flex-1" onClick={onConfirm}>
@@ -494,14 +502,14 @@ export default function Agent() {
     return arr
   }
 
-  // 把生图结果（image_task）挂到最近的前一张方案卡片上，效果图并入卡片展示；
-  // 无前置方案卡时才保留为独立生图卡片；生图消息若带文本内容则保留为纯文本气泡
-  // （如「效果图已生成，展开卡片查看」/ 确认类提示），避免整条消息被吞掉。
+  // 把生图结果（image_task，或异步生图的 text + task_id）挂到最近的前一张方案卡片上，
+  // 效果图并入卡片展示；无前置方案卡时才保留为独立生图卡片；生图消息若带文本内容则
+  // 保留为纯文本气泡（如「效果图已生成，展开卡片查看」/ 确认类提示），避免整条消息被吞掉。
   function attachImages(msgs) {
     const out = []
     for (let i = 0; i < msgs.length; i++) {
       const m = msgs[i]
-      if (m.ui === 'image_task' && m.data) {
+      if ((m.ui === 'image_task' || (m.ui === 'text' && m.data?.task_id)) && m.data) {
         const img = {
           task_id: m.data.task_id,
           result_url: m.data.result_url || m.data.image_url,
@@ -560,9 +568,18 @@ export default function Agent() {
                 <DiyPlanCard
                   key={i}
                   plan={p}
-                  img={m._img}
+                  img={
+                    m._img ||
+                    (m.data?.task_id || m.data?.result_url
+                      ? {
+                          task_id: m.data.task_id,
+                          result_url: m.data.result_url,
+                          poll: m.data.poll,
+                        }
+                      : undefined)
+                  }
                   onConfirm={() =>
-                    nav(`/diy/${p.plan_id || 'demo'}`, { state: { plan: p } })
+                    send('确认这个方案，帮我推荐能做这个方案的店铺')
                   }
                   onAdjust={(d) => send(d || '调整方案')}
                 />
@@ -571,11 +588,13 @@ export default function Agent() {
                   key={i}
                   plan={p}
                   onConfirm={() => handleBuyShop(p)}
-                  onAdjust={() => send('调整方案')}
+                  onDiy={() => send('我想自己 DIY 定制')}
                 />
                 )
               )}
-            {m.ui === 'image_task' && <ImageTaskCard data={m.data} />}
+            {(m.ui === 'image_task' || (m.ui === 'text' && m.data?.task_id)) && (
+              <ImageTaskCard data={m.data} />
+            )}
             {m.ui === 'shop_card' && m.data?.shops?.length > 0 && (
               <ShopCard
                 shops={m.data.shops}

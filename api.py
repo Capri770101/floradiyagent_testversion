@@ -100,6 +100,19 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=1, max_length=64)
 
 
+class PhoneCodeRequest(BaseModel):
+    phone: str = Field(..., min_length=6, max_length=20, description="手机号（dev 模式不真实发送，验证码见 settings.sms_dev_code）")
+
+
+class PhoneLoginRequest(BaseModel):
+    phone: str = Field(..., min_length=6, max_length=20, description="手机号")
+    code: str = Field(..., min_length=4, max_length=8, description="短信验证码")
+
+
+class WxBindRequest(BaseModel):
+    code: str = Field(..., min_length=1, max_length=128, description="wx.login() 返回的一次性登录凭证 code")
+
+
 # --------------------------------------------------------------------------- #
 # 电商请求模型（购物车 / 订单 / 支付）
 # --------------------------------------------------------------------------- #
@@ -279,14 +292,84 @@ async def wx_login(req: WxLoginRequest) -> dict[str, Any]:
     openid = info.get("openid")
     if not openid:
         raise HTTPException(status_code=400, detail="微信未返回 openid")
-    token = create_token(openid, info.get("unionid"))
+    # 自动建档：openid 无对应 users 行时创建（id=openid），保证 /auth/me 与业务表可用
+    uid, token, is_new = security.wx_login_user(openid, info.get("nickname"))
+    profile = security.get_user_profile(uid) or {}
     return {
         "token": token,
+        "user_id": uid,
         "openid": openid,
         "unionid": info.get("unionid"),
+        "nickname": profile.get("nickname") or "微信用户",
+        "is_new": is_new,
         "expires_in": settings.jwt_expire_minutes * 60,
         "token_type": "Bearer",
     }
+
+
+@app.post("/auth/phone-code")
+async def phone_code(req: PhoneCodeRequest) -> dict[str, Any]:
+    """手机号验证码：dev 模式不真实发送（固定验证码见 .env SMS_DEV_CODE，默认 123456）。"""
+    code = security.issue_phone_code(req.phone)
+    logger.info("[phone-code] phone=%s dev_mode=%s", req.phone, settings.sms_provider == "dev")
+    return {
+        "ok": True,
+        "dev_code": code if settings.sms_provider == "dev" else None,
+        "ttl_seconds": settings.phone_code_ttl_seconds,
+    }
+
+
+@app.post("/auth/phone-login")
+async def phone_login(req: PhoneLoginRequest) -> dict[str, Any]:
+    """手机号验证码登录/注册：验证码通过后自动登录（无账号则一键注册）。"""
+    if not security.verify_phone_code(req.phone, req.code):
+        raise HTTPException(status_code=401, detail="验证码错误或已过期")
+    try:
+        uid, token, is_new = security.phone_login_user(req.phone)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    profile = security.get_user_profile(uid) or {}
+    return {
+        "token": token,
+        "user_id": uid,
+        "openid": uid,
+        "nickname": profile.get("nickname") or req.phone,
+        "phone": req.phone,
+        "is_new": is_new,
+        "expires_in": settings.jwt_expire_minutes * 60,
+        "token_type": "Bearer",
+    }
+
+
+@app.post("/auth/wx-bind")
+async def wx_bind(req: WxBindRequest, request: Request) -> dict[str, Any]:
+    """微信绑定：把当前登录账号与微信 openid 绑定（同一微信后续可直接微信登录）。
+
+    调用时机：已登录用户在微信内打开页面 → wx.login() 拿 code → 本接口。
+    """
+    uid = await get_current_user(request)
+    if not uid:
+        raise HTTPException(status_code=401, detail="未登录或令牌无效")
+    if not settings.auth_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="微信绑定未配置：请在 .env 设置 WECHAT_APPID / WECHAT_SECRET",
+        )
+    try:
+        info = await asyncio.to_thread(wx_code2session, req.code)
+    except httpx.HTTPError as exc:
+        logger.error("[wx-bind] code2session 网络错误: %s", exc)
+        raise HTTPException(status_code=502, detail="微信接口调用失败") from exc
+    if info.get("errcode") not in (0, None):
+        raise HTTPException(status_code=400, detail=f"微信绑定失败: {info.get('errmsg')}")
+    openid = info.get("openid")
+    if not openid:
+        raise HTTPException(status_code=400, detail="微信未返回 openid")
+    try:
+        security.bind_wechat(uid, openid)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"ok": True, "openid": openid}
 
 
 async def resolve_uid(request: Request, body_user_id: str | None = None) -> str | None:

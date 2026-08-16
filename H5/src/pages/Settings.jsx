@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
 import { toast } from '../utils/toast'
-import { clearSession, isLoggedIn } from '../api/auth'
+import { clearSession, isLoggedIn, wxBind, inWeChat } from '../api/auth'
 
-// 设置：账号 / 通知 / 会员占位 + 退出登录
+// 设置：账号 / 通知 / 会员占位 + 微信绑定 + 退出登录
 export default function Settings() {
   const nav = useNavigate()
 
@@ -13,6 +13,19 @@ export default function Settings() {
     clearSession()
     toast('已退出登录')
     nav('/profile', { replace: true })
+  }
+
+  const bindWx = async () => {
+    if (!inWeChat()) {
+      toast('请在微信中打开本页面后绑定', 'error')
+      return
+    }
+    try {
+      await wxBind()
+      toast('微信绑定成功，下次可直接微信登录')
+    } catch (e) {
+      toast(e.message || '微信绑定失败', 'error')
+    }
   }
 
   return (
@@ -50,6 +63,19 @@ export default function Settings() {
               立即开通
             </span>
           </div>
+          {isLoggedIn() && (
+            <div className="flex items-center justify-between border-t border-line px-4 py-3.5">
+              <span className="text-[12px] text-ink">绑定微信</span>
+              <span
+                role="button"
+                tabIndex={0}
+                className="cursor-pointer text-[12px] text-pink"
+                onClick={bindWx}
+              >
+                去绑定
+              </span>
+            </div>
+          )}
         </div>
         <Button
           variant="secondary"
