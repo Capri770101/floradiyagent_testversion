@@ -214,6 +214,23 @@ async def merchant_toggle_plan_endpoint(
     return {"plan": p}
 
 
+class BatchToggleRequest(BaseModel):
+    shop_id: str = Field(..., min_length=1, max_length=40)
+    plan_ids: list[str] = Field(..., min_length=1, max_length=200)
+    on: bool = Field(True, description="True=上架，False=下架")
+
+
+@router.post("/merchant/plans/batch-toggle")
+async def merchant_batch_toggle_endpoint(req: BatchToggleRequest, request: Request) -> dict[str, Any]:
+    """批量上下架：一次性设置多家商品为 on/off（省去逐条点击）。"""
+    _, scope = await _merchant_scope(request)
+    _require_shop_in_scope(req.shop_id, scope)
+    n = await asyncio.to_thread(
+        catalog_store.merchant_batch_toggle_plans, req.shop_id, req.plan_ids, req.on
+    )
+    return {"updated": n}
+
+
 
 @router.delete("/merchant/plans/{plan_id}")
 async def merchant_delete_plan_endpoint(

@@ -1088,6 +1088,20 @@ def merchant_toggle_plan(plan_id: str, shop_id: str) -> dict[str, Any] | None:
     return d
 
 
+def merchant_batch_toggle_plans(shop_id: str, plan_ids: list[str], on: bool) -> int:
+    """批量上下架：把该店铺内指定方案的 shop_plans.status 统一设为 on/off。"""
+    if not plan_ids:
+        return 0
+    status = "on" if on else "off"
+    ph = ",".join("?" * len(plan_ids))
+    with transaction() as c:
+        cur = c.execute(
+            f"UPDATE shop_plans SET status=? WHERE shop_id=? AND plan_id IN ({ph})",
+            [status, shop_id, *plan_ids],
+        )
+    return cur.rowcount
+
+
 def merchant_delete_plan(plan_id: str, shop_id: str) -> bool:
     """商家下掉商品：解除与该店关联；若再无其他店关联则连方案一并删除。"""
     conn = get_conn()

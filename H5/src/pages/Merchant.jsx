@@ -14,6 +14,7 @@ import {
   merchantUpdatePlan,
   merchantTogglePlan,
   merchantDeletePlan,
+  merchantBatchToggle,
   merchantUpdateShop,
   merchantUpload,
   merchantAddLogistics,
@@ -402,9 +403,183 @@ function LogisticsTab({
   )
 }
 
-// 商品管理：店铺选择 + 在售/下架列表 + 新建/编辑/上下架/删除
-function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm, onEdit, onToggle, onRemove }) {
+// 工作台首页：今日经营 + 待办提醒 + 店铺状态 + 快捷入口 + 最近订单
+function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId }) {
   const nav = useNavigate()
+  if (!stats) return null
+  const pendingShip = (orders || []).filter((o) => o.status === 'paid')
+  const badReviews = (reviews || []).filter((r) => r.rating <= 3)
+  const recent = (orders || []).slice(0, 3)
+
+  const cards = [
+    { label: '今日订单', value: stats.today_order_count ?? '-', hint: `累计 ${stats.order_count ?? '-'} 单` },
+    { label: '今日GMV', value: `¥${Number(stats.today_gmv || 0).toFixed(0)}`, hint: `累计 ¥${Number(stats.gmv || 0).toFixed(0)}` },
+    { label: '待发货', value: stats.pending_ship ?? 0, hint: 'paid 订单', accent: (stats.pending_ship || 0) > 0 },
+    { label: '待付款', value: stats.pending_payment ?? 0, hint: '超时自动取消', accent: (stats.pending_payment || 0) > 0 },
+  ]
+  const quick = [
+    { key: 'orders', label: '订单管理', sub: `${stats.pending_ship ?? 0} 单待发货` },
+    { key: 'plans', label: '商品管理', sub: '上下架 / 编辑' },
+    { key: 'reviews', label: '评价管理', sub: badReviews.length ? `${badReviews.length} 条中差评` : `${stats.review_count ?? 0} 条评价` },
+    { key: 'shop', label: '店铺设置', sub: '资料 / 装修' },
+  ]
+
+  return (
+    <div className="px-5">
+      {/* 今日经营大数字卡 */}
+      <div className="mt-4 grid grid-cols-2 gap-2.5">
+        {cards.map((c) => (
+          <div key={c.label} className="rounded-card bg-white p-3.5 border border-line">
+            <p className="text-[10px] tracking-[0.15em] text-sub">{c.label}</p>
+            <p className={`mt-1 font-serif-cn text-[22px] font-normal ${c.accent ? 'text-burgundy' : 'text-ink'}`}>
+              {c.value}
+            </p>
+            <p className="mt-0.5 text-[10px] text-sub/70">{c.hint}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* 待办提醒 */}
+      <div className="mt-5">
+        <p className="eyebrow">待办提醒</p>
+        {pendingShip.length === 0 && badReviews.length === 0 ? (
+          <p className="mt-2 rounded-card bg-white p-5 text-center text-[12px] text-sub border border-line">
+            暂无待办，一切正常 🎉
+          </p>
+        ) : (
+          <div className="mt-2 space-y-2">
+            {pendingShip.slice(0, 4).map((o) => (
+              <div
+                key={o.order_id}
+                onClick={() => onGoTab('orders')}
+                className="press flex w-full cursor-pointer items-center justify-between rounded-card bg-white p-3 text-left border border-line"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[12px] text-ink">{o.order_id}</p>
+                  <p className="mt-0.5 truncate text-[10px] text-sub">
+                    {(o.items || []).map((it) => it.name).join('、')} · 共 {fmtMoney(o.total_price)}
+                  </p>
+                </div>
+                <Button
+                  className="!h-[30px] !px-4 !text-[11px] !tracking-[1px]"
+                  disabled={busyId === o.order_id}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onShip(o.order_id)
+                  }}
+                >
+                  {busyId === o.order_id ? '发货中…' : '去发货'}
+                </Button>
+              </div>
+            ))}
+            {badReviews.slice(0, 2).map((r) => (
+              <button
+                key={r.id}
+                onClick={() => onGoTab('reviews')}
+                className="press flex w-full items-center justify-between rounded-card bg-white p-3 text-left border border-line"
+              >
+                <div className="min-w-0">
+                  <p className="text-[12px] text-ink">
+                    {'★'.repeat(r.rating)}
+                    <span className="ml-2 text-[10px] text-sub">中差评待处理</span>
+                  </p>
+                  <p className="mt-0.5 truncate text-[10px] text-sub">{r.content || '（无文字评价）'}</p>
+                </div>
+                <IconArrow width={12} height={12} className="shrink-0 text-sub" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 快捷入口 */}
+      <div className="mt-6">
+        <p className="eyebrow">快捷入口</p>
+        <div className="mt-2 grid grid-cols-2 gap-2.5">
+          {quick.map((q) => (
+            <button
+              key={q.key}
+              onClick={() => onGoTab(q.key)}
+              className="press rounded-card bg-white p-3.5 text-left border border-line"
+            >
+              <p className="text-[13px] font-medium text-ink">{q.label}</p>
+              <p className="mt-1 text-[10px] text-sub">{q.sub}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 店铺状态 */}
+      {shops.length > 0 && (
+        <div className="mt-6">
+          <p className="eyebrow">我的店铺</p>
+          <div className="mt-2 space-y-2">
+            {shops.map((s) => (
+              <div
+                key={s.id || s.shop_id}
+                className="flex items-center justify-between rounded-card bg-white p-3 border border-line"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-serif-cn text-[15px] font-normal text-ink">{s.name}</p>
+                  <p className="mt-0.5 flex items-center gap-2 text-[10px] text-sub">
+                    <span className="flex items-center gap-0.5">
+                      <IconStar width={10} height={10} className="text-cream" /> {s.rating || '-'}
+                    </span>
+                    <span>月售 {s.sales ?? '-'}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => nav(`/shop/${s.id || s.shop_id}`)}
+                  className="press shrink-0 text-[11px] tracking-[1px] text-gold"
+                >
+                  查看门店 →
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 最近订单 */}
+      {recent.length > 0 && (
+        <div className="mt-6 pb-2">
+          <p className="eyebrow">最近订单</p>
+          <div className="mt-2 space-y-2">
+            {recent.map((o) => {
+              const meta = STATUS_META[o.status] || { label: o.status, cls: 'bg-line/40 text-sub' }
+              return (
+                <div key={o.order_id} className="rounded-card bg-white p-3 border border-line">
+                  <div className="flex items-center justify-between">
+                    <p className="truncate text-[11px] text-sub">{o.order_id}</p>
+                    <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>{meta.label}</span>
+                  </div>
+                  <p className="mt-1 truncate text-[12px] text-ink">
+                    {(o.items || []).map((it) => it.name).join('、')}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-gold">{fmtMoney(o.total_price)}</p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 商品管理：店铺选择 + 在售/下架列表 + 新建/编辑/上下架/删除 + 批量上下架
+function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm, onEdit, onToggle, onRemove, onBatchToggle }) {
+  const nav = useNavigate()
+  const [batchMode, setBatchMode] = useState(false)
+  const [selected, setSelected] = useState(() => new Set())
+  const allSelected = plans.length > 0 && plans.every((p) => selected.has(p.plan_id))
+  const toggleSelect = (id) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
   if (shops.length === 0) {
     return (
       <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
@@ -430,6 +605,25 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
       <div className="mt-4 flex items-center justify-between px-5">
         <p className="eyebrow">{shopId ? '店铺商品' : '请先选择店铺'}</p>
         <div className="flex items-center gap-3">
+          {shopId && plans.length > 0 && !batchMode && (
+            <button
+              onClick={() => setBatchMode(true)}
+              className="press text-[12px] tracking-[1px] text-gold"
+            >
+              批量管理
+            </button>
+          )}
+          {shopId && plans.length > 0 && batchMode && (
+            <button
+              onClick={() => {
+                setBatchMode(false)
+                setSelected(new Set())
+              }}
+              className="press text-[12px] tracking-[1px] text-sub"
+            >
+              退出批量
+            </button>
+          )}
           {shopId && (
             <button
               onClick={() => nav(`/shop/${shopId}`)}
@@ -447,6 +641,48 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
           )}
         </div>
       </div>
+      {shopId && batchMode && plans.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 px-5">
+          <button
+            onClick={() =>
+              setSelected(allSelected ? new Set() : new Set(plans.map((p) => p.plan_id)))
+            }
+            className="press flex items-center gap-1.5 text-[12px] text-ink"
+          >
+            <span
+              className={`flex h-[16px] w-[16px] items-center justify-center rounded-[3px] border ${
+                allSelected ? 'border-gold bg-gold text-white' : 'border-line bg-white'
+              }`}
+            >
+              {allSelected && <span className="text-[10px] leading-none">✓</span>}
+            </span>
+            全选
+          </button>
+          <span className="text-[11px] text-sub">已选 {selected.size} 件</span>
+          <div className="ml-auto flex gap-2">
+            <button
+              className={`${rowBtn} border-gold bg-gold text-[#FAF8F5] disabled:opacity-40`}
+              disabled={selected.size === 0 || planBusy}
+              onClick={async () => {
+                await onBatchToggle(shopId, [...selected], true)
+                setSelected(new Set())
+              }}
+            >
+              批量上架
+            </button>
+            <button
+              className={`${rowBtn} border-gold/40 bg-white text-gold disabled:opacity-40`}
+              disabled={selected.size === 0 || planBusy}
+              onClick={async () => {
+                await onBatchToggle(shopId, [...selected], false)
+                setSelected(new Set())
+              }}
+            >
+              批量下架
+            </button>
+          </div>
+        </div>
+      )}
       {plans.length === 0 ? (
         <p className="mx-5 mt-3 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
           {shopId ? '该店铺还没有商品，点「新建商品」上架第一款吧' : '从上方选择一个店铺'}
@@ -454,8 +690,24 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
       ) : (
         <div className="px-5">
           {plans.map((p) => (
-            <div key={p.plan_id} className="mt-3 rounded-card bg-white p-4 border border-line">
+            <div
+              key={p.plan_id}
+              className={`mt-3 rounded-card bg-white p-4 border ${
+                batchMode && selected.has(p.plan_id) ? 'border-gold' : 'border-line'
+              }`}
+            >
               <div className="flex gap-3">
+                {batchMode && (
+                  <button
+                    onClick={() => toggleSelect(p.plan_id)}
+                    className={`mt-[22px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[3px] border ${
+                      selected.has(p.plan_id) ? 'border-gold bg-gold text-white' : 'border-line bg-white'
+                    }`}
+                    aria-label={selected.has(p.plan_id) ? '取消选择' : '选择'}
+                  >
+                    {selected.has(p.plan_id) && <span className="text-[11px] leading-none">✓</span>}
+                  </button>
+                )}
                 <SmartImage
                   src={planImage(p)}
                   imgKey="home_rec_1"
@@ -479,39 +731,41 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
                   )}
                 </div>
               </div>
-              <div className="mt-3 flex justify-end gap-2 border-t border-line pt-3">
-                <button
-                  className={`${rowBtn} border-gold/40 bg-white text-gold hover:border-gold`}
-                  onClick={() => onEdit(p)}
-                >
-                  编辑
-                </button>
-                {p.shop_status === 'on' ? (
+              {!batchMode && (
+                <div className="mt-3 flex justify-end gap-2 border-t border-line pt-3">
+                  <button
+                    className={`${rowBtn} border-gold/40 bg-white text-gold hover:border-gold`}
+                    onClick={() => onEdit(p)}
+                  >
+                    编辑
+                  </button>
+                  {p.shop_status === 'on' ? (
+                    <button
+                      className={`${rowBtn} border-gold/40 bg-white text-gold hover:border-gold`}
+                      disabled={planBusy}
+                      onClick={() => onToggle(p)}
+                    >
+                      下架
+                    </button>
+                  ) : (
+                    <button
+                      className={`${rowBtn} border-gold bg-gold text-[#FAF8F5]`}
+                      disabled={planBusy}
+                      onClick={() => onToggle(p)}
+                    >
+                      上架
+                    </button>
+                  )}
                   <button
                     className={`${rowBtn} border-gold/40 bg-white text-gold hover:border-gold`}
                     disabled={planBusy}
-                    onClick={() => onToggle(p)}
+                    onClick={() => onRemove(p)}
                   >
-                    下架
+                    <IconTrash width={11} height={11} />
+                    删除
                   </button>
-                ) : (
-                  <button
-                    className={`${rowBtn} border-gold bg-gold text-[#FAF8F5]`}
-                    disabled={planBusy}
-                    onClick={() => onToggle(p)}
-                  >
-                    上架
-                  </button>
-                )}
-                <button
-                  className={`${rowBtn} border-gold/40 bg-white text-gold hover:border-gold`}
-                  disabled={planBusy}
-                  onClick={() => onRemove(p)}
-                >
-                  <IconTrash width={11} height={11} />
-                  删除
-                </button>
-              </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -639,7 +893,7 @@ export default function Merchant() {
   const [reviews, setReviews] = useState([])
   const [status, setStatus] = useState('')
   const [filterShop, setFilterShop] = useState('')
-  const [tab, setTab] = useState('orders')
+  const [tab, setTab] = useState('dashboard')
   const [busyId, setBusyId] = useState('')
   const [expandedId, setExpandedId] = useState('')
   const [logiExpandedId, setLogiExpandedId] = useState('')
@@ -859,6 +1113,31 @@ export default function Merchant() {
     }
   }
 
+  const batchTogglePlans = async (sid, planIds, on) => {
+    const targetShop = sid || shopId
+    if (!targetShop || planIds.length === 0) return
+    if (planBusy) return
+    setPlanBusy(true)
+    try {
+      await merchantBatchToggle(targetShop, planIds, on)
+      toast(on ? `已上架 ${planIds.length} 件` : `已下架 ${planIds.length} 件`)
+      if (targetShop === shopId) setShopPlans(await merchantPlans(shopId))
+    } catch (e) {
+      toast(e.message || '批量操作失败', 'error')
+    } finally {
+      setPlanBusy(false)
+    }
+  }
+
+  // 切换 Tab：进入工作台首页时重置筛选，保证看到全量经营数据
+  const switchTab = (t) => {
+    setTab(t)
+    if (t === 'dashboard') {
+      setStatus('')
+      setFilterShop('')
+    }
+  }
+
   const saveShop = async (s) => {
     if (shopSaving) return
     setShopSaving(true)
@@ -971,6 +1250,7 @@ export default function Merchant() {
 
       <div className="mt-7 flex gap-6 px-5">
         {[
+          { key: 'dashboard', label: '工作台' },
           { key: 'orders', label: '订单管理' },
           { key: 'logistics', label: '物流管理' },
           { key: 'plans', label: '商品管理' },
@@ -979,7 +1259,7 @@ export default function Merchant() {
         ].map((t) => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => switchTab(t.key)}
             className={`relative pb-2 text-[13px] transition ${
               tab === t.key
                 ? 'font-medium text-gold after:absolute after:-bottom-px after:left-0 after:h-[2px] after:w-full after:bg-gold'
@@ -995,6 +1275,16 @@ export default function Merchant() {
         <p className="mx-5 mt-6 rounded-card bg-white p-8 text-center text-[12px] text-sub border border-line">
           加载中…
         </p>
+      ) : tab === 'dashboard' ? (
+        <DashboardTab
+          stats={stats}
+          orders={orders}
+          reviews={reviews}
+          shops={stats?.shops || []}
+          onGoTab={switchTab}
+          onShip={ship}
+          busyId={busyId}
+        />
       ) : tab === 'orders' ? (
         <>
           <div className="mt-3 flex flex-wrap gap-1.5 px-5">
@@ -1078,6 +1368,7 @@ export default function Merchant() {
           onEdit={openForm}
           onToggle={toggleShopPlan}
           onRemove={removeShopPlan}
+          onBatchToggle={batchTogglePlans}
         />
       ) : tab === 'shop' ? (
         <ShopSettingsTab

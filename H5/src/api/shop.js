@@ -250,6 +250,14 @@ export async function merchantShip(orderId) {
   return data.order
 }
 
+export async function merchantBatchToggle(shopId, planIds, on) {
+  const data = await api('/merchant/plans/batch-toggle', {
+    method: 'POST',
+    body: JSON.stringify({ shop_id: shopId, plan_ids: planIds, on }),
+  })
+  return data
+}
+
 export async function merchantOrderDetail(orderId) {
   const data = await api(`/merchant/orders/${encodeURIComponent(orderId)}`)
   return data.order

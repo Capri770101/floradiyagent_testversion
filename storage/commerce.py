@@ -511,13 +511,24 @@ def merchant_stats(
            JOIN orders o ON o.order_id = r.order_id WHERE 1=1{rev_where}""",
         rev_args,
     ).fetchone()
+    # 今日经营（created_at 按 UTC 当日）与待付款（工作台首页大数字卡）
+    today = conn.execute(
+        f"SELECT COUNT(*), COALESCE(SUM(total_price),0) FROM orders WHERE 1=1{where} AND date(created_at)=date('now')",
+        args,
+    ).fetchone()
+    pending_payment = conn.execute(
+        f"SELECT COUNT(*) FROM orders WHERE 1=1{where} AND status IN ('created','pending_payment')",
+        args,
+    ).fetchone()[0]
     if shop_ids is not None:
         shops = conn.execute(
-            f"SELECT id, name FROM shops WHERE id IN ({','.join('?' * len(shop_ids))}) ORDER BY created_at",
+            f"SELECT id, name, rating, sales FROM shops WHERE id IN ({','.join('?' * len(shop_ids))}) ORDER BY created_at",
             shop_ids,
         ).fetchall()
     else:
-        shops = conn.execute("SELECT id, name FROM shops ORDER BY created_at").fetchall()
+        shops = conn.execute(
+            "SELECT id, name, rating, sales FROM shops ORDER BY created_at"
+        ).fetchall()
     return {
         "order_count": int(total[0]),
         "gmv": float(total[1] or 0),
@@ -526,6 +537,10 @@ def merchant_stats(
         "canceled_count": int(canceled),
         "review_count": int(rev[0]),
         "avg_rating": float(rev[1] or 0),
+        # 工作台首页：今日订单 / 今日 GMV / 待付款
+        "today_order_count": int(today[0]),
+        "today_gmv": float(today[1] or 0),
+        "pending_payment": int(pending_payment),
         "shops": [dict(s) for s in shops],
     }
 
