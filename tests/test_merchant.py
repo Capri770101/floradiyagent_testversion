@@ -203,3 +203,100 @@ def test_merchant_upload_rejects_oversize(client):
 def test_merchant_upload_requires_login(client):
     r = client.post("/merchant/upload", files={"file": ("a.jpg", b"x", "image/jpeg")})
     assert r.status_code == 401
+
+
+# ---------- P1：订单关键词 / 日期筛选 ----------
+
+
+def test_merchant_orders_keyword_filter(client):
+    """按商品名关键词过滤：命中 items 快照 JSON（兼容 order_items 为空）。"""
+    token = _register(client, "mer_l", bind="S001")
+    _create_and_pay(client, token, shop="S001", price=66)  # P001 = 康乃馨感恩花束
+    r = client.get(
+        "/merchant/orders",
+        params={"keyword": "康乃馨"},
+        headers=_merchant_headers(token),
+    )
+    assert r.status_code == 200
+    orders = r.json()["orders"]
+    assert orders, "关键词应命中订单"
+    assert all("康乃馨" in ",".join(i.get("name", "") for i in o["items"]) for o in orders)
+
+
+def test_merchant_orders_date_filter(client):
+    """按日期范围过滤：created_at 兼容 ISO 与空格两种格式。"""
+    token = _register(client, "mer_m", bind="S001")
+    _create_and_pay(client, token, shop="S001", price=88)
+    today = __import__("datetime").date.today().isoformat()
+    r = client.get(
+        "/merchant/orders",
+        params={"date_from": today, "date_to": today},
+        headers=_merchant_headers(token),
+    )
+    assert r.status_code == 200
+    assert r.json()["orders"], "今日订单应被日期范围命中"
+
+
+# ---------- P1：商品分类管理 ----------
+
+
+def test_merchant_categories_crud(client):
+    token = _register(client, "mer_n", bind="S001")
+    h = _merchant_headers(token)
+    # 列表（种子分类含 plan_count）
+    r = client.get("/merchant/categories", headers=h)
+    assert r.status_code == 200
+    cats = r.json()["categories"]
+    assert cats and "plan_count" in cats[0]
+    # 新增
+    r = client.post("/merchant/categories", json={"name": "测试分类"}, headers=h)
+    assert r.status_code == 200, r.text
+    cid = r.json()["category"]["id"]
+    # 重名拒绝
+    r = client.post("/merchant/categories", json={"name": "测试分类"}, headers=h)
+    assert r.status_code == 400
+    # 改名
+    r = client.put(f"/merchant/categories/{cid}", json={"name": "测试分类2"}, headers=h)
+    assert r.status_code == 200
+    assert r.json()["category"]["name"] == "测试分类2"
+    # 删除
+    r = client.delete(f"/merchant/categories/{cid}", headers=h)
+    assert r.status_code == 200
+    # 未登录 401
+    assert client.get("/merchant/categories").status_code == 401
+
+
+# ---------- P1：店铺装修（封面 / Logo / 营业时间等）----------
+
+
+def test_merchant_update_shop_decoration(client):
+    token = _register(client, "mer_o", bind="S001")
+    h = _merchant_headers(token)
+    r = client.put(
+        "/merchant/shop/S001",
+        json={
+            "cover": "/uploads/mcover.jpg",
+            "logo": "/uploads/mlogo.jpg",
+            "hours": "08:00 - 20:00",
+            "address": "测试路 1 号",
+            "notice": "测试公告",
+        },
+        headers=h,
+    )
+    assert r.status_code == 200, r.text
+    # stats.shops 应带完整装修字段（店铺设置表单数据源）
+    r = client.get("/merchant/stats", headers=h)
+    assert r.status_code == 200
+    shop = next(s for s in r.json()["shops"] if s["id"] == "S001")
+    assert shop["cover"] == "/uploads/mcover.jpg"
+    assert shop["logo"] == "/uploads/mlogo.jpg"
+    assert shop["hours"] == "08:00 - 20:00"
+    assert shop["address"] == "测试路 1 号"
+    assert shop["notice"] == "测试公告"
+    # C 端店铺详情也带装修字段
+    r = client.get("/shops/S001")
+    assert r.status_code == 200
+    d = r.json()["shop"]
+    assert d["cover"] == "/uploads/mcover.jpg"
+    assert d["logo"] == "/uploads/mlogo.jpg"
+    assert d["hours"] == "08:00 - 20:00"

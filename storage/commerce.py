@@ -522,13 +522,11 @@ def merchant_stats(
     ).fetchone()[0]
     if shop_ids is not None:
         shops = conn.execute(
-            f"SELECT id, name, rating, sales FROM shops WHERE id IN ({','.join('?' * len(shop_ids))}) ORDER BY created_at",
+            f"SELECT * FROM shops WHERE id IN ({','.join('?' * len(shop_ids))}) ORDER BY created_at",
             shop_ids,
         ).fetchall()
     else:
-        shops = conn.execute(
-            "SELECT id, name, rating, sales FROM shops ORDER BY created_at"
-        ).fetchall()
+        shops = conn.execute("SELECT * FROM shops ORDER BY created_at").fetchall()
     return {
         "order_count": int(total[0]),
         "gmv": float(total[1] or 0),
@@ -550,8 +548,15 @@ def merchant_orders(
     shop_id: str = "",
     status: str = "",
     limit: int = 50,
+    keyword: str = "",
+    date_from: str = "",
+    date_to: str = "",
 ) -> list[dict[str, Any]]:
-    """商家视角订单列表（按绑定店铺隔离，可按店铺/状态过滤）。"""
+    """商家视角订单列表（按绑定店铺隔离，可按店铺/状态/关键词/日期范围过滤）。
+
+    keyword 匹配：订单号 / 收货人姓名 / 收货人手机 / 商品名（order_items）；
+    date_from/date_to：YYYY-MM-DD，按 created_at 当日 00:00:00 ~ 23:59:59 过滤。
+    """
     conn = get_conn()
     where, args = _shop_scope_sql(conn, shop_ids)
     if shop_id:
@@ -562,6 +567,22 @@ def merchant_orders(
     if status:
         where += " AND status=?"
         args.append(status)
+    kw = (keyword or "").strip()
+    if kw:
+        like = f"%{kw}%"
+        # items 为订单快照 JSON（含商品名），order_items 可能为空（兼容旧数据）
+        where += (
+            " AND (order_id LIKE ? OR recipient_name LIKE ? OR recipient_phone LIKE ?"
+            " OR items LIKE ?"
+            " OR order_id IN (SELECT order_id FROM order_items WHERE name LIKE ?))"
+        )
+        args += [like, like, like, like, like]
+    if date_from:
+        where += " AND date(created_at) >= ?"
+        args.append(date_from.strip()[:10])
+    if date_to:
+        where += " AND date(created_at) <= ?"
+        args.append(date_to.strip()[:10])
     sql = f"SELECT order_id FROM orders WHERE 1=1{where} ORDER BY created_at DESC LIMIT ?"
     args.append(limit)
     rows = conn.execute(sql, args).fetchall()

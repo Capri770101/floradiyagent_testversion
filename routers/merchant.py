@@ -63,13 +63,23 @@ async def merchant_shops_endpoint(request: Request) -> dict[str, Any]:
 
 @router.get("/merchant/orders")
 async def merchant_orders_endpoint(
-    request: Request, shop_id: str = "", status: str = "", limit: int = 50
+    request: Request,
+    shop_id: str = "",
+    status: str = "",
+    limit: int = 50,
+    keyword: str = "",
+    date_from: str = "",
+    date_to: str = "",
 ) -> dict[str, Any]:
-    """商家视角订单列表（按绑定店铺隔离，可按店铺 / 状态过滤）。"""
+    """商家视角订单列表（按绑定店铺隔离，可按店铺/状态/关键词/日期范围过滤）。"""
     _, scope = await _merchant_scope(request)
     if shop_id:
         _require_shop_in_scope(shop_id, scope)
-    return {"orders": await asyncio.to_thread(commerce.merchant_orders, scope, shop_id, status, limit)}
+    return {
+        "orders": await asyncio.to_thread(
+            commerce.merchant_orders, scope, shop_id, status, limit, keyword, date_from, date_to
+        )
+    }
 
 
 
@@ -241,6 +251,52 @@ async def merchant_delete_plan_endpoint(
     _require_shop_in_scope(shop_id, scope)
     if not await asyncio.to_thread(catalog_store.merchant_delete_plan, plan_id, shop_id):
         raise HTTPException(status_code=404, detail="方案不存在或不属于该店铺")
+    return {"ok": True}
+
+
+class CategoryWriteRequest(BaseModel):
+    """分类新增/改名请求体。"""
+
+    name: str = Field(..., min_length=1, max_length=20)
+
+
+@router.get("/merchant/categories")
+async def merchant_categories_endpoint(request: Request) -> dict[str, Any]:
+    """商品分类列表（含挂靠商品数，供分类管理 / 商品表单下拉）。"""
+    await _require_merchant(request)
+    return {"categories": await asyncio.to_thread(catalog_store.list_categories)}
+
+
+@router.post("/merchant/categories")
+async def merchant_create_category_endpoint(
+    req: CategoryWriteRequest, request: Request
+) -> dict[str, Any]:
+    """新增分类。"""
+    await _require_merchant(request)
+    c = await asyncio.to_thread(catalog_store.create_category, req.name)
+    if not c:
+        raise HTTPException(status_code=400, detail="分类名不能为空或已存在")
+    return {"category": c}
+
+
+@router.put("/merchant/categories/{cat_id}")
+async def merchant_rename_category_endpoint(
+    cat_id: str, req: CategoryWriteRequest, request: Request
+) -> dict[str, Any]:
+    """分类改名。"""
+    await _require_merchant(request)
+    c = await asyncio.to_thread(catalog_store.rename_category, cat_id, req.name)
+    if not c:
+        raise HTTPException(status_code=400, detail="分类不存在或名称重复")
+    return {"category": c}
+
+
+@router.delete("/merchant/categories/{cat_id}")
+async def merchant_delete_category_endpoint(cat_id: str, request: Request) -> dict[str, Any]:
+    """删除分类（挂靠商品自动回落到默认分类）。"""
+    await _require_merchant(request)
+    if not await asyncio.to_thread(catalog_store.delete_category, cat_id):
+        raise HTTPException(status_code=404, detail="分类不存在")
     return {"ok": True}
 
 

@@ -234,10 +234,13 @@ export async function merchantStats(shopId = '') {
   return data
 }
 
-export async function merchantOrders(shopId = '', status = '') {
+export async function merchantOrders(shopId = '', status = '', keyword = '', dateFrom = '', dateTo = '') {
   const params = new URLSearchParams()
   if (shopId) params.set('shop_id', shopId)
   if (status) params.set('status', status)
+  if (keyword) params.set('keyword', keyword)
+  if (dateFrom) params.set('date_from', dateFrom)
+  if (dateTo) params.set('date_to', dateTo)
   const q = params.toString()
   const data = await api(`/merchant/orders${q ? `?${q}` : ''}`)
   return data.orders
@@ -323,7 +326,7 @@ export async function merchantUpdateShop(shopId, payload) {
   return data.shop
 }
 
-// 商家上传图片（商品图/店铺图），返回 { url: "/uploads/mxxx.jpg" }
+// 商家上传图片（商品图/店铺图/封面/Logo），返回 { url: "/uploads/mxxx.jpg" }
 export async function merchantUpload(file) {
   const fd = new FormData()
   fd.append('file', file)
@@ -332,6 +335,32 @@ export async function merchantUpload(file) {
     body: fd,
   })
   return data.url
+}
+
+// 商家端：商品分类管理（店铺装修·分类管理）
+export async function merchantCategories() {
+  const data = await api('/merchant/categories')
+  return data.categories
+}
+
+export async function merchantCreateCategory(name) {
+  const data = await api('/merchant/categories', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+  return data.category
+}
+
+export async function merchantRenameCategory(catId, name) {
+  const data = await api(`/merchant/categories/${encodeURIComponent(catId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ name }),
+  })
+  return data.category
+}
+
+export async function merchantDeleteCategory(catId) {
+  await api(`/merchant/categories/${encodeURIComponent(catId)}`, { method: 'DELETE' })
 }
 
 // ---------------- 管理后台（方案 / 店铺 CRUD） ----------------

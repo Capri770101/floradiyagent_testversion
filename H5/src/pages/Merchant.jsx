@@ -18,11 +18,15 @@ import {
   merchantUpdateShop,
   merchantUpload,
   merchantAddLogistics,
+  merchantCategories,
+  merchantCreateCategory,
+  merchantRenameCategory,
+  merchantDeleteCategory,
 } from '../api/shop'
 import { getProfile } from '../api/auth'
 import { FloraCorner, FloraSprig } from '../components/FloralDecor'
 import { IconStar, IconPin, IconClock, IconPlus, IconArrow, IconTrash } from '../components/icons'
-import { planImage, shopImage } from '../assets/imageMap'
+import { planImage } from '../assets/imageMap'
 import SmartImage from '../components/SmartImage'
 
 const STATUS_TABS = [
@@ -568,8 +572,9 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId }
 }
 
 // 商品管理：店铺选择 + 在售/下架列表 + 新建/编辑/上下架/删除 + 批量上下架
-function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm, onEdit, onToggle, onRemove, onBatchToggle }) {
+function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm, onEdit, onToggle, onRemove, onBatchToggle, categories }) {
   const nav = useNavigate()
+  const catName = (id) => (categories.find((c) => c.id === id) || {}).name || ''
   const [batchMode, setBatchMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
   const allSelected = plans.length > 0 && plans.every((p) => selected.has(p.plan_id))
@@ -726,9 +731,12 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
                   </div>
                   <p className="mt-1 text-[13px] text-gold">{fmtMoney(p.price)}</p>
                   {p.desc && <p className="mt-0.5 truncate text-[11px] text-sub">{p.desc}</p>}
-                  {p.tags?.length > 0 && (
-                    <p className="mt-1 truncate text-[10px] text-sub/70">{p.tags.join(' · ')}</p>
-                  )}
+                  <p className="mt-1 flex items-center gap-1.5 text-[10px] text-sub/70">
+                    {catName(p.category_id) && (
+                      <span className="rounded-pill bg-gold/10 px-1.5 py-0.5 text-gold">{catName(p.category_id)}</span>
+                    )}
+                    {p.tags?.length > 0 && <span className="truncate">{p.tags.join(' · ')}</span>}
+                  </p>
                 </div>
               </div>
               {!batchMode && (
@@ -785,6 +793,38 @@ function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImag
     )
   }
 
+  const uploadBlock = ({ field, label, hint, previewCls, src }) => (
+    <div>
+      <label className="mb-1 block text-[11px] text-sub">{label}</label>
+      <div className="flex items-center gap-3">
+        {src ? (
+          <img src={src} alt={label} className={`${previewCls} shrink-0 rounded-[4px] border border-line object-cover`} />
+        ) : (
+          <div className={`${previewCls} flex shrink-0 items-center justify-center rounded-[4px] border border-dashed border-line bg-bg text-[10px] text-sub/60`}>
+            未设置
+          </div>
+        )}
+        <div className="flex-1">
+          <label className="press inline-block cursor-pointer rounded-[4px] border border-line bg-bg px-3 py-2 text-[11px] text-sub">
+            {imgBusy ? '上传中…' : '上传'}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              disabled={imgBusy}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) onUploadImage(field, f)
+                e.target.value = ''
+              }}
+            />
+          </label>
+          <p className="mt-1 text-[10px] text-sub/70">{hint}</p>
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div className="mx-5 mt-4 rounded-card bg-white p-4 border border-line">
       <div className="flex items-center justify-between">
@@ -798,33 +838,20 @@ function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImag
         </button>
       </div>
       <div className="mt-4 space-y-3">
-        <div>
-          <label className="mb-1 block text-[11px] text-sub">店铺图片</label>
-          <div className="flex items-center gap-3">
-            <SmartImage
-              src={shopImage(shop)}
-              imgKey="home_rec_1"
-              className="h-[64px] w-[84px] shrink-0 rounded-[4px]"
-            />
-            <div className="flex-1">
-              <label className="press inline-block cursor-pointer rounded-[4px] border border-line bg-bg px-3 py-2 text-[11px] text-sub">
-                {imgBusy ? '上传中…' : '上传新图片'}
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
-                  className="hidden"
-                  disabled={imgBusy}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) onUploadImage(f)
-                    e.target.value = ''
-                  }}
-                />
-              </label>
-              <p className="mt-1 text-[10px] text-sub/70">支持 jpg/png/webp/gif，≤5MB</p>
-            </div>
-          </div>
-        </div>
+        {uploadBlock({
+          field: 'cover',
+          label: '店铺封面（横幅，建议 750×300）',
+          hint: '展示在店铺页顶部，支持 jpg/png/webp/gif，≤5MB',
+          previewCls: 'h-[56px] w-full max-w-[220px]',
+          src: shop.cover || shop.image,
+        })}
+        {uploadBlock({
+          field: 'logo',
+          label: '店铺 Logo（方形）',
+          hint: '头像位展示，支持 jpg/png/webp/gif，≤5MB',
+          previewCls: 'h-[64px] w-[64px]',
+          src: shop.logo,
+        })}
         <div>
           <label className="mb-1 block text-[11px] text-sub">店铺名称</label>
           <input
@@ -856,6 +883,37 @@ function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImag
           />
         </div>
         <div>
+          <label className="mb-1 block text-[11px] text-sub">营业时间（如 09:00 - 21:00）</label>
+          <input
+            value={shop.hours || ''}
+            onChange={(e) => onChange({ ...shop, hours: e.target.value })}
+            maxLength={30}
+            placeholder="09:00 - 21:00"
+            className="maison-field"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] text-sub">门店地址</label>
+          <input
+            value={shop.address || ''}
+            onChange={(e) => onChange({ ...shop, address: e.target.value })}
+            maxLength={120}
+            placeholder="如 广东省深圳市盐田区海山路 18 号"
+            className="maison-field"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] text-sub">店铺公告</label>
+          <textarea
+            value={shop.notice || ''}
+            onChange={(e) => onChange({ ...shop, notice: e.target.value })}
+            maxLength={200}
+            rows={2}
+            placeholder="节假日备货提醒、配送说明等"
+            className="maison-field w-full resize-none"
+          />
+        </div>
+        <div>
           <label className="mb-1 block text-[11px] text-sub">营业状态</label>
           <div className="flex gap-2">
             {['营业中', '休息中'].map((s) => (
@@ -882,6 +940,98 @@ function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImag
   )
 }
 
+// 分类管理：商品分类的 新增 / 改名 / 删除（店铺装修 · 分类管理）
+function CategoriesTab({ categories, draft, onDraft, busy, onAdd, onRename, onRemove }) {
+  const [editingId, setEditingId] = useState('')
+  const [editName, setEditName] = useState('')
+  const startEdit = (c) => {
+    setEditingId(c.id)
+    setEditName(c.name)
+  }
+  return (
+    <div className="mx-5 mt-3 rounded-card bg-white p-4 border border-line">
+      <p className="eyebrow">商品分类</p>
+      <div className="mt-3 flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => onDraft(e.target.value)}
+          maxLength={20}
+          placeholder="新分类名，如 情人节限定"
+          className="maison-field flex-1 !py-2 text-[12px]"
+        />
+        <button
+          onClick={onAdd}
+          disabled={busy || !draft.trim()}
+          className="press inline-flex h-[38px] shrink-0 items-center rounded-[2px] bg-gold px-4 text-[12px] tracking-[1px] text-[#FAF8F5] disabled:opacity-40"
+        >
+          新增
+        </button>
+      </div>
+      {categories.length === 0 ? (
+        <p className="mt-3 text-center text-[11px] text-sub">暂无分类，先新增一个吧</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {categories.map((c) => (
+            <div key={c.id} className="flex items-center justify-between rounded-[2px] border border-line px-3 py-2.5">
+              {editingId === c.id ? (
+                <>
+                  <input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    maxLength={20}
+                    autoFocus
+                    className="maison-field !py-1.5 text-[12px]"
+                  />
+                  <div className="ml-2 flex shrink-0 gap-2">
+                    <button
+                      className="press text-[11px] tracking-[1px] text-gold"
+                      disabled={busy}
+                      onClick={async () => {
+                        await onRename(c, editName)
+                        setEditingId('')
+                      }}
+                    >
+                      保存
+                    </button>
+                    <button
+                      className="press text-[11px] tracking-[1px] text-sub"
+                      onClick={() => setEditingId('')}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="min-w-0">
+                    <p className="truncate text-[12px] text-ink">{c.name}</p>
+                    <p className="mt-0.5 text-[10px] text-sub/70">{c.plan_count} 件商品</p>
+                  </div>
+                  <div className="ml-2 flex shrink-0 gap-2">
+                    <button
+                      className="press text-[11px] tracking-[1px] text-gold"
+                      onClick={() => startEdit(c)}
+                    >
+                      改名
+                    </button>
+                    <button
+                      className="press text-[11px] tracking-[1px] text-sub"
+                      disabled={busy}
+                      onClick={() => onRemove(c)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // 商家工作台：经营看板 + 订单管理 + 商品管理 + 评价管理 + 店铺设置
 export default function Merchant() {
   const nav = useNavigate()
@@ -893,6 +1043,9 @@ export default function Merchant() {
   const [reviews, setReviews] = useState([])
   const [status, setStatus] = useState('')
   const [filterShop, setFilterShop] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [tab, setTab] = useState('dashboard')
   const [busyId, setBusyId] = useState('')
   const [expandedId, setExpandedId] = useState('')
@@ -907,9 +1060,12 @@ export default function Merchant() {
   const [shopSaving, setShopSaving] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState(null)
-  const [planForm, setPlanForm] = useState({ name: '', price: '', desc: '', style: '', tags: '', effect_image_url: '' })
+  const [planForm, setPlanForm] = useState({ name: '', price: '', desc: '', style: '', tags: '', effect_image_url: '', category_id: '' })
   const [formBusy, setFormBusy] = useState(false)
   const [imgBusy, setImgBusy] = useState(false)
+  const [categories, setCategories] = useState([])
+  const [catBusy, setCatBusy] = useState(false)
+  const [catDraft, setCatDraft] = useState('')
 
   useEffect(() => {
     getProfile().then(setProfile).catch(() => {})
@@ -920,7 +1076,7 @@ export default function Merchant() {
     try {
       const [st, os, rs] = await Promise.all([
         merchantStats(),
-        merchantOrders(filterShop, status),
+        merchantOrders(filterShop, status, keyword, dateFrom, dateTo),
         merchantReviews(),
       ])
       setStats(st)
@@ -940,7 +1096,7 @@ export default function Merchant() {
     } finally {
       setLoading(false)
     }
-  }, [status, filterShop])
+  }, [status, filterShop, keyword, dateFrom, dateTo])
 
   useEffect(() => {
     load()
@@ -1017,8 +1173,8 @@ export default function Merchant() {
     setEditing(p)
     setPlanForm(
       p
-        ? { name: p.name || '', price: String(p.price ?? ''), desc: p.desc || '', style: p.style || '', tags: (p.tags || []).join('，'), effect_image_url: p.effect_image_url || '' }
-        : { name: '', price: '', desc: '', style: '', tags: '', effect_image_url: '' },
+        ? { name: p.name || '', price: String(p.price ?? ''), desc: p.desc || '', style: p.style || '', tags: (p.tags || []).join('，'), effect_image_url: p.effect_image_url || '', category_id: p.category_id || '' }
+        : { name: '', price: '', desc: '', style: '', tags: '', effect_image_url: '', category_id: '' },
     )
     setFormOpen(true)
   }
@@ -1039,6 +1195,10 @@ export default function Merchant() {
       const url = await merchantUpload(file)
       if (target === 'plan') {
         setPlanForm((f) => ({ ...f, effect_image_url: url }))
+      } else if (target === 'cover') {
+        setShopForm((s) => (s ? { ...s, cover: url } : s))
+      } else if (target === 'logo') {
+        setShopForm((s) => (s ? { ...s, logo: url } : s))
       } else {
         setShopForm((s) => (s ? { ...s, image: url } : s))
       }
@@ -1066,6 +1226,7 @@ export default function Merchant() {
         style: planForm.style.trim(),
         tags: planForm.tags.split(/[，,]/).map((t) => t.trim()).filter(Boolean),
         effect_image_url: planForm.effect_image_url,
+        category_id: planForm.category_id || 'cat_daily',
       }
       if (editing) {
         await merchantUpdatePlan(shopId, editing.plan_id, payload)
@@ -1135,6 +1296,71 @@ export default function Merchant() {
     if (t === 'dashboard') {
       setStatus('')
       setFilterShop('')
+      setKeyword('')
+      setDateFrom('')
+      setDateTo('')
+    }
+  }
+
+  // 分类管理：列表加载 + 新增 / 改名 / 删除（店铺装修）
+  const refreshCategories = useCallback(async () => {
+    try {
+      setCategories(await merchantCategories())
+    } catch (e) {
+      toast(e.message || '分类加载失败', 'error')
+    }
+  }, [])
+
+  useEffect(() => {
+    refreshCategories()
+  }, [refreshCategories])
+
+  const addCategory = async () => {
+    const name = catDraft.trim()
+    if (!name) return
+    if (catBusy) return
+    setCatBusy(true)
+    try {
+      await merchantCreateCategory(name)
+      setCatDraft('')
+      await refreshCategories()
+      toast(`已新增分类「${name}」`)
+    } catch (e) {
+      toast(e.message || '新增失败', 'error')
+    } finally {
+      setCatBusy(false)
+    }
+  }
+
+  const renameCategory = async (cat, name) => {
+    const next = (name || '').trim()
+    if (!next || next === cat.name) return
+    if (catBusy) return
+    setCatBusy(true)
+    try {
+      await merchantRenameCategory(cat.id, next)
+      await refreshCategories()
+      toast('分类已改名')
+    } catch (e) {
+      toast(e.message || '改名失败', 'error')
+    } finally {
+      setCatBusy(false)
+    }
+  }
+
+  const removeCategory = async (cat) => {
+    if (catBusy) return
+    if (cat.plan_count > 0 && !window.confirm(`「${cat.name}」下还有 ${cat.plan_count} 件商品，删除后它们将归入默认分类，确定删除？`)) return
+    if (cat.plan_count === 0 && !window.confirm(`确定删除分类「${cat.name}」？`)) return
+    setCatBusy(true)
+    try {
+      await merchantDeleteCategory(cat.id)
+      await refreshCategories()
+      toast('分类已删除')
+    } catch (e) {
+      toast(e.message || '删除失败', 'error')
+    } finally {
+      setCatBusy(false)
     }
   }
 
@@ -1148,6 +1374,11 @@ export default function Merchant() {
         price_range: s.price_range?.trim(),
         status: s.status,
         image: s.image || '',
+        cover: s.cover || '',
+        logo: s.logo || '',
+        hours: s.hours || '',
+        address: s.address || '',
+        notice: s.notice || '',
       })
       toast('店铺资料已保存')
       load()
@@ -1287,6 +1518,42 @@ export default function Merchant() {
         />
       ) : tab === 'orders' ? (
         <>
+          {/* 关键词 + 日期范围筛选 */}
+          <div className="mt-3 px-5">
+            <input
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="搜索订单号 / 收货人 / 手机号 / 商品名"
+              className="maison-field w-full !py-2.5 text-[12px]"
+            />
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="maison-field flex-1 !py-2 text-[11px]"
+              />
+              <span className="text-[10px] text-sub">至</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="maison-field flex-1 !py-2 text-[11px]"
+              />
+              {(keyword || dateFrom || dateTo) && (
+                <button
+                  onClick={() => {
+                    setKeyword('')
+                    setDateFrom('')
+                    setDateTo('')
+                  }}
+                  className="press shrink-0 text-[11px] tracking-[1px] text-gold"
+                >
+                  清除
+                </button>
+              )}
+            </div>
+          </div>
           <div className="mt-3 flex flex-wrap gap-1.5 px-5">
             <Pill
               label="全部店铺"
@@ -1369,16 +1636,28 @@ export default function Merchant() {
           onToggle={toggleShopPlan}
           onRemove={removeShopPlan}
           onBatchToggle={batchTogglePlans}
+          categories={categories}
         />
       ) : tab === 'shop' ? (
-        <ShopSettingsTab
-          shop={shopForm}
-          saving={shopSaving}
-          onSave={saveShop}
-          onChange={setShopForm}
-          imgBusy={imgBusy}
-          onUploadImage={(f) => uploadImage(f, 'shop')}
-        />
+        <>
+          <ShopSettingsTab
+            shop={shopForm}
+            saving={shopSaving}
+            onSave={saveShop}
+            onChange={setShopForm}
+            imgBusy={imgBusy}
+            onUploadImage={(field, f) => uploadImage(f, field)}
+          />
+          <CategoriesTab
+            categories={categories}
+            draft={catDraft}
+            onDraft={setCatDraft}
+            busy={catBusy}
+            onAdd={addCategory}
+            onRename={renameCategory}
+            onRemove={removeCategory}
+          />
+        </>
       ) : reviews.length === 0 ? (
         <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
           暂无评价
@@ -1488,6 +1767,18 @@ export default function Merchant() {
                 maxLength={20}
                 className="maison-field"
               />
+              <select
+                value={planForm.category_id}
+                onChange={(e) => setPlanForm({ ...planForm, category_id: e.target.value })}
+                className="maison-field w-full !py-3 text-[12px]"
+              >
+                <option value="">商品分类（选填，默认 日常陪伴）</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
               <input
                 placeholder="标签（选填，逗号分隔，如 母亲节,粉色）"
                 value={planForm.tags}

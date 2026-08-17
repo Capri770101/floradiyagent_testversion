@@ -439,6 +439,8 @@ def _shop_full(s: dict[str, Any]) -> dict[str, Any]:
         "address": s.get("address") or "深圳市盐田区海景路 1 号（示例地址）",
         "notice": s.get("notice") or s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
         "image": s.get("image") or "",
+        "cover": s.get("cover") or "",
+        "logo": s.get("logo") or "",
         # 分类菜单
         "menu": menu,
         "recommend": [
@@ -486,6 +488,12 @@ class ShopWriteRequest(BaseModel):
     status: str | None = Field(None, max_length=10)
     intro: str | None = Field(None, max_length=120)
     image: str | None = Field(None, max_length=200)
+    # 店铺装修：封面横幅 / Logo / 经营信息（商家后台维护）
+    cover: str | None = Field(None, max_length=200)
+    logo: str | None = Field(None, max_length=200)
+    hours: str | None = Field(None, max_length=30)
+    address: str | None = Field(None, max_length=120)
+    notice: str | None = Field(None, max_length=200)
     plan_ids: list[str] | str | None = None
 
 

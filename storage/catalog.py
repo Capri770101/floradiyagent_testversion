@@ -1119,6 +1119,59 @@ def merchant_delete_plan(plan_id: str, shop_id: str) -> bool:
     return True
 
 
+# --------------------------------------------------------------------------- #
+# 商品分类管理（商家端：分类列表/新增/改名/删除；plans.category_id 关联）
+# --------------------------------------------------------------------------- #
+
+
+def create_category(name: str) -> dict[str, Any] | None:
+    """新增分类，返回完整对象；重名返回 None。"""
+    import uuid as _uuid
+
+    name = (name or "").strip()
+    if not name:
+        return None
+    conn = get_conn()
+    if conn.execute("SELECT 1 FROM categories WHERE name=?", (name,)).fetchone():
+        return None
+    cat_id = f"cat_{_uuid.uuid4().hex[:8]}"
+    nxt = conn.execute("SELECT COALESCE(MAX(sort),0)+1 FROM categories").fetchone()[0]
+    with transaction() as c:
+        c.execute(
+            "INSERT INTO categories(id, name, sort, created_at) VALUES (?,?,?,?)",
+            (cat_id, name[:20], nxt, _now()),
+        )
+    row = conn.execute("SELECT * FROM categories WHERE id=?", (cat_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def rename_category(cat_id: str, name: str) -> dict[str, Any] | None:
+    """改分类名；重名或不存在返回 None。"""
+    name = (name or "").strip()
+    conn = get_conn()
+    if not name or not conn.execute("SELECT 1 FROM categories WHERE id=?", (cat_id,)).fetchone():
+        return None
+    if conn.execute(
+        "SELECT 1 FROM categories WHERE name=? AND id<>?", (name, cat_id)
+    ).fetchone():
+        return None
+    with transaction() as c:
+        c.execute("UPDATE categories SET name=? WHERE id=?", (name[:20], cat_id))
+    row = conn.execute("SELECT * FROM categories WHERE id=?", (cat_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def delete_category(cat_id: str) -> bool:
+    """删除分类（挂靠商品自动回落到默认分类 cat_daily）。返回是否删到。"""
+    conn = get_conn()
+    if not conn.execute("SELECT 1 FROM categories WHERE id=?", (cat_id,)).fetchone():
+        return False
+    with transaction() as c:
+        c.execute("UPDATE plans SET category_id='cat_daily' WHERE category_id=?", (cat_id,))
+        c.execute("DELETE FROM categories WHERE id=?", (cat_id,))
+    return True
+
+
 def create_shop(data: dict[str, Any]) -> dict[str, Any]:
     """新增店铺，返回完整店铺对象。shop_id 缺失时自动生成。"""
     import uuid as _uuid
@@ -1174,6 +1227,21 @@ def update_shop(shop_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
     if "image" in data:
         sets.append("image=?")
         vals.append((data["image"] or "")[:200])
+    if "cover" in data:
+        sets.append("cover=?")
+        vals.append((data["cover"] or "")[:200])
+    if "logo" in data:
+        sets.append("logo=?")
+        vals.append((data["logo"] or "")[:200])
+    if "hours" in data:
+        sets.append("hours=?")
+        vals.append((data["hours"] or "09:00 - 21:00")[:30])
+    if "address" in data:
+        sets.append("address=?")
+        vals.append((data["address"] or "")[:120])
+    if "notice" in data:
+        sets.append("notice=?")
+        vals.append((data["notice"] or "")[:200])
     if "status" in data:
         sets.append("status=?")
         vals.append((data["status"] or "营业中")[:10])
@@ -1258,8 +1326,13 @@ def list_plans() -> list[dict[str, Any]]:
 
 
 def list_categories() -> list[dict[str, Any]]:
-    """全部分类（按 sort 升序），供店铺详情页的分类菜单 / 管理后台使用。"""
-    rows = get_conn().execute("SELECT * FROM categories ORDER BY sort ASC, id ASC").fetchall()
+    """全部分类（按 sort 升序，含挂靠商品数 plan_count），
+    供店铺详情页的分类菜单 / 管理后台 / 商家端分类管理使用。"""
+    rows = get_conn().execute(
+        """SELECT c.id, c.name, c.sort,
+                  (SELECT COUNT(*) FROM plans p WHERE p.category_id=c.id) AS plan_count
+           FROM categories c ORDER BY c.sort ASC, c.id ASC"""
+    ).fetchall()
     return [dict(r) for r in rows]
 
 

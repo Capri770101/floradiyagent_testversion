@@ -28,7 +28,16 @@ function ShopHeader({ shop, noticeOpen, onToggleNotice }) {
       <div className="bg-white px-4 pb-3 pt-3">
         <div className="flex items-start justify-between">
           <div className="min-w-0">
-            <h1 className="truncate font-serif-cn text-[20px] font-normal text-ink">{shop.name}</h1>
+            <div className="flex items-center gap-2">
+              {shop.logo && (
+                <img
+                  src={shop.logo}
+                  alt="店铺 Logo"
+                  className="h-[26px] w-[26px] shrink-0 rounded-full border border-line object-cover"
+                />
+              )}
+              <h1 className="truncate font-serif-cn text-[20px] font-normal text-ink">{shop.name}</h1>
+            </div>
             <p className="mt-1 flex items-center gap-1 text-[11px] text-ink">
               <IconStar width={11} height={11} className="text-cream" filled />
               <span className="font-medium text-dark">{shop.rating}</span>

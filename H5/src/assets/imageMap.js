@@ -43,7 +43,7 @@ export function planImage(plan) {
   )
 }
 
-// 店铺图：shops.image 为商家上传图时使用，否则按 shop_id 占位
+// 店铺图：商家上传的封面 cover（或旧字段 image）优先，否则按 shop_id 占位
 export function shopImage(shop) {
-  return uploadedOrFallback(shop?.image, itemImagePath('shops', shop?.shop_id || shop?.id))
+  return uploadedOrFallback(shop?.cover || shop?.image, itemImagePath('shops', shop?.shop_id || shop?.id))
 }

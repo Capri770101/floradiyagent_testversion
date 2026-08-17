@@ -430,6 +430,9 @@ _ALTERS = [
     ("shops", "hours", "ALTER TABLE shops ADD COLUMN hours TEXT NOT NULL DEFAULT '09:00 - 21:00'"),
     ("shops", "address", "ALTER TABLE shops ADD COLUMN address TEXT"),
     ("shops", "notice", "ALTER TABLE shops ADD COLUMN notice TEXT"),
+    # shops: 店铺装修（封面横幅 / Logo，商家端上传，/uploads/...）
+    ("shops", "cover", "ALTER TABLE shops ADD COLUMN cover TEXT"),
+    ("shops", "logo", "ALTER TABLE shops ADD COLUMN logo TEXT"),
 ]
 
 
