@@ -23,6 +23,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from config import settings, setup_logging
 from routers import admin, auth, catalog, chat, commerce, merchant
@@ -137,6 +138,10 @@ app.include_router(catalog.router)
 app.include_router(commerce.router)
 app.include_router(merchant.router)
 app.include_router(admin.router)
+
+# 商家上传图片静态托管（/uploads/m*.jpg → data/uploads/）
+Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
 
 if __name__ == "__main__":

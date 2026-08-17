@@ -5,7 +5,7 @@ import { Button } from '../components/Button'
 import { IconArrow } from '../components/icons'
 import { FloraCorner, FloraSprig } from '../components/FloralDecor'
 import SectionTitle from '../components/SectionTitle'
-import { itemImagePath } from '../assets/imageMap'
+import { planImage } from '../assets/imageMap'
 import { toast } from '../utils/toast'
 import { getLocation, setLocation } from '../utils/location'
 import LocationPicker from '../components/LocationPicker'
@@ -110,6 +110,17 @@ export default function Profile() {
     }
   }, [])
 
+  // 登录成功后的去向：优先跳回被守卫拦截的页面；否则按角色进对应工作台
+  const redirectAfterLogin = (p) => {
+    const from = location.state?.from
+    if (from && from !== '/profile') {
+      nav(from, { replace: true })
+      return
+    }
+    if (p?.role === 'merchant') nav('/merchant', { replace: true })
+    else if (p?.role === 'admin') nav('/admin', { replace: true })
+  }
+
   async function submit(e) {
     e.preventDefault()
     setErr('')
@@ -117,12 +128,14 @@ export default function Profile() {
     try {
       const data = await (mode === 'login' ? login : register)({ ...form })
       setUser({ id: data.user_id, nickname: data.nickname || form.username, role: data.role || '' })
-      getProfile().then(setUser).catch(() => {})
+      getProfile()
+        .then((p) => {
+          setUser(p)
+          redirectAfterLogin(p)
+        })
+        .catch(() => {})
       // 登录后首次：先选择收货位置（确定当前定位）
       if (!getLocation()) setShowLoc(true)
-      // 登录守卫场景：登录成功后跳回原来要访问的页面
-      const from = location.state?.from
-      if (from && from !== '/profile') nav(from, { replace: true })
     } catch (e) {
       setErr(e.message || '操作失败')
     } finally {
@@ -172,10 +185,13 @@ export default function Profile() {
     try {
       const data = await phoneLogin(phoneForm)
       setUser({ id: data.user_id, nickname: data.nickname || data.phone, role: data.role || '' })
-      getProfile().then(setUser).catch(() => {})
+      getProfile()
+        .then((p) => {
+          setUser(p)
+          redirectAfterLogin(p)
+        })
+        .catch(() => {})
       if (!getLocation()) setShowLoc(true)
-      const from = location.state?.from
-      if (from && from !== '/profile') nav(from, { replace: true })
     } catch (e) {
       setErr(e.message || '登录失败')
     } finally {
@@ -188,10 +204,13 @@ export default function Profile() {
     try {
       const data = await wxLogin()
       setUser({ id: data.user_id, nickname: data.nickname, role: data.role || '' })
-      getProfile().then(setUser).catch(() => {})
+      getProfile()
+        .then((p) => {
+          setUser(p)
+          redirectAfterLogin(p)
+        })
+        .catch(() => {})
       if (!getLocation()) setShowLoc(true)
-      const from = location.state?.from
-      if (from && from !== '/profile') nav(from, { replace: true })
     } catch (e) {
       toast(e.message || '微信登录失败', 'error')
     } finally {
@@ -526,7 +545,18 @@ export default function Profile() {
 
       {/* 我的订单（真实数据：状态流转 + 物流时间线） */}
       <div className="mt-8 px-5">
-        <SectionTitle title="我的订单" />
+        <SectionTitle
+          title="我的订单"
+          action={
+            <button
+              type="button"
+              onClick={() => nav('/orders')}
+              className="press text-[12px] tracking-[1px] text-sub"
+            >
+              全部 ›
+            </button>
+          }
+        />
         {isLoggedIn() ? (
           orders.length === 0 ? (
             <p className="mt-3 rounded-card bg-white p-4 text-center text-[12px] text-sub border border-line">
@@ -539,14 +569,18 @@ export default function Profile() {
                 const items = o.items || []
                 return (
                   <div key={o.order_id} className="overflow-hidden rounded-card bg-white border border-line">
-                    <div className="flex items-center justify-between border-b border-line px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => nav(`/logistics/${o.order_id}`)}
+                      className="flex w-full items-center justify-between border-b border-line px-4 py-3 text-left"
+                    >
                       <span className="text-[11px] text-sub">{o.order_id}</span>
                       <span className={`text-[12px] font-medium ${meta.color}`}>{meta.label}</span>
-                    </div>
+                    </button>
                     {items.slice(0, 2).map((it) => (
                       <div key={it.plan_id} className="flex items-center gap-3 px-4 py-2.5">
                         <SmartImage
-                          src={itemImagePath('plans', it.plan_id)}
+                          src={planImage(it)}
                           imgKey="home_rec_1"
                           className="h-[44px] w-[44px] shrink-0 rounded-[4px]"
                         />

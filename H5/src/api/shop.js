@@ -7,8 +7,9 @@ import { authHeaders } from './auth'
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 async function api(path, options = {}) {
+  const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData
   const headers = {
-    'Content-Type': 'application/json',
+    ...(isForm ? {} : { 'Content-Type': 'application/json' }),
     ...authHeaders(),
     ...(options.headers || {}),
   }
@@ -221,6 +222,12 @@ export async function claimCouponOffer(offerId) {
 
 // ---------------- 商家端 ----------------
 
+// 商家可管理的店铺列表（按绑定隔离；admin 返回全部）
+export async function merchantShops() {
+  const data = await api('/merchant/shops')
+  return data.shops
+}
+
 export async function merchantStats(shopId = '') {
   const q = shopId ? `?shop_id=${encodeURIComponent(shopId)}` : ''
   const data = await api(`/merchant/stats${q}`)
@@ -243,10 +250,80 @@ export async function merchantShip(orderId) {
   return data.order
 }
 
+export async function merchantOrderDetail(orderId) {
+  const data = await api(`/merchant/orders/${encodeURIComponent(orderId)}`)
+  return data.order
+}
+
+export async function merchantAddLogistics(orderId, text) {
+  const data = await api(`/merchant/orders/${encodeURIComponent(orderId)}/logistics`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  })
+  return data.order
+}
+
 export async function merchantReviews(shopId = '') {
   const q = shopId ? `?shop_id=${encodeURIComponent(shopId)}` : ''
   const data = await api(`/merchant/reviews${q}`)
   return data.reviews
+}
+
+// 商家端：店铺商品管理（shop_id 归属店铺）
+export async function merchantPlans(shopId) {
+  const data = await api(`/merchant/plans?shop_id=${encodeURIComponent(shopId)}`)
+  return data.plans
+}
+
+export async function merchantCreatePlan(shopId, payload) {
+  const data = await api(`/merchant/plans?shop_id=${encodeURIComponent(shopId)}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return data.plan
+}
+
+export async function merchantUpdatePlan(shopId, planId, payload) {
+  const data = await api(
+    `/merchant/plans/${encodeURIComponent(planId)}?shop_id=${encodeURIComponent(shopId)}`,
+    { method: 'PUT', body: JSON.stringify(payload) },
+  )
+  return data.plan
+}
+
+export async function merchantTogglePlan(shopId, planId) {
+  const data = await api(
+    `/merchant/plans/${encodeURIComponent(planId)}/toggle?shop_id=${encodeURIComponent(shopId)}`,
+    { method: 'POST' },
+  )
+  return data.plan
+}
+
+export async function merchantDeletePlan(shopId, planId) {
+  await api(
+    `/merchant/plans/${encodeURIComponent(planId)}?shop_id=${encodeURIComponent(shopId)}`,
+    { method: 'DELETE' },
+  )
+}
+
+// 商家端：店铺资料编辑
+export async function merchantUpdateShop(shopId, payload) {
+  const data = await api(`/merchant/shop/${encodeURIComponent(shopId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+  return data.shop
+}
+
+// 商家上传图片（商品图/店铺图），返回 { url: "/uploads/mxxx.jpg" }
+export async function merchantUpload(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  const data = await api('/merchant/upload', {
+    method: 'POST',
+    body: fd,
+  })
+  return data.url
 }
 
 // ---------------- 管理后台（方案 / 店铺 CRUD） ----------------

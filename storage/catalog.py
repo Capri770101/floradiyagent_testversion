@@ -669,24 +669,44 @@ def seed_catalog() -> None:
                 (c["id"], c["name"], c["sort"], _now()),
             )
         for p in _PLANS:
+            # 评分/已售：种子演示值（确定性，正式上线由订单统计，可清空重灌）
+            rating = p.get("rating", round(4.5 + (abs(hash(p["plan_id"])) % 5) * 0.1, 1))
+            sold = p.get("sold", 120 + (abs(hash(p["plan_id"])) % 600))
             conn.execute(
                 """INSERT OR IGNORE INTO plans
-                   (id, name, price, desc, effect_image_url, merchant_name, tags, style, category_id, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   (id, name, price, desc, effect_image_url, merchant_name, tags, style, category_id, rating, sold, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     p["plan_id"], p["name"], p["price"], p["desc"], p["effect_image_url"],
                     p["merchant_name"], json.dumps(p["tags"], ensure_ascii=False),
-                    p["style"], p["category_id"], _now(),
+                    p["style"], p["category_id"], rating, sold, _now(),
                 ),
             )
         for s in _SHOPS:
+            # 经营信息：种子演示值（确定性推导后落库；上线前可清空重灌真实数据）
+            m = re.match(r"\s*(\d+)\s*-\s*(\d+)\s*", str(s.get("price_range", "")))
+            lo = float(m.group(1)) if m else None
+            _d = float(s.get("distance_km") or 1.0)
+            min_delivery = (int(lo) // 10 * 10) if lo else 30
+            delivery_fee = 3 if _d <= 1 else 5 if _d <= 2.5 else 8
+            zone = "盐田"
+            z = re.search(r"\((.+?)店\)", str(s.get("name", "")))
+            if z:
+                zone = z.group(1)
+            addr_no = 8 + (abs(hash(s.get("shop_id", ""))) % 88)
             conn.execute(
                 """INSERT OR IGNORE INTO shops
-                   (id, name, rating, distance_km, price_range, lat, lng, status, intro, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   (id, name, rating, distance_km, price_range, lat, lng, status, intro,
+                    sales, min_delivery, delivery_fee, hours, address, notice, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     s["shop_id"], s["name"], s["rating"], s["distance_km"], s["price_range"],
-                    s["lat"], s["lng"], "营业中", s["intro"], _now(),
+                    s["lat"], s["lng"], "营业中", s["intro"],
+                    200 + (abs(hash(s.get("shop_id", ""))) % 800),  # 月售（演示）
+                    min_delivery, delivery_fee, "09:00 - 21:00",
+                    f"深圳市{zone}区海景路 {addr_no} 号（示例地址）",
+                    s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
+                    _now(),
                 ),
             )
             for pid in s["plan_ids"]:
@@ -694,6 +714,37 @@ def seed_catalog() -> None:
                     "INSERT OR IGNORE INTO shop_plans(shop_id, plan_id) VALUES (?,?)",
                     (s["shop_id"], pid),
                 )
+        # 回填旧库新增列：INSERT OR IGNORE 不会更新既有行；演示值仅在缺省时写入，
+        # 不影响商家后台已维护的真实字段（上线前清空重灌即可换真实数据）。
+        for p in _PLANS:
+            rating = p.get("rating", round(4.5 + (abs(hash(p["plan_id"])) % 5) * 0.1, 1))
+            sold = p.get("sold", 120 + (abs(hash(p["plan_id"])) % 600))
+            conn.execute(
+                "UPDATE plans SET rating=?, sold=? WHERE id=? AND (sold IS NULL OR sold=0)",
+                (rating, sold, p["plan_id"]),
+            )
+        for s in _SHOPS:
+            m = re.match(r"\s*(\d+)\s*-\s*(\d+)\s*", str(s.get("price_range", "")))
+            lo = float(m.group(1)) if m else None
+            _d = float(s.get("distance_km") or 1.0)
+            min_delivery = (int(lo) // 10 * 10) if lo else 30
+            delivery_fee = 3 if _d <= 1 else 5 if _d <= 2.5 else 8
+            zone = "盐田"
+            z = re.search(r"\((.+?)店\)", str(s.get("name", "")))
+            if z:
+                zone = z.group(1)
+            addr_no = 8 + (abs(hash(s.get("shop_id", ""))) % 88)
+            conn.execute(
+                """UPDATE shops SET sales=?, min_delivery=?, delivery_fee=?, hours=?, address=?, notice=?
+                   WHERE id=? AND (sales IS NULL OR sales=0)""",
+                (
+                    200 + (abs(hash(s.get("shop_id", ""))) % 800),
+                    min_delivery, delivery_fee, "09:00 - 21:00",
+                    f"深圳市{zone}区海景路 {addr_no} 号（示例地址）",
+                    s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
+                    s["shop_id"],
+                ),
+            )
         # 商家智库档案（shop_profiles + shop_styles + shop_scenes）
         for p in _SHOP_PROFILES:
             conn.execute(
@@ -744,7 +795,7 @@ def _row_to_plan(row: Any) -> dict[str, Any]:
 
 def _shop_plan_ids(conn, shop_id: str) -> list[str]:
     rows = conn.execute(
-        "SELECT plan_id FROM shop_plans WHERE shop_id=?", (shop_id,)
+        "SELECT plan_id FROM shop_plans WHERE shop_id=? AND status='on'", (shop_id,)
     ).fetchall()
     return [r["plan_id"] for r in rows]
 
@@ -973,6 +1024,87 @@ def delete_plan(plan_id: str) -> bool:
     return True
 
 
+# --------------------------------------------------------------------------- #
+# 商家端：店铺商品管理（归属 = shop_plans 关联；status 控制店铺内上下架）
+# --------------------------------------------------------------------------- #
+
+
+def merchant_shop_plans(shop_id: str) -> list[dict[str, Any]]:
+    """商家视角：某店铺关联的全部方案（含在售/下架状态 shop_status）。"""
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT sp.status AS shop_status, p.* FROM shop_plans sp
+           JOIN plans p ON p.id = sp.plan_id
+           WHERE sp.shop_id=? ORDER BY sp.rowid DESC""",
+        (shop_id,),
+    ).fetchall()
+    return [_row_to_plan(r) for r in rows]
+
+
+def merchant_create_plan(shop_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    """商家新建方案并挂到自家店铺（默认在售）。"""
+    plan = create_plan(data)
+    with transaction() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO shop_plans(shop_id, plan_id, status) VALUES (?,?,'on')",
+            (shop_id, plan["plan_id"]),
+        )
+    plan["shop_status"] = "on"
+    return plan
+
+
+def merchant_update_plan(
+    plan_id: str, shop_id: str, data: dict[str, Any]
+) -> dict[str, Any] | None:
+    """商家更新自家店铺关联的方案（未关联该店返回 None）。"""
+    conn = get_conn()
+    if not conn.execute(
+        "SELECT 1 FROM shop_plans WHERE shop_id=? AND plan_id=?", (shop_id, plan_id)
+    ).fetchone():
+        return None
+    plan = update_plan(plan_id, data)
+    if plan:
+        plan["shop_status"] = "on"
+    return plan
+
+
+def merchant_toggle_plan(plan_id: str, shop_id: str) -> dict[str, Any] | None:
+    """上下架切换：翻转该店铺内的 shop_plans.status。未关联该店返回 None。"""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT status FROM shop_plans WHERE shop_id=? AND plan_id=?", (shop_id, plan_id)
+    ).fetchone()
+    if not row:
+        return None
+    new_status = "off" if row["status"] == "on" else "on"
+    with transaction() as c:
+        c.execute(
+            "UPDATE shop_plans SET status=? WHERE shop_id=? AND plan_id=?",
+            (new_status, shop_id, plan_id),
+        )
+    p = conn.execute("SELECT * FROM plans WHERE id=?", (plan_id,)).fetchone()
+    d = _row_to_plan(p)
+    d["shop_status"] = new_status
+    return d
+
+
+def merchant_delete_plan(plan_id: str, shop_id: str) -> bool:
+    """商家下掉商品：解除与该店关联；若再无其他店关联则连方案一并删除。"""
+    conn = get_conn()
+    if not conn.execute(
+        "SELECT 1 FROM shop_plans WHERE shop_id=? AND plan_id=?", (shop_id, plan_id)
+    ).fetchone():
+        return False
+    with transaction() as c:
+        c.execute("DELETE FROM shop_plans WHERE shop_id=? AND plan_id=?", (shop_id, plan_id))
+        left = c.execute(
+            "SELECT COUNT(*) FROM shop_plans WHERE plan_id=?", (plan_id,)
+        ).fetchone()[0]
+        if left == 0:
+            c.execute("DELETE FROM plans WHERE id=?", (plan_id,))
+    return True
+
+
 def create_shop(data: dict[str, Any]) -> dict[str, Any]:
     """新增店铺，返回完整店铺对象。shop_id 缺失时自动生成。"""
     import uuid as _uuid
@@ -1025,6 +1157,9 @@ def update_shop(shop_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
     if "intro" in data:
         sets.append("intro=?")
         vals.append((data["intro"] or "")[:120])
+    if "image" in data:
+        sets.append("image=?")
+        vals.append((data["image"] or "")[:200])
     if "status" in data:
         sets.append("status=?")
         vals.append((data["status"] or "营业中")[:10])
@@ -1054,6 +1189,52 @@ def delete_shop(shop_id: str) -> bool:
         c.execute("DELETE FROM shop_plans WHERE shop_id=?", (shop_id,))
         c.execute("DELETE FROM shops WHERE id=?", (shop_id,))
     return True
+
+
+# --------------------------------------------------------------------------- #
+# 商家-店铺绑定（按店隔离：商家只能管理/查看绑定店铺的数据；admin 不受限）
+# --------------------------------------------------------------------------- #
+
+
+def merchant_shop_ids(user_id: str) -> list[str]:
+    """该商家绑定的店铺 id 列表。"""
+    rows = get_conn().execute(
+        "SELECT shop_id FROM merchant_shops WHERE user_id=? ORDER BY created_at", (user_id,)
+    ).fetchall()
+    return [r["shop_id"] for r in rows]
+
+
+def merchant_shops(user_id: str) -> list[dict[str, Any]]:
+    """该商家绑定的店铺（id+name），供 stats.shops 返回与前端店铺切换。"""
+    rows = get_conn().execute(
+        """SELECT s.id, s.name FROM merchant_shops ms
+           JOIN shops s ON s.id = ms.shop_id
+           WHERE ms.user_id=? ORDER BY ms.created_at""",
+        (user_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def merchant_bind(user_id: str, shop_id: str) -> bool:
+    """绑定商家到店铺（幂等）。店铺不存在返回 False。"""
+    conn = get_conn()
+    if not conn.execute("SELECT id FROM shops WHERE id=?", (shop_id,)).fetchone():
+        return False
+    with transaction() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO merchant_shops(user_id, shop_id, created_at) VALUES (?,?,?)",
+            (user_id, shop_id, _now()),
+        )
+    return True
+
+
+def merchant_unbind(user_id: str, shop_id: str) -> bool:
+    """解除商家与店铺的绑定。存在绑定且删除成功返回 True。"""
+    with transaction() as c:
+        cur = c.execute(
+            "DELETE FROM merchant_shops WHERE user_id=? AND shop_id=?", (user_id, shop_id)
+        )
+    return cur.rowcount > 0
 
 
 def list_plans() -> list[dict[str, Any]]:

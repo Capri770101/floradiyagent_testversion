@@ -14,6 +14,7 @@ from routers.common import (  # noqa: F401  # 共享单例/辅助（按需使用
     AddressPatchRequest,
     AddressWriteRequest,
     CartAddRequest,
+    CartMergeRequest,
     CartUpdateRequest,
     FavoriteRequest,
     OrderActionRequest,
@@ -56,6 +57,24 @@ async def post_cart(req: CartAddRequest, request: Request) -> dict[str, Any]:
         commerce.add_to_cart, uid, req.plan_id, req.name, req.price, req.shop
     )
     return {"item": item}
+
+
+
+@router.post("/cart/merge")
+async def merge_cart_endpoint(req: CartMergeRequest, request: Request) -> dict[str, Any]:
+    """游客购物车合并：登录后把匿名 uid 的购物车并入当前账号（同方案数量相加）。
+
+    to 用户以令牌身份为准（resolve_uid 忽略请求体 user_id），杜绝越权合并他人购物车。
+    """
+    uid = await resolve_uid(request, None)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    if not req.from_user_id or req.from_user_id == uid:
+        items = await asyncio.to_thread(commerce.list_cart, uid)
+        return {"merged": 0, "items": items}
+    merged = await asyncio.to_thread(commerce.merge_cart, req.from_user_id, uid)
+    items = await asyncio.to_thread(commerce.list_cart, uid)
+    return {"merged": merged, "items": items}
 
 
 

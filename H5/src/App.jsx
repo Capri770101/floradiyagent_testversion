@@ -21,6 +21,8 @@ import Addresses from './pages/Addresses'
 import Favorites from './pages/Favorites'
 import CouponCenter from './pages/CouponCenter'
 import Merchant from './pages/Merchant'
+import Logistics from './pages/Logistics'
+import Orders from './pages/Orders'
 
 // 404 兜底页：路由未命中时给出明确反馈与返回入口（review 点名缺失）
 function NotFound() {
@@ -130,6 +132,22 @@ export default function App() {
           element={
             <RequireAuth>
               <Merchant />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/logistics/:orderId"
+          element={
+            <RequireAuth>
+              <Logistics />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/orders"
+          element={
+            <RequireAuth>
+              <Orders />
             </RequireAuth>
           }
         />

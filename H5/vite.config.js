@@ -16,6 +16,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api/, ''),
       },
+      // 商家上传图片（后端 data/uploads 静态托管）
+      '/uploads': {
+        target: BACKEND,
+        changeOrigin: true,
+      },
     },
   },
   preview: {
@@ -25,6 +30,10 @@ export default defineConfig({
         target: BACKEND,
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api/, ''),
+      },
+      '/uploads': {
+        target: BACKEND,
+        changeOrigin: true,
       },
     },
   },

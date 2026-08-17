@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconStore, IconPlus } from './icons'
 import MaisonBloom from './MaisonBloom'
-import { itemImagePath } from '../assets/imageMap'
+import { planImage } from '../assets/imageMap'
 
 // 店家行：点击进店（保留「商品关联店家」需求）
 function ShopLine({ p }) {
@@ -33,7 +33,7 @@ export function PlanTag({ label }) {
 // 图区：真实鲜花照片优先；文件未就位时回退金线花卉插画
 function CardImage({ p }) {
   const [failed, setFailed] = useState(false)
-  const src = itemImagePath('plans', p.id)
+  const src = planImage(p)
   const v = Math.abs((p.id || '').split('').reduce((s, c) => s + c.charCodeAt(0), 0)) % 3
   const variant = ['rose', 'tulip', 'peony'][v]
   return (

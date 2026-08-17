@@ -28,3 +28,22 @@ export function itemImagePath(domain, id) {
   if (!id) return null
   return `${IMAGE_BASE}/${domain}/${encodeURIComponent(id)}.jpg`
 }
+
+// 商家上传的实拍图（/uploads/...）优先；否则回退到占位图体系
+function uploadedOrFallback(url, fallback) {
+  if (url && url.startsWith('/uploads/')) return url
+  return fallback
+}
+
+// 商品图：effect_image_url（或店铺菜单的 image 字段）为商家上传图时使用，否则按 plan_id 占位
+export function planImage(plan) {
+  return uploadedOrFallback(
+    plan?.effect_image_url || plan?.image,
+    itemImagePath('plans', plan?.plan_id || plan?.id),
+  )
+}
+
+// 店铺图：shops.image 为商家上传图时使用，否则按 shop_id 占位
+export function shopImage(shop) {
+  return uploadedOrFallback(shop?.image, itemImagePath('shops', shop?.shop_id || shop?.id))
+}

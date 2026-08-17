@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     zhipu_size: str = "1024x1024"
     # 中转商返回 base64，需落盘后由本服务托管 URL（维持 result_url 契约）
     generated_dir: str = str(BASE_DIR / "data" / "generated")
+    # 商家端上传图片落盘目录（商品图 / 店铺图），经 /uploads 静态托管
+    upload_dir: str = str(BASE_DIR / "data" / "uploads")
+    upload_max_bytes: int = 5 * 1024 * 1024  # 单图上限 5MB
     # 生图下载白名单：仅允许从这些域名下载第三方生图服务返回的图片直链（防 SSRF）。
     # 默认覆盖官方 dashscope / 智谱 hosts 及其图片 CDN（智谱出图落在 UCloud ufileos 对象存储，
     # 形如 *.cn-wlcb.ufileos.com）；运行时还会自动并入已配置的 api2img/zhipu base 主机（见 image_download_hosts）。

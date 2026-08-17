@@ -1,13 +1,28 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
 import { toast } from '../utils/toast'
 import { clearSession, isLoggedIn, wxBind, inWeChat } from '../api/auth'
 
+const NOTIFY_KEY = 'floradiy_notify'
+
 // 设置：账号 / 通知 / 会员占位 + 微信绑定 + 退出登录
 export default function Settings() {
   const nav = useNavigate()
+  const [notify, setNotify] = useState(true)
+
+  useEffect(() => {
+    const saved = localStorage.getItem(NOTIFY_KEY)
+    if (saved !== null) setNotify(saved === '1')
+  }, [])
+
+  const toggleNotify = () => {
+    setNotify((v) => {
+      localStorage.setItem(NOTIFY_KEY, v ? '0' : '1')
+      return !v
+    })
+  }
 
   const logout = () => {
     clearSession()
@@ -39,7 +54,21 @@ export default function Settings() {
           </div>
           <div className="flex items-center justify-between border-t border-line px-4 py-3.5">
             <span className="text-[12px] text-ink">新订单通知</span>
-            <span className="text-[12px] text-sub">开启</span>
+            <button
+              role="switch"
+              aria-checked={notify}
+              aria-label="新订单通知"
+              onClick={toggleNotify}
+              className={`relative h-[22px] w-[38px] rounded-full transition-colors ${
+                notify ? 'bg-pink' : 'bg-line'
+              }`}
+            >
+              <span
+                className={`absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white shadow transition-all ${
+                  notify ? 'left-[18px]' : 'left-[2px]'
+                }`}
+              />
+            </button>
           </div>
           <div className="flex items-center justify-between border-t border-line px-4 py-3.5">
             <span className="text-[12px] text-ink">收货地址管理</span>

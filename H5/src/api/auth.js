@@ -5,6 +5,8 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 const TOKEN_KEY = 'floradiy_token'
 const UID_KEY = 'floradiy_uid'
+// 游客身份快照：登录前生成的匿名 uid（登录后合并其购物车，再清空）
+const ANON_KEY = 'floradiy_anon_uid'
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY) || ''
@@ -18,6 +20,10 @@ export function setSession(token, userId) {
 export function clearSession() {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(UID_KEY)
+  // 登出后轮换匿名身份，避免游客购物车/会话沿用到上个账号
+  const anon = 'h5_' + Math.random().toString(36).slice(2, 10)
+  localStorage.setItem('floradiy_uid', anon)
+  localStorage.setItem(ANON_KEY, anon)
 }
 
 export function isLoggedIn() {
@@ -32,8 +38,25 @@ export function getUserId() {
   if (!anon) {
     anon = 'h5_' + Math.random().toString(36).slice(2, 10)
     localStorage.setItem('floradiy_uid', anon)
+    localStorage.setItem(ANON_KEY, anon)
   }
   return anon
+}
+
+// 登录成功后把游客购物车并入账号（同方案数量相加），合并失败不阻断登录。
+async function mergeGuestCart(newUserId) {
+  const anon = localStorage.getItem(ANON_KEY)
+  localStorage.removeItem(ANON_KEY)
+  if (!anon || anon === newUserId) return
+  try {
+    await fetch(`${API_BASE}/cart/merge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ from_user_id: anon }),
+    })
+  } catch (e) {
+    console.warn('游客购物车合并失败', e)
+  }
 }
 
 export function authHeaders() {
@@ -68,6 +91,7 @@ export async function register({ username, password, nickname }) {
   }
   const data = await res.json()
   setSession(data.token, data.user_id)
+  await mergeGuestCart(data.user_id)
   return data
 }
 
@@ -84,6 +108,7 @@ export async function login({ username, password }) {
   }
   const data = await res.json()
   setSession(data.token, data.user_id)
+  await mergeGuestCart(data.user_id)
   return data
 }
 
@@ -123,6 +148,7 @@ export async function phoneLogin({ phone, code }) {
   }
   const data = await res.json()
   setSession(data.token, data.user_id)
+  await mergeGuestCart(data.user_id)
   return data
 }
 
@@ -157,6 +183,7 @@ export async function wxLogin() {
   }
   const data = await res.json()
   setSession(data.token, data.user_id)
+  await mergeGuestCart(data.user_id)
   return data
 }
 

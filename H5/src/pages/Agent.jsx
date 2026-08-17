@@ -18,7 +18,7 @@ import { Pill } from '../components/Pill'
 import { Button } from '../components/Button'
 import DiyPlanCard from '../components/DiyPlanCard'
 import SmartImage from '../components/SmartImage'
-import { itemImagePath } from '../assets/imageMap'
+import { planImage, shopImage } from '../assets/imageMap'
 import { IconSend, IconMenu, IconTrash } from '../components/icons'
 import { FloraBloom } from '../components/FloralDecor'
 import { PLACEHOLDER } from '../tokens'
@@ -65,7 +65,7 @@ function ChatPlanCard({ plan, onConfirm, onAdjust, onDiy }) {
       <h3 className="mt-1.5 font-serif-cn text-[19px] font-normal text-ink">{plan.name}</h3>
       <div className="mt-3 flex gap-3">
         <SmartImage
-          src={plan.plan_id ? itemImagePath('plans', plan.plan_id) : null}
+          src={plan.plan_id || plan.id ? planImage(plan) : null}
           imgKey={isShop ? undefined : 'agent_plan'}
           color={isShop ? PLACEHOLDER.productBig : PLACEHOLDER.agentPlan}
           className="h-[128px] w-[112px] shrink-0 rounded-[2px]"
@@ -199,7 +199,7 @@ function ShopCard({ shops, onPick }) {
           >
             <div className="flex items-center gap-3">
               <SmartImage
-                src={itemImagePath('shops', s.shop_id || s.id)}
+                src={shopImage(s)}
                 imgKey="shop_logo"
                 className="h-[52px] w-[52px] shrink-0 rounded-[2px]"
               />

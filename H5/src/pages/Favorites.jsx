@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { IconHeart } from '../components/icons'
 import SmartImage from '../components/SmartImage'
-import { itemImagePath } from '../assets/imageMap'
+import { planImage } from '../assets/imageMap'
 import { listFavorites, removeFavorite } from '../api/shop'
 import { toast } from '../utils/toast'
 
@@ -55,7 +55,7 @@ export default function Favorites() {
               className="mb-3 flex items-center gap-3 rounded-card bg-white p-3 border border-line"
             >
               <SmartImage
-                src={itemImagePath('plans', f.plan_id)}
+                src={planImage(f)}
                 imgKey="home_rec_1"
                 className="h-[62px] w-[62px] shrink-0 rounded-[4px]"
               />

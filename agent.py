@@ -561,9 +561,13 @@ class ReActAgent:
         # 追加一条「展示用」助手消息（携带 ui/data），供前端会话回放直接渲染结构化卡片
         # 回复文本统一清理 markdown 噪声（去除 ** / #，折叠空行），保证纯文本渲染整洁。
         final_reply = _clean_reply(final_reply)
-        # 清理后再兜底一次：保证任何路径下回复都非空（_clean_reply 会 strip，
-        # 纯空白文本在此被归一为通用提示，杜绝「空回复 / 空行气泡」）。
-        if not final_reply:
+        # 卡片类回复（plan_card/shop_card/order_card/pay_jump/image_task/dialog_options）
+        # 不落通用占位文本：前端气泡对每种 ui 有专属兜底文案（REPLY_FALLBACK），
+        # 历史回放按 ui 显示即可——否则多条空回复回合会堆叠重复的「收到你的想法啦～」
+        # 占位气泡，污染历史观感。仅纯文本回复才需要通用兜底保证非空。
+        if ui.value != UIType.TEXT and (not final_reply or final_reply == "好的，收到你的想法啦，请稍等～"):
+            final_reply = ""
+        elif not final_reply:
             final_reply = (
                 "我已经为你整理好相关结果啦，请查看下方卡片～" if tool_log
                 else "好的，收到你的想法啦，请稍等～"

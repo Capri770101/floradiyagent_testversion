@@ -116,5 +116,74 @@ def set_role(
     typer.secho(f"{username} 角色已设为 {role}", fg=typer.colors.GREEN)
 
 
+@app.command("bind-merchant")
+def bind_merchant(
+    username: str = typer.Argument(..., help="商家用户名"),
+    shop_id: str = typer.Argument(..., help="店铺 id，如 S001"),
+) -> None:
+    """把商家绑定到店铺（商家后台按此隔离数据；一个商家可绑多家店）。"""
+    from storage import catalog
+    from storage.db import get_conn
+
+    conn = get_conn()
+    row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+    if not row:
+        typer.secho(f"用户不存在: {username}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if not catalog.merchant_bind(row["id"], shop_id):
+        typer.secho(f"店铺不存在: {shop_id}（用 python cli.py list-shops 查看）", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.secho(f"已绑定 {username} → {shop_id}", fg=typer.colors.GREEN)
+
+
+@app.command("unbind-merchant")
+def unbind_merchant(
+    username: str = typer.Argument(..., help="商家用户名"),
+    shop_id: str = typer.Argument(..., help="店铺 id，如 S001"),
+) -> None:
+    """解除商家与店铺的绑定。"""
+    from storage import catalog
+    from storage.db import get_conn
+
+    conn = get_conn()
+    row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+    if not row:
+        typer.secho(f"用户不存在: {username}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if not catalog.merchant_unbind(row["id"], shop_id):
+        typer.secho(f"{username} 与 {shop_id} 之间没有绑定", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    typer.secho(f"已解除 {username} → {shop_id}", fg=typer.colors.GREEN)
+
+
+@app.command("merchant-shops")
+def merchant_shops_list(username: str = typer.Argument(..., help="商家用户名")) -> None:
+    """查看商家当前绑定的店铺。"""
+    from storage import catalog
+    from storage.db import get_conn
+
+    conn = get_conn()
+    row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+    if not row:
+        typer.secho(f"用户不存在: {username}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    shops = catalog.merchant_shops(row["id"])
+    if not shops:
+        typer.secho(f"{username} 尚未绑定任何店铺", fg=typer.colors.YELLOW)
+        return
+    for s in shops:
+        typer.echo(f"- {s['id']}  {s['name']}")
+
+
+@app.command("list-shops")
+def list_shops() -> None:
+    """列出全部店铺（id + 名称），供 bind-merchant 使用。"""
+    from storage.db import get_conn
+
+    rows = get_conn().execute("SELECT id, name FROM shops ORDER BY created_at").fetchall()
+    for r in rows:
+        typer.echo(f"- {r['id']}  {r['name']}")
+
+
 if __name__ == "__main__":
     app()

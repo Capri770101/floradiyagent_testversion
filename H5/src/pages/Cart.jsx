@@ -7,7 +7,7 @@ import { getUserId } from '../api/chat'
 import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
-import { itemImagePath } from '../assets/imageMap'
+import { planImage } from '../assets/imageMap'
 
 // 购物车（Maison 风格：细描边卡片 + 衬线品名 + 墨黑吸底结算栏）
 export default function Cart() {
@@ -98,7 +98,7 @@ export default function Cart() {
                 {it.selected && <IconCheck width={12} height={12} />}
               </button>
               <SmartImage
-                src={itemImagePath('plans', it.plan_id)}
+                src={planImage(it)}
                 color={imgColor(it.plan_id)}
                 className="h-[64px] w-[64px] shrink-0 rounded-[2px]"
               />

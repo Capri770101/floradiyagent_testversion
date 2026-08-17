@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { TopBar } from '../components/TopBar'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '../components/Button'
 import { Pill } from '../components/Pill'
 import { toast } from '../utils/toast'
@@ -8,8 +8,21 @@ import {
   merchantOrders,
   merchantShip,
   merchantReviews,
+  merchantOrderDetail,
+  merchantPlans,
+  merchantCreatePlan,
+  merchantUpdatePlan,
+  merchantTogglePlan,
+  merchantDeletePlan,
+  merchantUpdateShop,
+  merchantUpload,
+  merchantAddLogistics,
 } from '../api/shop'
 import { getProfile } from '../api/auth'
+import { FloraCorner, FloraSprig } from '../components/FloralDecor'
+import { IconStar, IconPin, IconClock, IconPlus, IconArrow, IconTrash } from '../components/icons'
+import { planImage, shopImage } from '../assets/imageMap'
+import SmartImage from '../components/SmartImage'
 
 const STATUS_TABS = [
   { key: '', label: '全部' },
@@ -19,44 +32,679 @@ const STATUS_TABS = [
   { key: 'canceled', label: '已取消' },
 ]
 
-// 商家工作台：经营数据看板 + 订单管理（代发货）+ 评价列表
+const STATUS_META = {
+  created: { label: '待付款', cls: 'bg-pink/10 text-pink' },
+  pending_payment: { label: '待付款', cls: 'bg-pink/10 text-pink' },
+  paid: { label: '待发货', cls: 'bg-pink/10 text-pink' },
+  shipped: { label: '配送中', cls: 'bg-pink/10 text-pink' },
+  done: { label: '已完成', cls: 'bg-pink/10 text-pink' },
+  canceled: { label: '已取消', cls: 'bg-line/40 text-sub' },
+}
+
+const fmtMoney = (v) => `¥${Number(v || 0).toFixed(2)}`
+
+// DIY 订单制作卡：花材配比 + 包装 + 步骤 + 卡片留言，商家按此备货
+function DiyPlanCard({ plan }) {
+  const design = plan?.design || {}
+  const rows = [
+    ...(design.main_flowers || []).map((f) => ({ ...f, bucket: '主花' })),
+    ...(design.fillers || []).map((f) => ({ ...f, bucket: '填充' })),
+    ...(design.foliage || []).map((f) => ({ ...f, bucket: '叶材' })),
+  ]
+  const steps = Array.isArray(plan?.diy_steps) ? plan.diy_steps : []
+  return (
+    <div className="mt-3 rounded-card border border-pink/30 bg-[#FDF6F3] p-4">
+      <p className="eyebrow text-pink">DIY 方案制作卡</p>
+      <h4 className="mt-1 font-serif-cn text-[16px] font-normal text-ink">{plan?.name}</h4>
+      {plan?.requirement && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-sub">需求：{plan.requirement}</p>
+      )}
+      {rows.length > 0 && (
+        <div className="mt-3">
+          <p className="text-[11px] font-medium text-ink">花材配比</p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {rows.map((f, i) => (
+              <span
+                key={i}
+                className={`rounded-pill px-2.5 py-1 text-[11px] ${
+                  f.bucket === '主花' ? 'bg-pink/15 text-pink' : 'bg-white text-sub border border-line'
+                }`}
+              >
+                {f.name}
+                {f.ratio ? ` ${f.ratio}` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {design.packaging && (
+        <p className="mt-2.5 text-[11px] text-sub">
+          <span className="text-ink">包装：</span>
+          {design.packaging}
+        </p>
+      )}
+      {steps.length > 0 && (
+        <div className="mt-2.5">
+          <p className="text-[11px] font-medium text-ink">DIY 步骤</p>
+          <ol className="mt-1 list-decimal pl-4 text-[11px] leading-[20px] text-sub">
+            {steps.map((s, i) => (
+              <li key={i}>{typeof s === 'string' ? s : s?.step || s?.text || JSON.stringify(s)}</li>
+            ))}
+          </ol>
+        </div>
+      )}
+      {plan?.card_message && (
+        <p className="mt-2.5 rounded-[2px] border border-line bg-white p-2.5 text-[11px] leading-relaxed text-sub">
+          <span className="text-ink">卡片留言：</span>
+          {plan.card_message}
+        </p>
+      )}
+      <p className="mt-2 text-[10px] text-sub/60">方案 ID：{plan?.plan_id}</p>
+    </div>
+  )
+}
+
+// 订单卡：明细 + 收件信息 + 状态操作（查看 DIY 方案 / 代发货 / 物流时间线）
+function OrderCard({ o, expanded, onToggle, plan, planBusy, busyId, onShip }) {
+  const nav = useNavigate()
+  const meta = STATUS_META[o.status] || { label: o.status, cls: 'bg-line/40 text-sub' }
+  const items = o.items || []
+  const recipient = o.recipient || {}
+  const shopNames = o.shop_id ? [o.shop_id] : []
+  return (
+    <div className="mt-3 overflow-hidden rounded-card bg-white border border-line">
+      <div className="flex items-center justify-between border-b border-line px-4 py-3">
+        <div className="min-w-0">
+          <p className="truncate text-[11px] text-sub">{o.order_id}</p>
+          <p className="mt-0.5 text-[10px] text-sub/70">{o.created_at}</p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {o.plan_id?.startsWith('DIY_') && (
+            <span className="rounded-pill bg-pink/10 px-2 py-0.5 text-[10px] text-pink">DIY</span>
+          )}
+          <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>
+            {meta.label}
+          </span>
+        </div>
+      </div>
+
+      <div className="px-4 py-2">
+        {items.map((it) => (
+          <div key={it.plan_id} className="flex items-center gap-3 py-1.5">
+            <SmartImage
+              src={planImage(it)}
+              imgKey="home_rec_1"
+              className="h-[40px] w-[40px] shrink-0 rounded-[4px]"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] text-dark">{it.name}</p>
+              <p className="text-[11px] text-sub">
+                {fmtMoney(it.price)} × {it.qty}
+                {it.shop ? ` · ${it.shop}` : ''}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {recipient.name && (
+        <div className="border-t border-line bg-bg/60 px-4 py-2.5">
+          <p className="text-[12px] text-ink">
+            {recipient.name}
+            {recipient.phone ? <span className="ml-2 text-[11px] text-sub">{recipient.phone}</span> : null}
+          </p>
+          {recipient.address && (
+            <p className="mt-1 flex items-start gap-1 text-[11px] leading-relaxed text-sub">
+              <IconPin width={12} height={12} className="mt-0.5 shrink-0" />
+              {recipient.address}
+            </p>
+          )}
+          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-sub/80">
+            <span>店铺：{shopNames.join(' / ') || '—'}</span>
+            {o.delivery_time && (
+              <span className="flex items-center gap-1">
+                <IconClock width={11} height={11} />
+                预约 {o.delivery_time}
+              </span>
+            )}
+          </div>
+          {o.note && (
+            <p className="mt-1.5 rounded-[2px] bg-white px-2.5 py-1.5 text-[11px] text-sub border border-line">
+              备注：{o.note}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-3">
+        <p className="mr-auto font-serif-cn text-[15px] font-normal text-ink">共 {fmtMoney(o.total_price)}</p>
+        <button
+          onClick={() => nav(`/logistics/${o.order_id}`)}
+          className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
+        >
+          查看物流
+          <IconArrow width={10} height={10} />
+        </button>
+        {o.plan_id?.startsWith('DIY_') && (
+          <button
+            onClick={onToggle}
+            className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
+            disabled={planBusy && !plan}
+          >
+            {expanded ? '收起方案' : '查看方案'}
+          </button>
+        )}
+        {o.status === 'paid' && (
+          <Button
+            className="!h-[34px] !text-[12px] !tracking-[1px]"
+            disabled={busyId === o.order_id}
+            onClick={() => onShip(o.order_id)}
+          >
+            {busyId === o.order_id ? '发货中…' : '代发货'}
+          </Button>
+        )}
+      </div>
+
+      {expanded && (
+        <div className="border-t border-line px-4 py-3">
+          {plan ? (
+            <DiyPlanCard plan={plan} />
+          ) : planBusy && !plan ? (
+            <p className="py-2 text-center text-[11px] text-sub">方案加载中…</p>
+          ) : (
+            <p className="rounded-card bg-bg p-4 text-center text-[11px] text-sub">
+              该订单无 DIY 方案制作卡
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 物流管理：订单物流汇总 + 时间线 + 追加物流节点
+function LogisticsTab({
+  orders,
+  shops,
+  filterShop,
+  onSelectShop,
+  status,
+  onStatus,
+  logiExpandedId,
+  onToggleExpanded,
+  logiDraft,
+  onDraft,
+  logiBusy,
+  onAddNode,
+  onGoDetail,
+}) {
+  const activeCount = orders.filter((o) => o.status === 'paid' || o.status === 'shipped').length
+  return (
+    <>
+      <div className="mt-3 flex flex-wrap gap-1.5 px-5">
+        <Pill
+          label="全部店铺"
+          selected={!filterShop}
+          onClick={() => onSelectShop('')}
+          style={{ width: 'auto', padding: '0 10px' }}
+        />
+        {shops.map((s) => (
+          <Pill
+            key={s.id}
+            label={s.name}
+            selected={filterShop === s.id}
+            onClick={() => onSelectShop(s.id)}
+            style={{ width: 'auto', padding: '0 10px', maxWidth: 132 }}
+          />
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5 px-5">
+        {STATUS_TABS.map((t) => (
+          <Pill
+            key={t.key}
+            label={t.label}
+            selected={status === t.key}
+            onClick={() => onStatus(t.key)}
+            style={{ width: 'auto', padding: '0 10px' }}
+          />
+        ))}
+      </div>
+
+      <div className="mx-5 mt-4 flex items-center justify-between rounded-card bg-white px-4 py-3 border border-line">
+        <p className="text-[11px] tracking-[0.15em] text-sub">
+          进行中订单 <span className="font-serif-cn text-[15px] font-normal text-ink">{activeCount}</span> 笔
+        </p>
+        <p className="text-[10px] text-sub/70">配送中订单可手动追加物流节点</p>
+      </div>
+
+      {orders.length === 0 ? (
+        <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+          {status ? `暂无「${STATUS_TABS.find((t) => t.key === status)?.label || status}」订单` : '还没有订单'}
+        </p>
+      ) : (
+        <div className="px-5">
+          {orders.map((o) => {
+            const meta = STATUS_META[o.status] || { label: o.status, cls: 'bg-line/40 text-sub' }
+            const logs = o.logistics || []
+            const expanded = logiExpandedId === o.order_id
+            return (
+              <div key={o.order_id} className="mt-3 overflow-hidden rounded-card bg-white border border-line">
+                <div className="flex items-center justify-between border-b border-line px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] text-sub">{o.order_id}</p>
+                    <p className="mt-0.5 text-[10px] text-sub/70">{o.created_at}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>
+                    {meta.label}
+                  </span>
+                </div>
+
+                <div className="px-4 py-2">
+                  {(o.items || []).map((it) => (
+                    <div key={it.plan_id} className="flex items-center gap-3 py-1.5">
+                      <SmartImage
+                        src={planImage(it)}
+                        imgKey="home_rec_1"
+                        className="h-[40px] w-[40px] shrink-0 rounded-[4px]"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[13px] text-dark">{it.name}</p>
+                        <p className="text-[11px] text-sub">
+                          {fmtMoney(it.price)} × {it.qty}
+                          {it.shop ? ` · ${it.shop}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="border-t border-line bg-bg/50 px-4 py-2.5">
+                  {logs.length > 0 ? (
+                    <p className="flex items-center gap-1.5 text-[11px] leading-relaxed text-ink">
+                      <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
+                      最新：{logs[0].text}
+                      <span className="ml-auto shrink-0 text-[10px] text-sub/70">{logs[0].created_at}</span>
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-sub">暂无物流记录</p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-3">
+                  <p className="mr-auto font-serif-cn text-[15px] font-normal text-ink">共 {fmtMoney(o.total_price)}</p>
+                  <button
+                    onClick={() => onToggleExpanded(o.order_id)}
+                    className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
+                  >
+                    {expanded ? '收起' : '物流时间线'}
+                    <IconArrow width={10} height={10} />
+                  </button>
+                  <button
+                    onClick={() => onGoDetail(o.order_id)}
+                    className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
+                  >
+                    详情
+                    <IconArrow width={10} height={10} />
+                  </button>
+                </div>
+
+                {expanded && (
+                  <div className="border-t border-line px-4 py-3">
+                    {logs.length === 0 ? (
+                      <p className="rounded-[2px] bg-bg p-3 text-center text-[11px] text-sub">
+                        暂无物流信息
+                      </p>
+                    ) : (
+                      <div>
+                        {logs.map((e, i) => (
+                          <div key={e.seq} className="flex gap-3">
+                            <div className="flex flex-col items-center">
+                              <span className={`mt-1 h-2 w-2 rounded-full ${i === 0 ? 'bg-pink' : 'bg-line'}`} />
+                              {i < logs.length - 1 && <span className="w-px flex-1 bg-line" />}
+                            </div>
+                            <div className="pb-3">
+                              <p className={`text-[12px] ${i === 0 ? 'font-medium text-dark' : 'text-sub'}`}>
+                                {e.text}
+                              </p>
+                              <p className="text-[10px] text-sub/70">{e.created_at}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {o.status === 'shipped' && (
+                      <div className="mt-2 flex gap-2 border-t border-line pt-3">
+                        <input
+                          value={logiDraft[o.order_id] || ''}
+                          onChange={(e) => onDraft(o.order_id, e.target.value)}
+                          placeholder="如：包裹已到达广州转运中心"
+                          maxLength={200}
+                          className="maison-field flex-1 !h-[38px] !text-[12px]"
+                        />
+                        <Button
+                          className="!h-[38px] !text-[12px] !tracking-[1px]"
+                          disabled={logiBusy}
+                          onClick={() => onAddNode(o)}
+                        >
+                          追加
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+}
+
+// 商品管理：店铺选择 + 在售/下架列表 + 新建/编辑/上下架/删除
+function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm, onEdit, onToggle, onRemove }) {
+  const nav = useNavigate()
+  if (shops.length === 0) {
+    return (
+      <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+        尚未绑定任何店铺，请联系管理员在后台绑定后使用
+      </p>
+    )
+  }
+  const rowBtn =
+    'press inline-flex h-[30px] items-center justify-center gap-1 rounded-[2px] border px-3.5 text-[11px] font-medium tracking-[1px] transition disabled:opacity-50 disabled:pointer-events-none'
+  return (
+    <>
+      <div className="mt-3 flex flex-wrap gap-1.5 px-5">
+        {shops.map((s) => (
+          <Pill
+            key={s.id || s}
+            label={s.name || s}
+            selected={shopId === (s.id || s)}
+            onClick={() => onSelectShop(s.id || s)}
+            style={{ width: 'auto', padding: '0 10px', maxWidth: 132 }}
+          />
+        ))}
+      </div>
+      <div className="mt-4 flex items-center justify-between px-5">
+        <p className="eyebrow">{shopId ? '店铺商品' : '请先选择店铺'}</p>
+        <div className="flex items-center gap-3">
+          {shopId && (
+            <button
+              onClick={() => nav(`/shop/${shopId}`)}
+              className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
+            >
+              预览店铺
+              <IconArrow width={10} height={10} />
+            </button>
+          )}
+          {shopId && (
+            <Button className="!h-[34px] !text-[12px] !tracking-[1px]" onClick={() => onOpenForm()}>
+              <IconPlus width={13} height={13} className="mr-1" />
+              新建商品
+            </Button>
+          )}
+        </div>
+      </div>
+      {plans.length === 0 ? (
+        <p className="mx-5 mt-3 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+          {shopId ? '该店铺还没有商品，点「新建商品」上架第一款吧' : '从上方选择一个店铺'}
+        </p>
+      ) : (
+        <div className="px-5">
+          {plans.map((p) => (
+            <div key={p.plan_id} className="mt-3 rounded-card bg-white p-4 border border-line">
+              <div className="flex gap-3">
+                <SmartImage
+                  src={planImage(p)}
+                  imgKey="home_rec_1"
+                  className="h-[64px] w-[64px] shrink-0 rounded-[4px]"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate font-serif-cn text-[16px] font-normal text-ink">{p.name}</p>
+                    <span
+                      className={`shrink-0 rounded-pill px-2 py-0.5 text-[10px] ${
+                        p.shop_status === 'on' ? 'bg-green-50 text-green-600' : 'bg-line/40 text-sub'
+                      }`}
+                    >
+                      {p.shop_status === 'on' ? '在售' : '已下架'}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[13px] text-gold">{fmtMoney(p.price)}</p>
+                  {p.desc && <p className="mt-0.5 truncate text-[11px] text-sub">{p.desc}</p>}
+                  {p.tags?.length > 0 && (
+                    <p className="mt-1 truncate text-[10px] text-sub/70">{p.tags.join(' · ')}</p>
+                  )}
+                </div>
+              </div>
+              <div className="mt-3 flex justify-end gap-2 border-t border-line pt-3">
+                <button
+                  className={`${rowBtn} border-gold/40 bg-white text-gold hover:border-gold`}
+                  onClick={() => onEdit(p)}
+                >
+                  编辑
+                </button>
+                {p.shop_status === 'on' ? (
+                  <button
+                    className={`${rowBtn} border-gold/40 bg-white text-gold hover:border-gold`}
+                    disabled={planBusy}
+                    onClick={() => onToggle(p)}
+                  >
+                    下架
+                  </button>
+                ) : (
+                  <button
+                    className={`${rowBtn} border-gold bg-gold text-[#FAF8F5]`}
+                    disabled={planBusy}
+                    onClick={() => onToggle(p)}
+                  >
+                    上架
+                  </button>
+                )}
+                <button
+                  className={`${rowBtn} border-gold/40 bg-white text-gold hover:border-gold`}
+                  disabled={planBusy}
+                  onClick={() => onRemove(p)}
+                >
+                  <IconTrash width={11} height={11} />
+                  删除
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
+// 店铺设置：店名 / 简介 / 价格区间 / 营业状态 / 店铺图片
+function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImage }) {
+  const nav = useNavigate()
+  if (!shop) {
+    return (
+      <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+        从上方选择一个店铺进行设置
+      </p>
+    )
+  }
+
+  return (
+    <div className="mx-5 mt-4 rounded-card bg-white p-4 border border-line">
+      <div className="flex items-center justify-between">
+        <p className="eyebrow">{shop.name}</p>
+        <button
+          onClick={() => nav(`/shop/${shop.id || shop.shop_id}`)}
+          className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
+        >
+          预览店铺
+          <IconArrow width={10} height={10} />
+        </button>
+      </div>
+      <div className="mt-4 space-y-3">
+        <div>
+          <label className="mb-1 block text-[11px] text-sub">店铺图片</label>
+          <div className="flex items-center gap-3">
+            <SmartImage
+              src={shopImage(shop)}
+              imgKey="home_rec_1"
+              className="h-[64px] w-[84px] shrink-0 rounded-[4px]"
+            />
+            <div className="flex-1">
+              <label className="press inline-block cursor-pointer rounded-[4px] border border-line bg-bg px-3 py-2 text-[11px] text-sub">
+                {imgBusy ? '上传中…' : '上传新图片'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  disabled={imgBusy}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) onUploadImage(f)
+                    e.target.value = ''
+                  }}
+                />
+              </label>
+              <p className="mt-1 text-[10px] text-sub/70">支持 jpg/png/webp/gif，≤5MB</p>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] text-sub">店铺名称</label>
+          <input
+            value={shop.name}
+            onChange={(e) => onChange({ ...shop, name: e.target.value })}
+            maxLength={40}
+            className="maison-field"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] text-sub">店铺简介</label>
+          <textarea
+            value={shop.intro || ''}
+            onChange={(e) => onChange({ ...shop, intro: e.target.value })}
+            maxLength={120}
+            rows={3}
+            placeholder="一句话介绍你的花店特色"
+            className="maison-field w-full resize-none"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] text-sub">价格区间（如 100-300）</label>
+          <input
+            value={shop.price_range || ''}
+            onChange={(e) => onChange({ ...shop, price_range: e.target.value })}
+            maxLength={30}
+            placeholder="100-300"
+            className="maison-field"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] text-sub">营业状态</label>
+          <div className="flex gap-2">
+            {['营业中', '休息中'].map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => onChange({ ...shop, status: s })}
+                className={`press flex-1 rounded-[2px] border py-2.5 text-[12px] tracking-[1px] ${
+                  shop.status === s
+                    ? 'border-gold bg-gold/10 text-gold'
+                    : 'border-line bg-white text-sub'
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <Button className="mt-5 w-full !text-[12px] !tracking-[1px]" disabled={saving} onClick={() => onSave(shop)}>
+        {saving ? '保存中…' : '保存店铺资料'}
+      </Button>
+    </div>
+  )
+}
+
+// 商家工作台：经营看板 + 订单管理 + 商品管理 + 评价管理 + 店铺设置
 export default function Merchant() {
+  const nav = useNavigate()
   const [profile, setProfile] = useState(null)
   const [forbidden, setForbidden] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState(null)
   const [orders, setOrders] = useState([])
   const [reviews, setReviews] = useState([])
   const [status, setStatus] = useState('')
+  const [filterShop, setFilterShop] = useState('')
   const [tab, setTab] = useState('orders')
   const [busyId, setBusyId] = useState('')
+  const [expandedId, setExpandedId] = useState('')
+  const [logiExpandedId, setLogiExpandedId] = useState('')
+  const [logiDraft, setLogiDraft] = useState({})
+  const [logiBusy, setLogiBusy] = useState(false)
+  const [plans, setPlans] = useState({})
+  const [planBusy, setPlanBusy] = useState(false)
+  const [shopId, setShopId] = useState('')
+  const [shopPlans, setShopPlans] = useState([])
+  const [shopForm, setShopForm] = useState(null)
+  const [shopSaving, setShopSaving] = useState(false)
+  const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [planForm, setPlanForm] = useState({ name: '', price: '', desc: '', style: '', tags: '', effect_image_url: '' })
+  const [formBusy, setFormBusy] = useState(false)
+  const [imgBusy, setImgBusy] = useState(false)
 
   useEffect(() => {
     getProfile().then(setProfile).catch(() => {})
   }, [])
 
   const load = useCallback(async () => {
+    setLoading(true)
     try {
       const [st, os, rs] = await Promise.all([
         merchantStats(),
-        merchantOrders('', status),
+        merchantOrders(filterShop, status),
         merchantReviews(),
       ])
       setStats(st)
       setOrders(os)
       setReviews(rs)
+      setShopId((cur) => cur || st.shops?.[0]?.id || '')
       setForbidden(false)
     } catch (e) {
       if (/403/.test(e.message)) {
         setForbidden(true)
+      } else if (/401/.test(e.message)) {
+        toast('请先登录商家账号', 'error')
+        nav('/profile')
       } else {
         toast(e.message || '加载失败', 'error')
       }
+    } finally {
+      setLoading(false)
     }
-  }, [status])
+  }, [status, filterShop])
 
   useEffect(() => {
     load()
   }, [load])
+
+  // 店铺选择变化时同步加载该店商品 / 店铺资料
+  useEffect(() => {
+    if (!shopId || tab !== 'plans') return
+    merchantPlans(shopId)
+      .then(setShopPlans)
+      .catch(() => setShopPlans([]))
+  }, [shopId, tab])
+
+  useEffect(() => {
+    if (!shopId || tab !== 'shop') return
+    const s = stats?.shops?.find((x) => (x.id || x) === shopId)
+    setShopForm(s ? { ...s } : null)
+  }, [shopId, tab, stats])
 
   const ship = async (oid) => {
     if (busyId) return
@@ -72,11 +720,179 @@ export default function Merchant() {
     }
   }
 
+  const addLogisticsNode = async (o) => {
+    const text = (logiDraft[o.order_id] || '').trim()
+    if (!text) {
+      toast('请填写物流节点内容', 'error')
+      return
+    }
+    if (logiBusy) return
+    setLogiBusy(true)
+    try {
+      await merchantAddLogistics(o.order_id, text)
+      toast('物流节点已追加')
+      setLogiDraft((d) => ({ ...d, [o.order_id]: '' }))
+      load()
+    } catch (e) {
+      toast(e.message || '追加失败', 'error')
+    } finally {
+      setLogiBusy(false)
+    }
+  }
+
+  const togglePlan = async (o) => {
+    if (expandedId === o.order_id) {
+      setExpandedId('')
+      return
+    }
+    setExpandedId(o.order_id)
+    if (!o.plan_id || plans[o.order_id]) return
+    setPlanBusy(true)
+    try {
+      const detail = await merchantOrderDetail(o.order_id)
+      setPlans((prev) => ({ ...prev, [o.order_id]: detail.plan || null }))
+    } catch (e) {
+      toast(e.message || '加载方案失败', 'error')
+      setPlans((prev) => ({ ...prev, [o.order_id]: null }))
+    } finally {
+      setPlanBusy(false)
+    }
+  }
+
+  const openForm = (p = null) => {
+    setEditing(p)
+    setPlanForm(
+      p
+        ? { name: p.name || '', price: String(p.price ?? ''), desc: p.desc || '', style: p.style || '', tags: (p.tags || []).join('，'), effect_image_url: p.effect_image_url || '' }
+        : { name: '', price: '', desc: '', style: '', tags: '', effect_image_url: '' },
+    )
+    setFormOpen(true)
+  }
+
+  // 图片上传（商品图 / 店铺图共用）：上传成功回填 url 到对应表单
+  const uploadImage = async (file, target) => {
+    if (imgBusy) return
+    if (file.size > 5 * 1024 * 1024) {
+      toast('图片不能超过 5MB', 'error')
+      return
+    }
+    if (!/\.(jpe?g|png|webp|gif)$/i.test(file.name)) {
+      toast('仅支持 jpg/png/webp/gif 格式', 'error')
+      return
+    }
+    setImgBusy(true)
+    try {
+      const url = await merchantUpload(file)
+      if (target === 'plan') {
+        setPlanForm((f) => ({ ...f, effect_image_url: url }))
+      } else {
+        setShopForm((s) => (s ? { ...s, image: url } : s))
+      }
+      toast('图片已上传')
+    } catch (e) {
+      toast(e.message || '上传失败', 'error')
+    } finally {
+      setImgBusy(false)
+    }
+  }
+
+  const submitPlanForm = async (e) => {
+    e.preventDefault()
+    if (formBusy) return
+    if (!planForm.name.trim() || !Number(planForm.price) || Number(planForm.price) <= 0) {
+      toast('请填写商品名称和正确的价格', 'error')
+      return
+    }
+    setFormBusy(true)
+    try {
+      const payload = {
+        name: planForm.name.trim(),
+        price: Number(planForm.price),
+        desc: planForm.desc.trim(),
+        style: planForm.style.trim(),
+        tags: planForm.tags.split(/[，,]/).map((t) => t.trim()).filter(Boolean),
+        effect_image_url: planForm.effect_image_url,
+      }
+      if (editing) {
+        await merchantUpdatePlan(shopId, editing.plan_id, payload)
+        toast('商品已更新')
+      } else {
+        await merchantCreatePlan(shopId, payload)
+        toast('商品已上架')
+      }
+      setFormOpen(false)
+      const list = await merchantPlans(shopId)
+      setShopPlans(list)
+    } catch (err) {
+      toast(err.message || '操作失败', 'error')
+    } finally {
+      setFormBusy(false)
+    }
+  }
+
+  const toggleShopPlan = async (p) => {
+    if (planBusy) return
+    setPlanBusy(true)
+    try {
+      await merchantTogglePlan(shopId, p.plan_id)
+      toast(p.shop_status === 'on' ? '已下架' : '已上架')
+      setShopPlans(await merchantPlans(shopId))
+    } catch (e) {
+      toast(e.message || '操作失败', 'error')
+    } finally {
+      setPlanBusy(false)
+    }
+  }
+
+  const removeShopPlan = async (p) => {
+    if (!window.confirm(`确定删除「${p.name}」吗？删除后将从本店下架。`)) return
+    if (planBusy) return
+    setPlanBusy(true)
+    try {
+      await merchantDeletePlan(shopId, p.plan_id)
+      toast('商品已删除')
+      setShopPlans(await merchantPlans(shopId))
+    } catch (e) {
+      toast(e.message || '操作失败', 'error')
+    } finally {
+      setPlanBusy(false)
+    }
+  }
+
+  const saveShop = async (s) => {
+    if (shopSaving) return
+    setShopSaving(true)
+    try {
+      await merchantUpdateShop(s.id || s.shop_id, {
+        name: s.name?.trim(),
+        intro: s.intro?.trim(),
+        price_range: s.price_range?.trim(),
+        status: s.status,
+        image: s.image || '',
+      })
+      toast('店铺资料已保存')
+      load()
+    } catch (e) {
+      toast(e.message || '保存失败', 'error')
+    } finally {
+      setShopSaving(false)
+    }
+  }
+
   if (forbidden) {
     return (
-      <div className="flex h-full flex-col bg-bg">
-        <TopBar title="商家工作台" />
-        <div className="flex-1 px-5 pt-10 text-center">
+      <div className="min-h-full bg-bg pb-8">
+        <div className="hero-flora relative px-5 pb-6 pt-8 text-center shadow-soft">
+          <FloraCorner
+            className="pointer-events-none absolute -right-2 -top-1 text-white/50"
+            style={{ width: 92, height: 92 }}
+          />
+          <p className="eyebrow">Merchant Console</p>
+          <h1 className="mt-2 font-serif-cn text-[28px] font-normal text-ink">商家工作台</h1>
+          <div className="mx-auto mt-3 h-px w-9 bg-gold" />
+          <p className="mt-3 text-[12px] text-sub">专属花艺，温柔收藏</p>
+        </div>
+        <div className="px-5 pt-6 text-center">
           <p className="rounded-card bg-white p-8 text-[13px] text-sub border border-line">
             无商家权限
             <br />
@@ -89,112 +905,312 @@ export default function Merchant() {
     )
   }
 
-  const cards = [
-    { label: '订单', value: stats?.order_count ?? '-' },
-    { label: 'GMV', value: stats ? `¥${stats.gmv}` : '-' },
-    { label: '待发货', value: stats?.pending_ship ?? '-' },
-    { label: '已完成', value: stats?.done_count ?? '-' },
-    { label: '评价', value: stats?.review_count ?? '-' },
-  ]
+  const shops = (stats?.shops || []).map((s) => (typeof s === 'string' ? { id: s, name: s } : s))
+  const shopNames = shops.map((s) => s.name).join(' / ')
+  const pendingCount = stats?.pending_ship ?? 0
+  const currentShop = shops.find((s) => s.id === shopId)
 
   return (
-    <div className="flex h-full flex-col bg-bg">
-      <TopBar title="商家工作台" />
-      <div className="flex-1 overflow-y-auto px-4 pt-4 pb-6">
-        <p className="text-[12px] text-sub">
-          {profile?.nickname || profile?.username || '商家'} · 经营总览
+    <div className="min-h-full bg-bg pb-8">
+      <div className="hero-flora relative px-5 pb-6 pt-8 text-center shadow-soft">
+        <FloraCorner
+          className="pointer-events-none absolute -right-2 -top-1 text-white/50"
+          style={{ width: 92, height: 92 }}
+        />
+        <p className="eyebrow">Merchant Console</p>
+        <h1 className="mt-2 font-serif-cn text-[28px] font-normal text-ink">商家工作台</h1>
+        <div className="mx-auto mt-3 h-px w-9 bg-gold" />
+        <p className="mt-3 text-[12px] text-sub">
+          {profile?.nickname || profile?.username || '商家'} · 打理每一束花的旅程
         </p>
-        <div className="mt-2 grid grid-cols-5 gap-2">
-          {cards.map((c) => (
-            <div key={c.label} className="rounded-card bg-white p-3 text-center border border-line">
-              <p className="text-[15px] font-medium text-dark">{c.value}</p>
-              <p className="mt-0.5 text-[10px] text-sub">{c.label}</p>
+      </div>
+
+      <div className="relative mx-5 mt-5 overflow-hidden rounded-card bg-white p-4 border border-line">
+        <FloraSprig
+          className="pointer-events-none absolute -right-2 -bottom-3 text-gold/20"
+          style={{ width: 64, height: 64 }}
+        />
+        <div className="flex items-baseline justify-between">
+          <p className="eyebrow">经营总览</p>
+          {shopNames && <span className="max-w-[55%] truncate text-[10px] text-sub">{shopNames}</span>}
+        </div>
+        <div className="mt-3 grid grid-cols-4">
+          {[
+            { label: '订单', value: stats ? `${stats.order_count}` : '-' },
+            { label: 'GMV', value: stats ? fmtMoney(stats.gmv) : '-' },
+            { label: '待发货', value: stats ? `${stats.pending_ship}` : '-' },
+            { label: '已完成', value: stats ? `${stats.done_count}` : '-' },
+          ].map((c, i) => (
+            <div key={c.label} className={`flex flex-col items-center ${i > 0 ? 'border-l border-line' : ''}`}>
+              <span className="max-w-full truncate font-serif-cn text-[17px] font-normal text-ink">{c.value}</span>
+              <span className="mt-1 text-[10px] tracking-[0.15em] text-sub">{c.label}</span>
             </div>
           ))}
         </div>
-        {stats?.shops?.length > 0 && (
-          <p className="mt-3 text-[11px] text-sub">
-            店铺：{stats.shops.map((s) => s.name || s).join(' / ')}
-          </p>
-        )}
-
-        <div className="mt-5 flex gap-2">
-          <Button variant={tab === 'orders' ? 'primary' : 'secondary'} className="flex-1" onClick={() => setTab('orders')}>
-            订单管理
-          </Button>
-          <Button variant={tab === 'reviews' ? 'primary' : 'secondary'} className="flex-1" onClick={() => setTab('reviews')}>
-            评价（{reviews.length}）
-          </Button>
+        <div className="mt-3 flex items-center justify-center gap-5 border-t border-line pt-3 text-center">
+          <span className="text-[10px] tracking-[0.15em] text-sub">
+            评价{' '}
+            <span className="font-serif-cn text-[13px] font-normal text-ink">
+              {stats?.review_count ?? '-'}
+            </span>
+          </span>
+          <span className="text-[10px] tracking-[0.15em] text-sub">
+            平均分{' '}
+            <span className="font-serif-cn text-[13px] font-normal text-ink">
+              {stats && stats.avg_rating ? Number(stats.avg_rating).toFixed(1) : '-'}
+            </span>
+          </span>
+          <span className="text-[10px] tracking-[0.15em] text-sub">
+            已取消{' '}
+            <span className="font-serif-cn text-[13px] font-normal text-ink">
+              {stats?.canceled_count ?? '-'}
+            </span>
+          </span>
         </div>
+      </div>
 
-        {tab === 'orders' ? (
-          <>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {STATUS_TABS.map((t) => (
-                <Pill
-                  key={t.key}
-                  label={t.label}
-                  selected={status === t.key}
-                  onClick={() => setStatus(t.key)}
-                  style={{ width: 'auto', padding: '0 10px' }}
+      <div className="mt-7 flex gap-6 px-5">
+        {[
+          { key: 'orders', label: '订单管理' },
+          { key: 'logistics', label: '物流管理' },
+          { key: 'plans', label: '商品管理' },
+          { key: 'reviews', label: `评价管理${reviews.length ? `（${reviews.length}）` : ''}` },
+          { key: 'shop', label: '店铺设置' },
+        ].map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`relative pb-2 text-[13px] transition ${
+              tab === t.key
+                ? 'font-medium text-gold after:absolute after:-bottom-px after:left-0 after:h-[2px] after:w-full after:bg-gold'
+                : 'text-sub'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <p className="mx-5 mt-6 rounded-card bg-white p-8 text-center text-[12px] text-sub border border-line">
+          加载中…
+        </p>
+      ) : tab === 'orders' ? (
+        <>
+          <div className="mt-3 flex flex-wrap gap-1.5 px-5">
+            <Pill
+              label="全部店铺"
+              selected={!filterShop}
+              onClick={() => setFilterShop('')}
+              style={{ width: 'auto', padding: '0 10px' }}
+            />
+            {shops.map((s) => (
+              <Pill
+                key={s.id}
+                label={s.name}
+                selected={filterShop === s.id}
+                onClick={() => setFilterShop(s.id)}
+                style={{ width: 'auto', padding: '0 10px', maxWidth: 132 }}
+              />
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-1.5 px-5">
+            {STATUS_TABS.map((t) => (
+              <Pill
+                key={t.key}
+                label={t.label}
+                selected={status === t.key}
+                onClick={() => setStatus(t.key)}
+                style={{ width: 'auto', padding: '0 10px' }}
+              />
+            ))}
+          </div>
+          {orders.length === 0 ? (
+            <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+              {status ? `暂无「${STATUS_TABS.find((t) => t.key === status)?.label || status}」订单` : '还没有订单'}
+            </p>
+          ) : (
+            <div className="px-5">
+              {orders.map((o) => (
+                <OrderCard
+                  key={o.order_id}
+                  o={o}
+                  expanded={expandedId === o.order_id}
+                  onToggle={() => togglePlan(o)}
+                  plan={plans[o.order_id]}
+                  planBusy={planBusy}
+                  busyId={busyId}
+                  onShip={ship}
                 />
               ))}
             </div>
-            {orders.length === 0 ? (
-              <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
-                该状态下暂无订单
-              </p>
-            ) : (
-              orders.map((o) => (
-                <div key={o.order_id} className="mt-3 rounded-card bg-white p-4 border border-line">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-sub">{o.order_id}</span>
-                    <span className="text-[11px] text-pink">{o.status}</span>
-                  </div>
-                  <p className="mt-1.5 text-[13px] font-medium text-dark">
-                    {o.items?.[0]?.name || '花束'} × {o.items?.[0]?.qty || 1}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-sub">
-                    ¥{Number(o.total_price || 0).toFixed(2)}
-                    {o.shop_id ? ` · ${o.shop_id}` : ''}
-                    {o.recipient?.name ? ` · ${o.recipient.name}` : ''}
-                  </p>
-                  <div className="mt-2 flex justify-end">
-                    {o.status === 'paid' && (
-                      <Button
-                        className="!h-[30px] !rounded-pill !text-[12px]"
-                        disabled={busyId === o.order_id}
-                        onClick={() => ship(o.order_id)}
-                      >
-                        代发货
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </>
-        ) : reviews.length === 0 ? (
-          <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
-            暂无评价
-          </p>
-        ) : (
-          reviews.map((r) => (
+          )}
+          {pendingCount > 0 && status === 'paid' && (
+            <p className="mt-3 px-5 text-[10px] text-sub/70">
+              {pendingCount} 笔订单待发货，请尽快安排备货
+            </p>
+          )}
+        </>
+      ) : tab === 'logistics' ? (
+        <LogisticsTab
+          orders={orders}
+          shops={shops}
+          filterShop={filterShop}
+          onSelectShop={setFilterShop}
+          status={status}
+          onStatus={setStatus}
+          logiExpandedId={logiExpandedId}
+          onToggleExpanded={(id) => setLogiExpandedId(logiExpandedId === id ? '' : id)}
+          logiDraft={logiDraft}
+          onDraft={(id, v) => setLogiDraft((d) => ({ ...d, [id]: v }))}
+          logiBusy={logiBusy}
+          onAddNode={addLogisticsNode}
+          onGoDetail={(id) => nav(`/logistics/${id}`)}
+        />
+      ) : tab === 'plans' ? (
+        <ShopPlansTab
+          shops={shops}
+          plans={shopPlans}
+          shopId={shopId}
+          onSelectShop={(id) => setShopId(id)}
+          planBusy={planBusy}
+          onOpenForm={() => openForm()}
+          onEdit={openForm}
+          onToggle={toggleShopPlan}
+          onRemove={removeShopPlan}
+        />
+      ) : tab === 'shop' ? (
+        <ShopSettingsTab
+          shop={shopForm}
+          saving={shopSaving}
+          onSave={saveShop}
+          onChange={setShopForm}
+          imgBusy={imgBusy}
+          onUploadImage={(f) => uploadImage(f, 'shop')}
+        />
+      ) : reviews.length === 0 ? (
+        <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+          暂无评价
+        </p>
+      ) : (
+        <div className="px-5">
+          {reviews.map((r) => (
             <div key={r.id} className="mt-3 rounded-card bg-white p-4 border border-line">
               <div className="flex items-center justify-between">
-                <span className="text-[12px] font-medium text-dark">{r.nickname || '匿名用户'}</span>
-                <span className="text-[11px] text-sub">{r.created_at}</span>
+                <span className="font-serif-cn text-[14px] font-normal text-ink">{r.nickname || '匿名用户'}</span>
+                <span className="text-[10px] text-sub">{r.created_at}</span>
               </div>
-              <p className="mt-1 text-[11px] text-sub">
-                {'★'.repeat(r.rating)}
-                {'☆'.repeat(5 - r.rating)}
-                {r.plan_id ? ` · ${r.plan_id}` : ''}
-              </p>
-              {r.content && <p className="mt-1.5 text-[12px] leading-relaxed text-ink">{r.content}</p>}
+              <div className="mt-1 flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <IconStar
+                    key={s}
+                    width={13}
+                    height={13}
+                    filled={s <= r.rating}
+                    className={s <= r.rating ? 'text-pink' : 'text-line'}
+                  />
+                ))}
+                {r.plan_id && <span className="ml-2 text-[10px] text-sub/70">{r.plan_id}</span>}
+              </div>
+              {r.content && (
+                <p className="mt-2 rounded-[2px] bg-bg px-3 py-2 text-[12px] leading-relaxed text-ink">
+                  {r.content}
+                </p>
+              )}
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
+
+      {/* 新建 / 编辑商品弹层 */}
+      {formOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+          onClick={() => setFormOpen(false)}
+        >
+          <div
+            className="w-full max-w-h5 rounded-t-[20px] bg-white px-5 pb-8 pt-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mx-auto mb-4 h-[2px] w-9 bg-gold" />
+            <h3 className="font-serif-cn text-[19px] font-normal text-ink">
+              {editing ? '编辑商品' : '新建商品'}
+            </h3>
+            <p className="mt-1 text-[11px] text-sub">
+              商品将上架到「{currentShop?.name || shopId}」
+            </p>
+            <form onSubmit={submitPlanForm} className="mt-4 space-y-3">
+              {/* 商品图片上传 */}
+              <div>
+                <label className="mb-1 block text-[11px] text-sub">商品图片</label>
+                <div className="flex items-center gap-3">
+                  <SmartImage
+                    src={planImage({ effect_image_url: planForm.effect_image_url, plan_id: editing?.plan_id })}
+                    imgKey="home_rec_1"
+                    className="h-[64px] w-[84px] shrink-0 rounded-[4px]"
+                  />
+                  <div className="flex-1">
+                    <label className="press inline-block cursor-pointer rounded-[4px] border border-line bg-bg px-3 py-2 text-[11px] text-sub">
+                      {imgBusy ? '上传中…' : planForm.effect_image_url ? '更换图片' : '上传图片'}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="hidden"
+                        disabled={imgBusy}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0]
+                          if (f) uploadImage(f, 'plan')
+                          e.target.value = ''
+                        }}
+                      />
+                    </label>
+                    <p className="mt-1 text-[10px] text-sub/70">支持 jpg/png/webp/gif，≤5MB</p>
+                  </div>
+                </div>
+              </div>
+              <input
+                placeholder="商品名称（必填）"
+                value={planForm.name}
+                onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })}
+                maxLength={60}
+                className="maison-field"
+              />
+              <input
+                placeholder="价格 ¥（必填）"
+                inputMode="decimal"
+                value={planForm.price}
+                onChange={(e) => setPlanForm({ ...planForm, price: e.target.value.replace(/[^\d.]/g, '') })}
+                className="maison-field"
+              />
+              <textarea
+                placeholder="商品描述（选填）"
+                value={planForm.desc}
+                onChange={(e) => setPlanForm({ ...planForm, desc: e.target.value })}
+                maxLength={200}
+                rows={3}
+                className="maison-field w-full resize-none"
+              />
+              <input
+                placeholder="风格（选填，如 韩式）"
+                value={planForm.style}
+                onChange={(e) => setPlanForm({ ...planForm, style: e.target.value })}
+                maxLength={20}
+                className="maison-field"
+              />
+              <input
+                placeholder="标签（选填，逗号分隔，如 母亲节,粉色）"
+                value={planForm.tags}
+                onChange={(e) => setPlanForm({ ...planForm, tags: e.target.value })}
+                maxLength={60}
+                className="maison-field"
+              />
+              <Button type="submit" className="w-full !text-[12px] !tracking-[1px]" disabled={formBusy}>
+                {formBusy ? '保存中…' : editing ? '保存修改' : '上架商品'}
+              </Button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -11,7 +11,7 @@ import { isLoggedIn } from '../api/auth'
 import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
-import { itemImagePath } from '../assets/imageMap'
+import { planImage } from '../assets/imageMap'
 
 // 04 商品详情
 export default function ProductDetail() {
@@ -132,7 +132,7 @@ export default function ProductDetail() {
         }
       />
       <div className="flex-1 overflow-y-auto">
-        <SmartImage src={itemImagePath('plans', product.id)} color={imgColor(product.id)} className="h-[270px] w-full" />
+        <SmartImage src={planImage(product)} color={imgColor(product.id)} className="h-[270px] w-full" />
         <div className="px-5 pt-4">
           <h1 className="text-[20px] font-medium text-dark">{product.name}</h1>
           <p className="mt-1 text-[22px] font-medium text-ink">¥{product.price}</p>

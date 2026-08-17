@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS plans (
     tags             TEXT,                       -- JSON 数组字符串
     style            TEXT,                       -- 风格，如 韩式/日式/田园
     category_id      TEXT,                       -- -> categories.id
+    rating           REAL NOT NULL DEFAULT 4.8,  -- 评分（种子/商家后台维护，上线前可清空重灌）
+    sold             INTEGER NOT NULL DEFAULT 0, -- 已售（种子演示值，正式上线由订单统计）
     created_at       TEXT NOT NULL
 );
 
@@ -111,6 +113,13 @@ CREATE TABLE IF NOT EXISTS shops (
     lng          REAL,
     status       TEXT NOT NULL DEFAULT '营业中',
     intro        TEXT,
+    -- 经营信息（种子/商家后台维护；正式上线由经营数据统计，上线前可清空重灌）
+    sales        INTEGER NOT NULL DEFAULT 0,     -- 月售
+    min_delivery REAL NOT NULL DEFAULT 30,       -- 起送价（元）
+    delivery_fee REAL NOT NULL DEFAULT 5,        -- 配送费（元）
+    hours        TEXT NOT NULL DEFAULT '09:00 - 21:00',  -- 营业时间
+    address      TEXT,                           -- 门店地址
+    notice       TEXT,                           -- 公告
     created_at   TEXT NOT NULL
 );
 
@@ -118,7 +127,16 @@ CREATE TABLE IF NOT EXISTS shops (
 CREATE TABLE IF NOT EXISTS shop_plans (
     shop_id  TEXT NOT NULL,
     plan_id  TEXT NOT NULL,
+    status   TEXT NOT NULL DEFAULT 'on',        -- on=在售 off=已下架（商家端上下架）
     PRIMARY KEY (shop_id, plan_id)
+);
+
+-- 商家-店铺 绑定（商家后台按店隔离的权限来源；admin 不受限）
+CREATE TABLE IF NOT EXISTS merchant_shops (
+    user_id    TEXT NOT NULL,                   -- users.id
+    shop_id    TEXT NOT NULL,                   -- shops.id
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, shop_id)
 );
 
 -- 商家智库 · 主档（1:1 shops）：以商家为单位沉淀品牌定位/风格/能力等知识，
@@ -359,6 +377,7 @@ CREATE INDEX IF NOT EXISTS idx_coupons_user          ON coupons(user_id, status)
 CREATE INDEX IF NOT EXISTS idx_point_records_user    ON point_records(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_addresses_user        ON addresses(user_id, is_default);
 CREATE INDEX IF NOT EXISTS idx_shop_plans_plan      ON shop_plans(plan_id);
+CREATE INDEX IF NOT EXISTS idx_merchant_shops_shop  ON merchant_shops(shop_id);
 CREATE INDEX IF NOT EXISTS idx_plans_category       ON plans(category_id);
 CREATE INDEX IF NOT EXISTS idx_shop_styles_style    ON shop_styles(style_id);
 CREATE INDEX IF NOT EXISTS idx_shop_scenes_scene    ON shop_scenes(scene_id);
@@ -393,6 +412,24 @@ _ALTERS = [
     ("orders", "expires_at", "ALTER TABLE orders ADD COLUMN expires_at TEXT"),
     # coupons: 领券中心来源标记
     ("coupons", "offer_id", "ALTER TABLE coupons ADD COLUMN offer_id TEXT"),
+    # shop_plans: 店铺内商品上下架（商家端管理；C 端仅展示 on）
+    (
+        "shop_plans",
+        "status",
+        "ALTER TABLE shop_plans ADD COLUMN status TEXT NOT NULL DEFAULT 'on'",
+    ),
+    # shops: 商家上传的店铺图片（/uploads/...）
+    ("shops", "image", "ALTER TABLE shops ADD COLUMN image TEXT"),
+    # plans: 评分/已售（种子演示值，上线前可清空；正式由订单统计）
+    ("plans", "rating", "ALTER TABLE plans ADD COLUMN rating REAL NOT NULL DEFAULT 4.8"),
+    ("plans", "sold", "ALTER TABLE plans ADD COLUMN sold INTEGER NOT NULL DEFAULT 0"),
+    # shops: 经营信息（月售/起送/配送费/营业时间/地址/公告）
+    ("shops", "sales", "ALTER TABLE shops ADD COLUMN sales INTEGER NOT NULL DEFAULT 0"),
+    ("shops", "min_delivery", "ALTER TABLE shops ADD COLUMN min_delivery REAL NOT NULL DEFAULT 30"),
+    ("shops", "delivery_fee", "ALTER TABLE shops ADD COLUMN delivery_fee REAL NOT NULL DEFAULT 5"),
+    ("shops", "hours", "ALTER TABLE shops ADD COLUMN hours TEXT NOT NULL DEFAULT '09:00 - 21:00'"),
+    ("shops", "address", "ALTER TABLE shops ADD COLUMN address TEXT"),
+    ("shops", "notice", "ALTER TABLE shops ADD COLUMN notice TEXT"),
 ]
 
 

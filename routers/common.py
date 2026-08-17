@@ -171,6 +171,10 @@ class CartAddRequest(BaseModel):
     shop: str | None = Field(None, description="商家名（用于购物车按店归类展示）")
 
 
+class CartMergeRequest(BaseModel):
+    from_user_id: str = Field(..., min_length=1, max_length=64, description="来源用户（游客匿名 uid）")
+
+
 
 
 class CartUpdateRequest(BaseModel):
@@ -293,8 +297,10 @@ def _plan_card(p: dict[str, Any]) -> dict[str, Any]:
         "merchant_name": p.get("merchant_name", ""),  # 透传给商品详情/加购/下单
         "shop_id": catalog_store.plan_shop_id(p["plan_id"]),  # 商品对应的店家（跳转店铺页）
         "label": _plan_label(p),  # Premium / Limited / New 角标
-        "rating": "4.8",
-        "sold": 200 + (abs(hash(p["plan_id"])) % 300),
+        # 数据一致性（规则 2）：评分/已售一律以 DB 为准（plans.rating / plans.sold），
+        # 不再写死或 hash 推导；缺失时兜底默认值（兼容 Mock 数据源）。
+        "rating": str(p.get("rating", 4.8)),
+        "sold": int(p.get("sold", 0)),
         "tags": p.get("tags", []),
         "desc": p.get("desc", ""),
         "image": None,  # H5 用占位色块渲染，不依赖真实图
@@ -303,11 +309,48 @@ def _plan_card(p: dict[str, Any]) -> dict[str, Any]:
 
 
 
+#: 花材识别词表：从商品 desc 第一句提取花材（DIY 详情页花材清单用）
+_FLOWER_HINTS = (
+    "康乃馨", "玫瑰", "向日葵", "满天星", "郁金香", "牡丹", "百合", "绣球",
+    "芍药", "雏菊", "洋桔梗", "尤加利叶", "绿萝", "永生花", "竹", "香槟",
+)
+
+
+def _derive_flowers(p: dict[str, Any]) -> list[str]:
+    """从 desc 第一句（"11 支粉色康乃馨 + 满天星，适合…"）解析花材名列表。"""
+    desc = p.get("desc", "")
+    head = re.split(r"[，,。]", desc)[0] if desc else ""
+    out: list[str] = []
+    for token in re.split(r"[+、/]|\s+", head):
+        t = re.sub(r"^[\d\s支朵枝盆棵个]*", "", token).strip()
+        if t and any(h in t for h in _FLOWER_HINTS):
+            out.append(t)
+    return out
+
+
+def _derive_packaging(p: dict[str, Any]) -> str:
+    """按商品名推断包装形式（礼盒/花篮/盆栽/插花，其余纸包）。"""
+    name = p.get("name", "")
+    if any(k in name for k in ("礼盒", "花盒")):
+        return "礼盒装（丝绒质感内衬）"
+    if "花篮" in name:
+        return "花篮装（藤编提篮）"
+    if "盆栽" in name:
+        return "白瓷盆栽"
+    if "插花" in name:
+        return "竹器插花"
+    return "简约纸包（品牌定制雾面纸）"
+
+
 def _plan_full(p: dict[str, Any]) -> dict[str, Any]:
-    """方案详情（商品详情页）。"""
+    """方案详情（商品详情页 / DIY 详情直链兜底）。"""
     base = _plan_card(p)
     base["detail"] = p.get("desc", "")
     base["aiReason"] = f"根据你的需求，这束「{p['name']}」{p.get('desc', '')}"
+    base["main_flowers"] = p.get("main_flowers") or _derive_flowers(p)
+    base["packaging"] = p.get("packaging") or _derive_packaging(p)
+    base["effect_image_url"] = p.get("effect_image_url")
+    base["style"] = p.get("style")
     return base
 
 
@@ -325,10 +368,17 @@ def _shop_card(s: dict[str, Any], location: dict[str, float] | None = None) -> d
         "dist": f"{d:.1f}km" if isinstance(d, float) else f"{d}km",
         "eta": "配送约30分钟",
         "price_range": s.get("price_range", ""),
-        "min_delivery": (int(float(s.get("price_range", "0").split("-")[0])) // 10 * 10)
-        if s.get("price_range") and s["price_range"].split("-")[0].strip().isdigit()
-        else 30,
-        "delivery_fee": 3 if float(s.get("distance_km") or 1) <= 1 else 5 if float(s.get("distance_km") or 1) <= 2.5 else 8,
+        # 数据一致性（规则 2）：起送/配送费读 DB（shops.min_delivery / delivery_fee），
+        # 缺失时按价位档/距离兜底（兼容 Mock 数据源）。
+        "min_delivery": float(s.get("min_delivery") or (
+            (int(float(s.get("price_range", "0").split("-")[0])) // 10 * 10)
+            if s.get("price_range") and s["price_range"].split("-")[0].strip().isdigit()
+            else 30
+        )),
+        "delivery_fee": float(s.get("delivery_fee") or (
+            3 if float(s.get("distance_km") or 1) <= 1 else 5 if float(s.get("distance_km") or 1) <= 2.5 else 8
+        )),
+        "image": s.get("image") or "",
     }
 
 
@@ -337,7 +387,7 @@ def _shop_card(s: dict[str, Any], location: dict[str, float] | None = None) -> d
 def _shop_menu_item(p: dict[str, Any]) -> dict[str, Any]:
     """店铺详情菜单项（美团式商品卡字段）。
 
-    sales 为演示推导值（与列表页 sold 同思路）：真实上线后应由订单数据统计。
+    月售以 DB plans.sold 为准（数据一致性规则 2），缺失时兜底 0。
     """
     return {
         "id": p["plan_id"],
@@ -348,7 +398,7 @@ def _shop_menu_item(p: dict[str, Any]) -> dict[str, Any]:
         "style": p.get("style", ""),
         "image": p.get("effect_image_url"),
         "label": _plan_label(p),
-        "sales": 100 + (abs(hash(p["plan_id"])) % 900),
+        "sales": int(p.get("sold", 0)),
     }
 
 
@@ -357,8 +407,8 @@ def _shop_menu_item(p: dict[str, Any]) -> dict[str, Any]:
 def _shop_full(s: dict[str, Any]) -> dict[str, Any]:
     """店铺详情（美团外卖式）：经营信息 + 分类菜单（左栏分类 / 右栏商品）。
 
-    以下字段为演示推导值（基于现有真实字段稳定生成，零迁移）：
-    min_delivery / delivery_fee / hours / address / notice；真实上线应由商家后台维护。
+    数据一致性（规则 2）：经营信息一律读 DB（shops 表种子/商家后台维护字段），
+    不再 API 推导；缺失时兜底默认值（兼容 Mock 数据源/旧库迁移前）。
     """
     plans = [p for p in (repo.get_plan(pid) for pid in s.get("plan_ids", [])) if p]
     # 分类菜单：按 categories 排序分组，未分类的兜底到「其他」
@@ -373,18 +423,6 @@ def _shop_full(s: dict[str, Any]) -> dict[str, Any]:
     if others:
         menu.append({"id": "cat_other", "name": "其他", "items": [_shop_menu_item(p) for p in others]})
 
-    # 经营信息推导
-    m = re.match(r"\s*(\d+)\s*-\s*(\d+)\s*", str(s.get("price_range", "")))
-    lo = float(m.group(1)) if m else None
-    d = float(s.get("distance_km") or 1.0)
-    delivery_fee = 3 if d <= 1 else 5 if d <= 2.5 else 8
-    min_delivery = (int(lo) // 10 * 10) if lo else 30
-    zone = "盐田"
-    z = re.search(r"\((.+?)店\)", str(s.get("name", "")))
-    if z:
-        zone = z.group(1)
-    addr_no = 8 + (abs(hash(s.get("shop_id", ""))) % 88)
-
     return {
         "id": s["shop_id"],
         "name": s["name"],
@@ -392,14 +430,15 @@ def _shop_full(s: dict[str, Any]) -> dict[str, Any]:
         "status": "营业中",
         "dist": f"{s.get('distance_km')}km",
         "intro": s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
-        # 美团式经营信息（演示推导值）
-        "sales": 200 + (abs(hash(s.get("shop_id", ""))) % 800),   # 月售
-        "min_delivery": min_delivery,                             # 起送价（元）
-        "delivery_fee": delivery_fee,                             # 配送费（元）
+        # 美团式经营信息（DB 字段；演示值由 seed 灌入，上线前可清空重灌真实数据）
+        "sales": int(s.get("sales", 0)),
+        "min_delivery": float(s.get("min_delivery") or 30),
+        "delivery_fee": float(s.get("delivery_fee") or 5),
         "delivery_time": "约30分钟",
-        "hours": "09:00 - 21:00",
-        "address": f"深圳市{zone}区海景路 {addr_no} 号（示例地址）",
-        "notice": s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
+        "hours": s.get("hours") or "09:00 - 21:00",
+        "address": s.get("address") or "深圳市盐田区海景路 1 号（示例地址）",
+        "notice": s.get("notice") or s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
+        "image": s.get("image") or "",
         # 分类菜单
         "menu": menu,
         "recommend": [
@@ -446,6 +485,7 @@ class ShopWriteRequest(BaseModel):
     lng: float | None = None
     status: str | None = Field(None, max_length=10)
     intro: str | None = Field(None, max_length=120)
+    image: str | None = Field(None, max_length=200)
     plan_ids: list[str] | str | None = None
 
 
@@ -482,6 +522,29 @@ async def _require_merchant(request: Request) -> str:
     if role not in ("merchant", "admin"):
         raise HTTPException(status_code=403, detail="需要商家权限")
     return uid
+
+
+async def _merchant_scope(request: Request) -> tuple[str, list[str] | None]:
+    """商家身份 + 可管理店铺范围。
+
+    Returns:
+        (uid, shop_ids)：admin 返回 None（全部店铺）；普通商家返回绑定店铺 id 列表
+        （未绑定返回空列表——严格隔离，看不到任何店铺数据）。
+    """
+    uid = await _require_merchant(request)
+    role = await asyncio.to_thread(security.get_user_role, uid)
+    if role == "admin":
+        return uid, None
+    shop_ids = await asyncio.to_thread(catalog_store.merchant_shop_ids, uid)
+    return uid, shop_ids
+
+
+def _require_shop_in_scope(
+    shop_id: str, scope: list[str] | None
+) -> None:
+    """校验 shop_id 在商家可管理范围内（admin 不受限），否则 403。"""
+    if scope is not None and shop_id not in scope:
+        raise HTTPException(status_code=403, detail="无权操作该店铺")
 
 
 

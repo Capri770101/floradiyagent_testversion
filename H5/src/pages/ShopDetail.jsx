@@ -8,7 +8,7 @@ import { toast } from '../utils/toast'
 import { PLACEHOLDER } from '../tokens'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
-import { itemImagePath } from '../assets/imageMap'
+import { planImage, shopImage } from '../assets/imageMap'
 
 // 美团外卖式店铺详情页：
 // 顶部店铺信息（评分/月售/起送/配送费/配送时长/距离/公告/营业时间/地址）
@@ -20,7 +20,7 @@ function ShopHeader({ shop, noticeOpen, onToggleNotice }) {
     <div className="shrink-0">
       {/* 封面（真实店铺图，文件未就位时回退砂色块） */}
       <SmartImage
-        src={itemImagePath('shops', shop.id)}
+        src={shopImage(shop)}
         color={PLACEHOLDER.shopCover}
         className="h-[150px] w-full"
       />
@@ -89,7 +89,7 @@ function ProductRow({ item, qty, onAdd, onDec, onInc }) {
   return (
     <div className="flex gap-3 py-4">
       <SmartImage
-        src={itemImagePath('plans', item.id)}
+        src={planImage(item)}
         color={imgColor(item.id)}
         className="h-[76px] w-[76px] shrink-0 rounded-[2px]"
       />

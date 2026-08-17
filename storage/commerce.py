@@ -435,35 +435,89 @@ def count_favorites(user_id: str) -> int:
 # --------------------------------------------------------------------------- #
 
 
-def merchant_stats(shop_id: str = "") -> dict[str, Any]:
+def _shop_scope_sql(conn, shop_ids: list[str] | None, alias: str = "") -> tuple[str, list[Any]]:
+    """按店铺 scope 生成订单过滤条件。
+
+    orders.shop_id 存的是下单时的商家名快照（与 shops.id 不一致），故同时按
+    shop_id 与订单明细里的店名匹配；shop_ids=None 表示不限（admin），
+    shop_ids=[] 表示未绑定店铺（无任何可见订单）。
+    alias 用于联表查询（如 reviews JOIN orders o → alias='o.'）。
+    """
+    if shop_ids is None:
+        return "", []
+    if not shop_ids:
+        return " AND 0", []
+    names = [
+        r["name"]
+        for r in conn.execute(
+            f"SELECT name FROM shops WHERE id IN ({','.join('?' * len(shop_ids))})", shop_ids
+        )
+    ]
+    keys = [s for s in shop_ids if s] + [n for n in names if n]
+    if not keys:
+        return f" AND {alias}0", []
+    ph = ",".join("?" * len(keys))
+    return (
+        f" AND ({alias}shop_id IN ({ph}) OR {alias}order_id IN (SELECT order_id FROM order_items WHERE shop IN ({ph})))",
+        keys + keys,
+    )
+
+
+def merchant_stats(
+    shop_ids: list[str] | None = None, shop_id: str = ""
+) -> dict[str, Any]:
     """店铺维度经营统计：订单数 / GMV / 待发货 / 已完成 / 评价数。
 
     Args:
-        shop_id: 店铺名或店铺 id（orders.shop_id 存的是商家名快照），空则汇总全部店铺。
+        shop_ids: 商家绑定店铺 id 列表（None=全部店铺，admin）；
+        shop_id: 店铺 id 或店铺名（orders.shop_id 存的是商家名快照），空则按 shop_ids 汇总。
     """
     conn = get_conn()
-    where = "WHERE shop_id=?" if shop_id else ""
-    args: tuple[Any, ...] = (shop_id,) if shop_id else ()
-    total = conn.execute(f"SELECT COUNT(*), COALESCE(SUM(total_price),0) FROM orders {where}", args).fetchone()
-    and_sql = " AND status='paid'" if shop_id else " WHERE status='paid'"
+    where, args = _shop_scope_sql(conn, shop_ids)
+    if shop_id:
+        sname = conn.execute("SELECT name FROM shops WHERE id=?", (shop_id,)).fetchone()
+        name = sname["name"] if sname else shop_id
+        if args:
+            where += " AND (shop_id IN (?,?) OR order_id IN (SELECT order_id FROM order_items WHERE shop IN (?,?)))"
+            args += [shop_id, name, shop_id, name]
+        else:
+            where += " AND (shop_id IN (?,?) OR order_id IN (SELECT order_id FROM order_items WHERE shop IN (?,?)))"
+            args = [shop_id, name, shop_id, name]
+    and_sql = " AND status='paid'"
     pending = conn.execute(
-        f"SELECT COUNT(*) FROM orders {where}{and_sql}", args
+        f"SELECT COUNT(*) FROM orders WHERE 1=1{where}{and_sql}", args
     ).fetchone()[0]
-    and_sql = " AND status='done'" if shop_id else " WHERE status='done'"
+    and_sql = " AND status='done'"
     done = conn.execute(
-        f"SELECT COUNT(*) FROM orders {where}{and_sql}", args
+        f"SELECT COUNT(*) FROM orders WHERE 1=1{where}{and_sql}", args
     ).fetchone()[0]
-    and_sql = " AND status='canceled'" if shop_id else " WHERE status='canceled'"
+    and_sql = " AND status='canceled'"
     canceled = conn.execute(
-        f"SELECT COUNT(*) FROM orders {where}{and_sql}", args
+        f"SELECT COUNT(*) FROM orders WHERE 1=1{where}{and_sql}", args
     ).fetchone()[0]
-    rev = conn.execute(
-        """SELECT COUNT(*), COALESCE(AVG(r.rating),0) FROM reviews r
-           LEFT JOIN orders o ON o.order_id = r.order_id
-           WHERE o.shop_id = COALESCE(?, o.shop_id)""",
-        (shop_id or None,),
+    # 汇总（含全部状态）
+    total = conn.execute(
+        f"SELECT COUNT(*), COALESCE(SUM(total_price),0) FROM orders WHERE 1=1{where}", args
     ).fetchone()
-    shops = conn.execute("SELECT id, name FROM shops ORDER BY created_at").fetchall()
+    ph = ",".join("?" * (len(args) // 2)) if args else ""
+    rev_where, rev_args = "", []
+    if args:
+        rev_where = (
+            f" AND (o.shop_id IN ({ph}) OR o.order_id IN (SELECT order_id FROM order_items WHERE shop IN ({ph})))"
+        )
+        rev_args = list(args)
+    rev = conn.execute(
+        f"""SELECT COUNT(*), COALESCE(AVG(r.rating),0) FROM reviews r
+           JOIN orders o ON o.order_id = r.order_id WHERE 1=1{rev_where}""",
+        rev_args,
+    ).fetchone()
+    if shop_ids is not None:
+        shops = conn.execute(
+            f"SELECT id, name FROM shops WHERE id IN ({','.join('?' * len(shop_ids))}) ORDER BY created_at",
+            shop_ids,
+        ).fetchall()
+    else:
+        shops = conn.execute("SELECT id, name FROM shops ORDER BY created_at").fetchall()
     return {
         "order_count": int(total[0]),
         "gmv": float(total[1] or 0),
@@ -476,18 +530,24 @@ def merchant_stats(shop_id: str = "") -> dict[str, Any]:
     }
 
 
-def merchant_orders(shop_id: str = "", status: str = "", limit: int = 50) -> list[dict[str, Any]]:
-    """商家视角订单列表（任意用户，可按店铺/状态过滤）。"""
+def merchant_orders(
+    shop_ids: list[str] | None = None,
+    shop_id: str = "",
+    status: str = "",
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """商家视角订单列表（按绑定店铺隔离，可按店铺/状态过滤）。"""
     conn = get_conn()
-    sql = "SELECT order_id FROM orders WHERE 1=1"
-    args: list[Any] = []
+    where, args = _shop_scope_sql(conn, shop_ids)
     if shop_id:
-        sql += " AND shop_id=?"
-        args.append(shop_id)
+        sname = conn.execute("SELECT name FROM shops WHERE id=?", (shop_id,)).fetchone()
+        name = sname["name"] if sname else shop_id
+        where += " AND (shop_id IN (?,?) OR order_id IN (SELECT order_id FROM order_items WHERE shop IN (?,?)))"
+        args += [shop_id, name, shop_id, name]
     if status:
-        sql += " AND status=?"
+        where += " AND status=?"
         args.append(status)
-    sql += " ORDER BY created_at DESC LIMIT ?"
+    sql = f"SELECT order_id FROM orders WHERE 1=1{where} ORDER BY created_at DESC LIMIT ?"
     args.append(limit)
     rows = conn.execute(sql, args).fetchall()
     return [get_order(r["order_id"]) for r in rows]
@@ -498,20 +558,23 @@ def merchant_ship(order_id: str) -> dict[str, Any] | None:
     return ship_order(order_id)
 
 
-def merchant_reviews(shop_id: str = "") -> list[dict[str, Any]]:
-    """店铺维度评价列表（关联订单取收货信息；空 shop_id 返回全部）。"""
+def merchant_reviews(
+    shop_ids: list[str] | None = None, shop_id: str = ""
+) -> list[dict[str, Any]]:
+    """店铺维度评价列表（按绑定店铺隔离；空 scope 返回全部）。"""
     conn = get_conn()
+    where, args = _shop_scope_sql(conn, shop_ids, alias="o.")
     if shop_id:
-        rows = conn.execute(
-            """SELECT r.* FROM reviews r
-               JOIN orders o ON o.order_id = r.order_id
-               WHERE o.shop_id=? ORDER BY r.created_at DESC LIMIT 100""",
-            (shop_id,),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM reviews ORDER BY created_at DESC LIMIT 100"
-        ).fetchall()
+        sname = conn.execute("SELECT name FROM shops WHERE id=?", (shop_id,)).fetchone()
+        name = sname["name"] if sname else shop_id
+        where += " AND (o.shop_id IN (?,?) OR o.order_id IN (SELECT order_id FROM order_items WHERE shop IN (?,?)))"
+        args += [shop_id, name, shop_id, name]
+    rows = conn.execute(
+        f"""SELECT r.* FROM reviews r
+            JOIN orders o ON o.order_id = r.order_id
+            WHERE 1=1{where} ORDER BY r.created_at DESC LIMIT 100""",
+        args,
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -665,6 +728,35 @@ def update_cart_item(
     return _row_to_dict(
         conn.execute("SELECT * FROM cart_items WHERE item_id=?", (item_id,)).fetchone()
     )
+
+
+def merge_cart(from_user_id: str, to_user_id: str) -> int:
+    """把 from 用户的购物车并入 to 用户：同方案数量相加，不同方案转移归属。
+
+    用于「游客匿名 uid 购物车 → 登录账号」合并；返回并入的条数。
+    """
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT * FROM cart_items WHERE user_id=? ORDER BY created_at ASC", (from_user_id,)
+    ).fetchall()
+    merged = 0
+    for r in rows:
+        existing = conn.execute(
+            "SELECT * FROM cart_items WHERE user_id=? AND plan_id=?", (to_user_id, r["plan_id"])
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE cart_items SET qty=qty+?, updated_at=? WHERE item_id=?",
+                (r["qty"], _now(), existing["item_id"]),
+            )
+        else:
+            conn.execute(
+                "UPDATE cart_items SET user_id=?, updated_at=? WHERE item_id=?",
+                (to_user_id, _now(), r["item_id"]),
+            )
+        merged += 1
+    conn.commit()
+    return merged
 
 
 def remove_cart_item(item_id: str) -> bool:
@@ -930,6 +1022,23 @@ def _append_logistics(order_id: str, text: str) -> None:
         "INSERT INTO order_logistics(order_id, seq, text, created_at) VALUES (?,?,?,?)",
         (order_id, nxt, text, _now()),
     )
+
+
+def add_logistics_event(order_id: str, text: str) -> dict[str, Any] | None:
+    """商家手动追加物流节点（仅配送中 shipped 状态可追加）。订单不存在返回 None。"""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
+    if not row:
+        return None
+    _expire_unpaid_order(conn, row)
+    if row["status"] != "shipped":
+        raise ValueError(f"当前状态 {row['status']} 不可追加物流节点")
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("物流节点内容不能为空")
+    _append_logistics(order_id, text)
+    conn.commit()
+    return get_order(order_id)
 
 
 def ship_order(order_id: str) -> dict[str, Any] | None:

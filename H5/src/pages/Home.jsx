@@ -11,7 +11,7 @@ import { isLoggedIn, getProfile } from '../api/auth'
 import { toast } from '../utils/toast'
 import { getLocation, setLocation } from '../utils/location'
 import { imgColor } from '../utils/color'
-import { itemImagePath } from '../assets/imageMap'
+import { shopImage } from '../assets/imageMap'
 
 export default function Home() {
   const nav = useNavigate()
@@ -275,7 +275,7 @@ export default function Home() {
                   className="press flex cursor-pointer items-center gap-3 rounded-[4px] border border-line bg-white px-3.5 py-3"
                 >
                   <SmartImage
-                    src={itemImagePath('shops', s.id)}
+                    src={shopImage(s)}
                     color={imgColor(s.id)}
                     className="h-[44px] w-[52px] rounded-[2px]"
                   />

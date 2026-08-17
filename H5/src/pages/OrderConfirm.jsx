@@ -7,7 +7,7 @@ import { calcPayable } from '../utils/price'
 import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
-import { itemImagePath } from '../assets/imageMap'
+import { planImage } from '../assets/imageMap'
 
 function SectionTitle({ title }) {
   return <h2 className="mb-2 mt-5 px-1 text-[16px] font-medium text-dark">{title}</h2>
@@ -123,7 +123,7 @@ export default function OrderConfirm() {
             className="flex items-center gap-3 rounded-card bg-white p-3 border border-line"
           >
             <SmartImage
-              src={itemImagePath('plans', it.plan_id)}
+              src={planImage(it)}
               color={imgColor(it.plan_id || it.name)}
               className="h-[62px] w-[62px] rounded-[4px]"
             />
