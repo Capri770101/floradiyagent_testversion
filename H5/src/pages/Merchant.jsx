@@ -25,7 +25,7 @@ import {
 } from '../api/shop'
 import { getProfile } from '../api/auth'
 import { FloraCorner, FloraSprig } from '../components/FloralDecor'
-import { IconStar, IconPin, IconClock, IconPlus, IconArrow, IconTrash } from '../components/icons'
+import { IconStar, IconPin, IconClock, IconPlus, IconArrow, IconTrash, IconSearch } from '../components/icons'
 import { planImage } from '../assets/imageMap'
 import SmartImage from '../components/SmartImage'
 
@@ -577,7 +577,19 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
   const catName = (id) => (categories.find((c) => c.id === id) || {}).name || ''
   const [batchMode, setBatchMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
-  const allSelected = plans.length > 0 && plans.every((p) => selected.has(p.plan_id))
+  const [planFilter, setPlanFilter] = useState('all') // all | on | off
+  const [planKw, setPlanKw] = useState('')
+  const [planCat, setPlanCat] = useState('')
+  const filteredPlans = plans.filter((p) => {
+    if (planFilter !== 'all' && p.shop_status !== planFilter) return false
+    if (planCat && p.category_id !== planCat) return false
+    if (planKw) {
+      const hay = `${p.name || ''} ${p.desc || ''} ${(p.tags || []).join(' ')}`.toLowerCase()
+      if (!hay.includes(planKw.toLowerCase())) return false
+    }
+    return true
+  })
+  const allSelected = filteredPlans.length > 0 && filteredPlans.every((p) => selected.has(p.plan_id))
   const toggleSelect = (id) =>
     setSelected((prev) => {
       const next = new Set(prev)
@@ -650,7 +662,7 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
         <div className="mt-3 flex flex-wrap items-center gap-2 px-5">
           <button
             onClick={() =>
-              setSelected(allSelected ? new Set() : new Set(plans.map((p) => p.plan_id)))
+              setSelected(allSelected ? new Set() : new Set(filteredPlans.map((p) => p.plan_id)))
             }
             className="press flex items-center gap-1.5 text-[12px] text-ink"
           >
@@ -688,13 +700,68 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
           </div>
         </div>
       )}
+      {/* 商品筛选：状态 / 关键词 / 分类 */}
+      {shopId && plans.length > 0 && (
+        <div className="mt-3 px-5">
+          <div className="flex gap-1.5">
+            {[
+              { k: 'all', l: '全部' },
+              { k: 'on', l: '在售' },
+              { k: 'off', l: '已下架' },
+            ].map((f) => (
+              <button
+                key={f.k}
+                onClick={() => setPlanFilter(f.k)}
+                className={`flex-1 rounded-full border py-1.5 text-center text-[11px] transition ${
+                  planFilter === f.k
+                    ? 'border-gold bg-gold/10 font-medium text-gold'
+                    : 'border-line bg-white text-sub'
+                }`}
+              >
+                {f.l}
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex gap-1.5">
+            <div className="relative flex-1">
+              <IconSearch
+                width={13}
+                height={13}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sub/60"
+              />
+              <input
+                value={planKw}
+                onChange={(e) => setPlanKw(e.target.value)}
+                placeholder="搜索商品名 / 描述 / 标签"
+                className="w-full rounded-[4px] border border-line bg-bg/50 py-1.5 pl-8 pr-3 text-[11px] text-ink outline-none transition placeholder:text-sub/50 focus:border-gold"
+              />
+            </div>
+            <select
+              value={planCat}
+              onChange={(e) => setPlanCat(e.target.value)}
+              className="max-w-[110px] shrink-0 rounded-[4px] border border-line bg-bg/50 px-2 py-1.5 text-[11px] text-ink outline-none transition focus:border-gold"
+            >
+              <option value="">全部分类</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
       {plans.length === 0 ? (
         <p className="mx-5 mt-3 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
           {shopId ? '该店铺还没有商品，点「新建商品」上架第一款吧' : '从上方选择一个店铺'}
         </p>
+      ) : filteredPlans.length === 0 ? (
+        <p className="mx-5 mt-3 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+          没有符合条件的商品，试试调整筛选条件
+        </p>
       ) : (
         <div className="px-5">
-          {plans.map((p) => (
+          {filteredPlans.map((p) => (
             <div
               key={p.plan_id}
               className={`mt-3 rounded-card bg-white p-4 border ${
@@ -1479,25 +1546,30 @@ export default function Merchant() {
         </div>
       </div>
 
-      <div className="mt-7 flex gap-6 px-5">
+      <div className="mt-6 grid grid-cols-6 border-b border-line/60 px-2">
         {[
           { key: 'dashboard', label: '工作台' },
           { key: 'orders', label: '订单管理' },
           { key: 'logistics', label: '物流管理' },
           { key: 'plans', label: '商品管理' },
-          { key: 'reviews', label: `评价管理${reviews.length ? `（${reviews.length}）` : ''}` },
+          { key: 'reviews', label: '评价管理', badge: reviews.length },
           { key: 'shop', label: '店铺设置' },
         ].map((t) => (
           <button
             key={t.key}
             onClick={() => switchTab(t.key)}
-            className={`relative pb-2 text-[13px] transition ${
+            className={`relative flex items-center justify-center gap-1 pb-2.5 pt-1 text-[12px] tracking-[0.02em] transition ${
               tab === t.key
-                ? 'font-medium text-gold after:absolute after:-bottom-px after:left-0 after:h-[2px] after:w-full after:bg-gold'
+                ? 'font-medium text-gold after:absolute after:-bottom-px after:left-1/2 after:h-[2px] after:w-9 after:-translate-x-1/2 after:bg-gold'
                 : 'text-sub'
             }`}
           >
             {t.label}
+            {!!t.badge && (
+              <span className="flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-gold/15 px-1 text-[9px] leading-none text-gold">
+                {t.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -1518,27 +1590,34 @@ export default function Merchant() {
         />
       ) : tab === 'orders' ? (
         <>
-          {/* 关键词 + 日期范围筛选 */}
-          <div className="mt-3 px-5">
-            <input
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              placeholder="搜索订单号 / 收货人 / 手机号 / 商品名"
-              className="maison-field w-full !py-2.5 text-[12px]"
-            />
+          {/* 筛选卡片：关键词 + 日期区间 */}
+          <div className="mx-5 mt-3 rounded-card border border-line bg-white p-3">
+            <div className="relative">
+              <IconSearch
+                width={14}
+                height={14}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sub/60"
+              />
+              <input
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder="搜索订单号 / 收货人 / 商品名"
+                className="w-full rounded-[4px] border border-line bg-bg/50 py-2 pl-9 pr-3 text-[12px] text-ink outline-none transition placeholder:text-sub/50 focus:border-gold"
+              />
+            </div>
             <div className="mt-2 flex items-center gap-2">
               <input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="maison-field flex-1 !py-2 text-[11px]"
+                className="flex-1 rounded-[4px] border border-line bg-bg/50 px-2 py-1.5 text-[11px] text-ink outline-none transition focus:border-gold"
               />
-              <span className="text-[10px] text-sub">至</span>
+              <span className="shrink-0 text-[10px] text-sub/60">至</span>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="maison-field flex-1 !py-2 text-[11px]"
+                className="flex-1 rounded-[4px] border border-line bg-bg/50 px-2 py-1.5 text-[11px] text-ink outline-none transition focus:border-gold"
               />
               {(keyword || dateFrom || dateTo) && (
                 <button
@@ -1547,41 +1626,55 @@ export default function Merchant() {
                     setDateFrom('')
                     setDateTo('')
                   }}
-                  className="press shrink-0 text-[11px] tracking-[1px] text-gold"
+                  className="press shrink-0 rounded-[4px] border border-gold/40 px-2.5 py-1.5 text-[11px] tracking-[1px] text-gold"
                 >
                   清除
                 </button>
               )}
             </div>
           </div>
-          <div className="mt-3 flex flex-wrap gap-1.5 px-5">
-            <Pill
-              label="全部店铺"
-              selected={!filterShop}
-              onClick={() => setFilterShop('')}
-              style={{ width: 'auto', padding: '0 10px' }}
-            />
-            {shops.map((s) => (
-              <Pill
-                key={s.id}
-                label={s.name}
-                selected={filterShop === s.id}
-                onClick={() => setFilterShop(s.id)}
-                style={{ width: 'auto', padding: '0 10px', maxWidth: 132 }}
-              />
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-1.5 px-5">
+          {/* 状态筛选：胶囊均分一行 */}
+          <div className="mt-3 flex gap-1.5 px-5">
             {STATUS_TABS.map((t) => (
-              <Pill
+              <button
                 key={t.key}
-                label={t.label}
-                selected={status === t.key}
                 onClick={() => setStatus(t.key)}
-                style={{ width: 'auto', padding: '0 10px' }}
-              />
+                className={`flex-1 rounded-full border py-1.5 text-center text-[11px] transition ${
+                  status === t.key
+                    ? 'border-gold bg-gold/10 font-medium text-gold'
+                    : 'border-line bg-white text-sub'
+                }`}
+              >
+                {t.label}
+              </button>
             ))}
           </div>
+          {/* 店铺筛选：横向滚动胶囊 */}
+          {shops.length > 0 && (
+            <div className="mt-2 flex gap-1.5 overflow-x-auto px-5 pb-1 [scrollbar-width:none]">
+              <button
+                onClick={() => setFilterShop('')}
+                className={`shrink-0 rounded-pill border px-3 py-1 text-[11px] transition ${
+                  !filterShop ? 'border-gold bg-gold/10 font-medium text-gold' : 'border-line bg-white text-sub'
+                }`}
+              >
+                全部店铺
+              </button>
+              {shops.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setFilterShop(s.id)}
+                  className={`shrink-0 rounded-pill border px-3 py-1 text-[11px] transition ${
+                    filterShop === s.id
+                      ? 'border-gold bg-gold/10 font-medium text-gold'
+                      : 'border-line bg-white text-sub'
+                  }`}
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          )}
           {orders.length === 0 ? (
             <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
               {status ? `暂无「${STATUS_TABS.find((t) => t.key === status)?.label || status}」订单` : '还没有订单'}
