@@ -112,7 +112,7 @@ function OrderCard({ o, expanded, onToggle, plan, planBusy, busyId, onShip, onVi
   const recipient = o.recipient || {}
   const shopNames = o.shop_id ? [o.shop_id] : []
   return (
-    <div className="mt-3 overflow-hidden rounded-card bg-white border border-line">
+    <div className="mt-3 overflow-hidden rounded-card bg-white shadow-card border border-line">
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <div className="min-w-0">
           <p className="truncate text-[11px] text-sub">{o.order_id}</p>
@@ -269,7 +269,7 @@ function LogisticsTab({
         ))}
       </div>
 
-      <div className="mx-5 mt-4 flex items-center justify-between rounded-card bg-white px-4 py-3 border border-line">
+      <div className="mx-5 mt-4 flex items-center justify-between rounded-card bg-white shadow-card px-4 py-3 border border-line">
         <p className="text-[11px] tracking-[0.15em] text-sub">
           进行中订单 <span className="font-serif-cn text-[15px] font-normal text-ink">{activeCount}</span> 笔
         </p>
@@ -277,7 +277,7 @@ function LogisticsTab({
       </div>
 
       {orders.length === 0 ? (
-        <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+        <p className="mx-5 mt-6 rounded-card bg-white shadow-card p-6 text-center text-[12px] text-sub border border-line">
           {status ? `暂无「${STATUS_TABS.find((t) => t.key === status)?.label || status}」订单` : '还没有订单'}
         </p>
       ) : (
@@ -287,7 +287,7 @@ function LogisticsTab({
             const logs = o.logistics || []
             const expanded = logiExpandedId === o.order_id
             return (
-              <div key={o.order_id} className="mt-3 overflow-hidden rounded-card bg-white border border-line">
+              <div key={o.order_id} className="mt-3 overflow-hidden rounded-card bg-white shadow-card border border-line">
                 <div className="flex items-center justify-between border-b border-line px-4 py-3">
                   <div className="min-w-0">
                     <p className="truncate text-[11px] text-sub">{o.order_id}</p>
@@ -419,7 +419,7 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, 
       {/* 今日经营大数字卡 */}
       <div className="mt-4 grid grid-cols-2 gap-2.5">
         {cards.map((c) => (
-          <div key={c.label} className="rounded-card bg-white p-3.5 border border-line">
+          <div key={c.label} className="rounded-card bg-white shadow-card p-3.5 border border-line">
             <p className="text-[10px] tracking-[0.15em] text-sub">{c.label}</p>
             <p className={`mt-1 font-serif-cn text-[22px] font-normal ${c.accent ? 'text-burgundy' : 'text-ink'}`}>
               {c.value}
@@ -433,7 +433,7 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, 
       <div className="mt-5">
         <p className="eyebrow">待办提醒</p>
         {pendingShip.length === 0 && badReviews.length === 0 ? (
-          <p className="mt-2 rounded-card bg-white p-5 text-center text-[12px] text-sub border border-line">
+          <p className="mt-2 rounded-card bg-white shadow-card p-5 text-center text-[12px] text-sub border border-line">
             暂无待办，一切正常 🎉
           </p>
         ) : (
@@ -442,7 +442,7 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, 
               <div
                 key={o.order_id}
                 onClick={() => onGoTab('orders')}
-                className="press flex w-full cursor-pointer items-center justify-between rounded-card bg-white p-3 text-left border border-line"
+                className="press flex w-full cursor-pointer items-center justify-between rounded-card bg-white shadow-card p-3 text-left border border-line"
               >
                 <div className="min-w-0">
                   <p className="truncate text-[12px] text-ink">{o.order_id}</p>
@@ -466,7 +466,7 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, 
               <button
                 key={r.id}
                 onClick={() => onGoTab('reviews')}
-                className="press flex w-full items-center justify-between rounded-card bg-white p-3 text-left border border-line"
+                className="press flex w-full items-center justify-between rounded-card bg-white shadow-card p-3 text-left border border-line"
               >
                 <div className="min-w-0">
                   <p className="text-[12px] text-ink">
@@ -490,7 +490,7 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, 
             <button
               key={q.key}
               onClick={() => onGoTab(q.key)}
-              className="press rounded-card bg-white p-3.5 text-left border border-line"
+              className="press rounded-card bg-white shadow-card p-3.5 text-left border border-line"
             >
               <p className="text-[13px] font-medium text-ink">{q.label}</p>
               <p className="mt-1 text-[10px] text-sub">{q.sub}</p>
@@ -507,7 +507,7 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, 
             {shops.map((s) => (
               <div
                 key={s.id || s.shop_id}
-                className="flex items-center justify-between rounded-card bg-white p-3 border border-line"
+                className="flex items-center justify-between rounded-card bg-white shadow-card p-3 border border-line"
               >
                 <div className="min-w-0">
                   <p className="truncate font-serif-cn text-[15px] font-normal text-ink">{s.name}</p>
@@ -538,7 +538,7 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, 
             {recent.map((o) => {
               const meta = statusMeta(o.status)
               return (
-                <div key={o.order_id} className="rounded-card bg-white p-3 border border-line">
+                <div key={o.order_id} className="rounded-card bg-white shadow-card p-3 border border-line">
                   <div className="flex items-center justify-between">
                     <p className="truncate text-[11px] text-sub">{o.order_id}</p>
                     <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>{meta.label}</span>
@@ -584,7 +584,7 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
     })
   if (shops.length === 0) {
     return (
-      <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+      <p className="mx-5 mt-6 rounded-card bg-white shadow-card p-6 text-center text-[12px] text-sub border border-line">
         尚未绑定任何店铺，请联系管理员在后台绑定后使用
       </p>
     )
@@ -737,11 +737,11 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
         </div>
       )}
       {plans.length === 0 ? (
-        <p className="mx-5 mt-3 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+        <p className="mx-5 mt-3 rounded-card bg-white shadow-card p-6 text-center text-[12px] text-sub border border-line">
           {shopId ? '该店铺还没有商品，点「新建商品」上架第一款吧' : '从上方选择一个店铺'}
         </p>
       ) : filteredPlans.length === 0 ? (
-        <p className="mx-5 mt-3 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+        <p className="mx-5 mt-3 rounded-card bg-white shadow-card p-6 text-center text-[12px] text-sub border border-line">
           没有符合条件的商品，试试调整筛选条件
         </p>
       ) : (
@@ -749,7 +749,7 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
           {filteredPlans.map((p) => (
             <div
               key={p.plan_id}
-              className={`mt-3 rounded-card bg-white p-4 border ${
+              className={`mt-3 rounded-card bg-white shadow-card p-4 border ${
                 batchMode && selected.has(p.plan_id) ? 'border-gold' : 'border-line'
               }`}
             >
@@ -838,7 +838,7 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
 function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImage, onPreviewShop }) {
   if (!shop) {
     return (
-      <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+      <p className="mx-5 mt-6 rounded-card bg-white shadow-card p-6 text-center text-[12px] text-sub border border-line">
         从上方选择一个店铺进行设置
       </p>
     )
@@ -879,7 +879,7 @@ function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImag
   )
 
   return (
-    <div className="mx-5 mt-4 rounded-card bg-white p-4 border border-line">
+    <div className="mx-5 mt-4 rounded-card bg-white shadow-card p-4 border border-line">
       <div className="flex items-center justify-between">
         <p className="eyebrow">{shop.name}</p>
         <button
@@ -1004,7 +1004,7 @@ function CategoriesTab({ categories, draft, onDraft, busy, onAdd, onRename, onRe
     setEditName(c.name)
   }
   return (
-    <div className="mx-5 mt-3 rounded-card bg-white p-4 border border-line">
+    <div className="mx-5 mt-3 rounded-card bg-white shadow-card p-4 border border-line">
       <p className="eyebrow">商品分类</p>
       <div className="mt-3 flex gap-2">
         <input
@@ -1153,9 +1153,9 @@ function ChatsTab({ chats, loading, activeChat, messages, draft, busy, onOpen, o
   return (
     <div className="px-5">
       {loading ? (
-        <p className="mt-6 rounded-card bg-white p-8 text-center text-[12px] text-sub border border-line">加载中…</p>
+        <p className="mt-6 rounded-card bg-white shadow-card p-8 text-center text-[12px] text-sub border border-line">加载中…</p>
       ) : chats.length === 0 ? (
-        <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+        <p className="mt-6 rounded-card bg-white shadow-card p-6 text-center text-[12px] text-sub border border-line">
           暂无会话，顾客在店铺发起咨询后会显示在这里
         </p>
       ) : (
@@ -1163,7 +1163,7 @@ function ChatsTab({ chats, loading, activeChat, messages, draft, busy, onOpen, o
           <button
             key={c.id}
             onClick={() => onOpen(c)}
-            className="press mt-3 flex w-full items-center gap-3 rounded-card bg-white p-3.5 text-left border border-line"
+            className="press mt-3 flex w-full items-center gap-3 rounded-card bg-white shadow-card p-3.5 text-left border border-line"
           >
             <span className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-full bg-gold/10 font-serif-cn text-[15px] font-normal text-gold">
               {(c.nickname || '客')[0]}
@@ -1682,7 +1682,7 @@ export default function Merchant() {
           <p className="mt-3 text-[12px] text-sub">专属花艺，温柔收藏</p>
         </div>
         <div className="px-5 pt-6 text-center">
-          <p className="rounded-card bg-white p-8 text-[13px] text-sub border border-line">
+          <p className="rounded-card bg-white shadow-card p-8 text-[13px] text-sub border border-line">
             无商家权限
             <br />
             <span className="mt-1 block text-[11px] text-sub/70">
@@ -1714,7 +1714,7 @@ export default function Merchant() {
         </p>
       </div>
 
-      <div className="relative mx-5 mt-5 overflow-hidden rounded-card bg-white p-4 border border-line">
+      <div className="relative mx-5 mt-5 overflow-hidden rounded-card bg-white shadow-card p-4 border border-line">
         <FloraSprig
           className="pointer-events-none absolute -right-2 -bottom-3 text-gold/20"
           style={{ width: 64, height: 64 }}
@@ -1785,7 +1785,7 @@ export default function Merchant() {
       </div>
 
       {loading ? (
-        <p className="mx-5 mt-6 rounded-card bg-white p-8 text-center text-[12px] text-sub border border-line">
+        <p className="mx-5 mt-6 rounded-card bg-white shadow-card p-8 text-center text-[12px] text-sub border border-line">
           加载中…
         </p>
       ) : tab === 'dashboard' ? (
@@ -1802,7 +1802,7 @@ export default function Merchant() {
       ) : tab === 'orders' ? (
         <>
           {/* 筛选卡片：关键词 + 日期区间 */}
-          <div className="mx-5 mt-3 rounded-card border border-line bg-white p-3">
+          <div className="mx-5 mt-3 rounded-card border border-line bg-white shadow-card p-3">
             <div className="relative">
               <IconSearch
                 width={14}
@@ -1887,7 +1887,7 @@ export default function Merchant() {
             </div>
           )}
           {orders.length === 0 ? (
-            <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+            <p className="mx-5 mt-6 rounded-card bg-white shadow-card p-6 text-center text-[12px] text-sub border border-line">
               {status ? `暂无「${STATUS_TABS.find((t) => t.key === status)?.label || status}」订单` : '还没有订单'}
             </p>
           ) : (
@@ -1966,13 +1966,13 @@ export default function Merchant() {
         </>
       ) : tab === 'reviews' ? (
         reviews.length === 0 ? (
-          <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+          <p className="mx-5 mt-6 rounded-card bg-white shadow-card p-6 text-center text-[12px] text-sub border border-line">
             暂无评价
           </p>
         ) : (
           <div className="px-5">
             {reviews.map((r) => (
-              <div key={r.id} className="mt-3 rounded-card bg-white p-4 border border-line">
+              <div key={r.id} className="mt-3 rounded-card bg-white shadow-card p-4 border border-line">
                 <div className="flex items-center justify-between">
                   <span className="font-serif-cn text-[14px] font-normal text-ink">{r.nickname || '匿名用户'}</span>
                   <span className="text-[10px] text-sub">{r.created_at}</span>

@@ -13,7 +13,7 @@ export default {
         'pink-2': '#F0EBE3',  // 砂色柔和底
         cream: '#C9A96A',     // 浅金（星标/角标）
         green: '#A0947C',     // 暖灰褐（状态色）
-        line: '#D4CFC6',      // 石色极细描边
+        line: '#C3BBAB',      // 石色描边（加深一档，卡片与背景层次更分明）
         dark: '#1A1A1A',      // 墨黑（主按钮/吸底栏）
         // 新增语义色
         gold: '#B5985A',
@@ -33,8 +33,8 @@ export default {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Microsoft YaHei"', 'sans-serif'],
       },
       boxShadow: {
-        // 无投影（flat）：层次靠留白与描边
-        card: 'none',
+        // 卡片极轻投影（拉开白卡与象牙白底的层次；其余保持无投影）
+        card: '0 1px 5px rgba(26, 26, 26, 0.06)',
         frame: 'none',
         xl: 'none',
       },

@@ -9,7 +9,7 @@
   --c-sub: #6b6b6b;      /* 石板灰辅助文字 */
   --c-pink: #b5985a;     /* 香槟金主色 */
   --c-pink2: #f0ebe3;    /* 砂色柔和底 */
-  --c-line: #d4cfc6;     /* 石色极细描边 */
+  --c-line: #c3bbab;     /* 石色描边（与 tailwind line 同步，卡片层次更分明） */
   --c-dark: #1a1a1a;     /* 墨黑 */
   --c-cream: #c9a96a;    /* 浅金 */
   --c-gold: #b5985a;
