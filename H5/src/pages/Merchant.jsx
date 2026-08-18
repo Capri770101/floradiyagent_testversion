@@ -844,15 +844,17 @@ function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImag
     )
   }
 
-  const uploadBlock = ({ field, label, hint, previewCls, src }) => (
+  const uploadBlock = ({ field, label, hint, previewCls, src, fallback }) => (
     <div>
       <label className="mb-1 block text-[11px] text-sub">{label}</label>
       <div className="flex items-center gap-3">
         {src ? (
           <img src={src} alt={label} className={`${previewCls} shrink-0 rounded-[4px] border border-line object-cover`} />
         ) : (
-          <div className={`${previewCls} flex shrink-0 items-center justify-center rounded-[4px] border border-dashed border-line bg-bg text-[10px] text-sub/60`}>
-            未设置
+          <div
+            className={`${previewCls} flex shrink-0 items-center justify-center rounded-[4px] border border-gold/20 bg-gold/10 text-[10px] text-gold`}
+          >
+            {fallback || '未设置'}
           </div>
         )}
         <div className="flex-1">
@@ -892,16 +894,18 @@ function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImag
         {uploadBlock({
           field: 'cover',
           label: '店铺封面（横幅，建议 750×300）',
-          hint: '展示在店铺页顶部，支持 jpg/png/webp/gif，≤5MB',
+          hint: '未上传时店铺页展示默认封面，支持 jpg/png/webp/gif，≤5MB',
           previewCls: 'h-[56px] w-full max-w-[220px]',
           src: shop.cover || shop.image,
+          fallback: '默认封面',
         })}
         {uploadBlock({
           field: 'logo',
           label: '店铺 Logo（方形）',
-          hint: '头像位展示，支持 jpg/png/webp/gif，≤5MB',
+          hint: '未上传时店铺页不显示头像，支持 jpg/png/webp/gif，≤5MB',
           previewCls: 'h-[64px] w-[64px]',
           src: shop.logo,
+          fallback: '默认 Logo',
         })}
         <div>
           <label className="mb-1 block text-[11px] text-sub">店铺名称</label>
@@ -1754,20 +1758,17 @@ export default function Merchant() {
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-7 border-b border-line/60 px-2">
+      {/* 内部导航：只保留底部导航没有的页签（经营/订单/商品/会话 已由底部导航承载） */}
+      <div className="mt-6 grid grid-cols-3 border-b border-line/60 px-2">
         {[
-          { key: 'dashboard', label: '工作台' },
-          { key: 'orders', label: '订单管理' },
           { key: 'logistics', label: '物流管理' },
-          { key: 'plans', label: '商品管理' },
           { key: 'reviews', label: '评价管理', badge: reviews.length },
-          { key: 'chats', label: '会话' },
           { key: 'shop', label: '店铺设置' },
         ].map((t) => (
           <button
             key={t.key}
             onClick={() => switchTab(t.key)}
-            className={`relative flex items-center justify-center gap-1 pb-2.5 pt-1 text-[12px] tracking-[0.02em] transition ${
+            className={`relative flex items-center justify-center gap-1 pb-2.5 pt-1 text-[13px] tracking-[0.02em] transition ${
               tab === t.key
                 ? 'font-medium text-gold after:absolute after:-bottom-px after:left-1/2 after:h-[2px] after:w-9 after:-translate-x-1/2 after:bg-gold'
                 : 'text-sub'
