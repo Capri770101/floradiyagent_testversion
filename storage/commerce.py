@@ -687,20 +687,23 @@ def create_review(
 
 
 def list_reviews(plan_id: str = "", limit: int = 50) -> list[dict[str, Any]]:
-    """列出某方案的评价（新→旧，含用户昵称）；plan_id 为空返回全部。"""
+    """列出某方案的可见评价（新→旧，含用户昵称）；plan_id 为空返回全部。
+
+    只返回 status='visible'（管理后台隐藏/删除的评价不向 C 端展示）。
+    """
     conn = get_conn()
     if plan_id:
         rows = conn.execute(
             """SELECT r.*, u.nickname FROM reviews r
                LEFT JOIN users u ON u.id = r.user_id
-               WHERE r.plan_id=? ORDER BY r.created_at DESC LIMIT ?""",
+               WHERE r.plan_id=? AND r.status='visible' ORDER BY r.created_at DESC LIMIT ?""",
             (plan_id, limit),
         ).fetchall()
     else:
         rows = conn.execute(
             """SELECT r.*, u.nickname FROM reviews r
                LEFT JOIN users u ON u.id = r.user_id
-               ORDER BY r.created_at DESC LIMIT ?""",
+               WHERE r.status='visible' ORDER BY r.created_at DESC LIMIT ?""",
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]

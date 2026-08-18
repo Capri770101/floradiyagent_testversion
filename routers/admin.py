@@ -358,3 +358,58 @@ async def admin_list_merchants(request: Request) -> dict[str, Any]:
     return {"merchants": await asyncio.to_thread(admin_store.list_merchants)}
 
 
+# --------------------------------------------------------------------------- #
+# M6 评价审核
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/admin/reviews")
+async def admin_list_reviews(
+    request: Request,
+    status: str = "",
+    keyword: str = "",
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    """全平台评价列表（含已隐藏，可按状态/关键词筛选）。"""
+    await _require_admin(request)
+    reviews, total = await asyncio.to_thread(admin_store.list_reviews, status, keyword, limit, offset)
+    return {"reviews": reviews, "total": total, "limit": limit, "offset": offset}
+
+
+@router.post("/admin/reviews/{review_id}/hide")
+async def admin_hide_review(review_id: str, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    if not await asyncio.to_thread(admin_store.set_review_status, review_id, "hidden"):
+        raise HTTPException(status_code=404, detail="评价不存在")
+    return {"ok": True, "review_id": review_id, "status": "hidden"}
+
+
+@router.post("/admin/reviews/{review_id}/show")
+async def admin_show_review(review_id: str, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    if not await asyncio.to_thread(admin_store.set_review_status, review_id, "visible"):
+        raise HTTPException(status_code=404, detail="评价不存在")
+    return {"ok": True, "review_id": review_id, "status": "visible"}
+
+
+@router.delete("/admin/reviews/{review_id}")
+async def admin_delete_review(review_id: str, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    if not await asyncio.to_thread(admin_store.delete_review, review_id):
+        raise HTTPException(status_code=404, detail="评价不存在")
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# M8 数据看板
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/admin/dashboard")
+async def admin_dashboard(request: Request, days: int = Query(7, ge=1, le=90)) -> dict[str, Any]:
+    """平台数据看板（GMV/订单/用户/热销/趋势）。"""
+    await _require_admin(request)
+    return await asyncio.to_thread(admin_store.dashboard_stats, days)
+
+

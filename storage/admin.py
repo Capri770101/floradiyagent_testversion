@@ -455,3 +455,103 @@ def list_merchants(limit: int = 100) -> list[dict[str, Any]]:
         (limit,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# --------------------------------------------------------------------------- #
+# M6 评价审核
+# --------------------------------------------------------------------------- #
+
+
+def list_reviews(
+    status: str = "",
+    keyword: str = "",
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """管理后台评价列表（含 hidden，可按状态/关键词筛选）。"""
+    conn = get_conn()
+    where, args = " WHERE 1=1", []
+    if status:
+        where += " AND r.status=?"
+        args.append(status)
+    kw = (keyword or "").strip()
+    if kw:
+        like = f"%{kw}%"
+        where += " AND (r.content LIKE ? OR u.nickname LIKE ? OR r.plan_id LIKE ?)"
+        args += [like, like, like]
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM reviews r LEFT JOIN users u ON u.id = r.user_id{where}", args
+    ).fetchone()[0]
+    rows = conn.execute(
+        f"""SELECT r.*, u.nickname, u.phone, p.name AS plan_name
+            FROM reviews r
+            LEFT JOIN users u ON u.id = r.user_id
+            LEFT JOIN plans p ON p.id = r.plan_id
+            {where} ORDER BY r.created_at DESC LIMIT ? OFFSET ?""",
+        args + [limit, offset],
+    ).fetchall()
+    return [dict(r) for r in rows], int(total)
+
+
+def set_review_status(review_id: str, status: str) -> bool:
+    """隐藏/显示评价（visible|hidden）。"""
+    if status not in ("visible", "hidden"):
+        raise ValueError(f"非法状态: {status}")
+    with transaction() as c:
+        cur = c.execute("UPDATE reviews SET status=? WHERE id=?", (status, review_id))
+    return cur.rowcount > 0
+
+
+def delete_review(review_id: str) -> bool:
+    """删除评价。"""
+    with transaction() as c:
+        cur = c.execute("DELETE FROM reviews WHERE id=?", (review_id,))
+    return cur.rowcount > 0
+
+
+# --------------------------------------------------------------------------- #
+# M8 数据看板
+# --------------------------------------------------------------------------- #
+
+
+def dashboard_stats(days: int = 7) -> dict[str, Any]:
+    """平台数据看板聚合：GMV/订单/用户/新用户/热销方案/热门店铺/订单趋势。"""
+    conn = get_conn()
+    gmv = conn.execute("SELECT COALESCE(SUM(total_price),0) FROM orders").fetchone()[0]
+    order_count = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+    user_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    new_today = conn.execute(
+        "SELECT COUNT(*) FROM users WHERE date(created_at)=date('now')"
+    ).fetchone()[0]
+    top_plans = [
+        dict(r)
+        for r in conn.execute(
+            """SELECT p.id AS plan_id, p.name, p.sold FROM plans p
+               ORDER BY p.sold DESC LIMIT 5"""
+        ).fetchall()
+    ]
+    top_shops = [
+        dict(r)
+        for r in conn.execute(
+            """SELECT s.id AS shop_id, s.name, s.sales FROM shops s
+               ORDER BY s.sales DESC LIMIT 5"""
+        ).fetchall()
+    ]
+    trend = [
+        dict(r)
+        for r in conn.execute(
+            """SELECT date(created_at) AS date, COUNT(*) AS count, COALESCE(SUM(total_price),0) AS amount
+               FROM orders WHERE date(created_at) >= date('now', ?)
+               GROUP BY date(created_at) ORDER BY date(created_at) ASC""",
+            (f"-{days} days",),
+        ).fetchall()
+    ]
+    return {
+        "gmv": float(gmv),
+        "order_count": int(order_count),
+        "user_count": int(user_count),
+        "new_users_today": int(new_today),
+        "top_plans": top_plans,
+        "top_shops": top_shops,
+        "order_trend": trend,
+    }

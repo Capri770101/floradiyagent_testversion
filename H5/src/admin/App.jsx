@@ -2,21 +2,25 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { api, clearToken, fetchProfile, getToken } from './api'
 import { Login } from './pages/Login'
+import { Dashboard } from './pages/Dashboard'
 import { Users } from './pages/Users'
 import { Orders } from './pages/Orders'
 import { Aftersales } from './pages/Aftersales'
 import { MerchantApply } from './pages/MerchantApply'
+import { Reviews } from './pages/Reviews'
 
 const MENU = [
+  { key: 'dashboard', label: '数据看板', sub: 'GMV / 订单 / 热销' },
   { key: 'users', label: '用户管理', sub: '禁用 / 提权' },
   { key: 'orders', label: '订单管理', sub: '全局视角 / 状态干预' },
   { key: 'aftersales', label: '售后管理', sub: '退款 / 退货 / 换货' },
   { key: 'apply', label: '商家入驻', sub: '审核申请 / 已入驻' },
+  { key: 'reviews', label: '评价审核', sub: '隐藏 / 显示 / 删除' },
 ]
 
 export function AdminApp() {
   const [user, setUser] = useState(null) // null=未登录/校验中
-  const [page, setPage] = useState('users')
+  const [page, setPage] = useState('dashboard')
   const [checking, setChecking] = useState(true)
 
   const verify = useCallback(async () => {
@@ -71,7 +75,7 @@ export function AdminApp() {
     setUser(null)
   }
 
-  const Page = { users: Users, orders: Orders, aftersales: Aftersales, apply: MerchantApply }[page]
+  const Page = { dashboard: Dashboard, users: Users, orders: Orders, aftersales: Aftersales, apply: MerchantApply, reviews: Reviews }[page]
 
   return (
     <div className="flex min-h-screen bg-bg text-ink">

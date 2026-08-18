@@ -274,7 +274,7 @@ CREATE TABLE IF NOT EXISTS payments (
     paid_at       TEXT
 );
 
--- 评价（商家可回复：reply/reply_at）
+-- 评价（商家可回复：reply/reply_at；管理后台可隐藏：status）
 CREATE TABLE IF NOT EXISTS reviews (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL,
@@ -284,7 +284,8 @@ CREATE TABLE IF NOT EXISTS reviews (
     content    TEXT,
     created_at TEXT NOT NULL,
     reply      TEXT,
-    reply_at   TEXT
+    reply_at   TEXT,
+    status     TEXT NOT NULL DEFAULT 'visible'  -- visible | hidden（管理后台审核）
 );
 
 -- 售后单（M4：用户发起退款/退货/换货，管理员审核并触发 sandbox 退款）
@@ -508,6 +509,8 @@ _ALTERS = [
     ("reviews", "reply_at", "ALTER TABLE reviews ADD COLUMN reply_at TEXT"),
     # users: 管理后台禁用（active|banned）
     ("users", "status", "ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"),
+    # reviews: 管理后台隐藏（visible|hidden）
+    ("reviews", "status", "ALTER TABLE reviews ADD COLUMN status TEXT NOT NULL DEFAULT 'visible'"),
 ]
 
 

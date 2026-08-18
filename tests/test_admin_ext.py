@@ -235,3 +235,63 @@ def test_merchant_apply_reject(client):
     assert r.status_code == 200
     assert r.json()["application"]["status"] == "rejected"
     assert r.json()["application"]["review_note"] == "执照不清晰"
+
+
+# ---------- M6 评价审核 ----------
+
+
+def _create_review(client, token, username):
+    """下单→支付→发货→签收→评价，返回 review_id。"""
+    token, _ = _register(client, username)
+    oid = _create_and_pay(client, token)
+    r = client.post(f"/orders/{oid}/action", json={"action": "ship"}, headers=_h(token))
+    assert r.status_code == 200, r.text
+    r = client.post(f"/orders/{oid}/action", json={"action": "complete"}, headers=_h(token))
+    assert r.status_code == 200, r.text
+    r = client.post(
+        "/reviews",
+        json={"order_id": oid, "rating": 4, "content": "测试评价内容"},
+        headers=_h(token),
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["review"]["id"]
+
+
+def test_review_hide_show_delete(client):
+    admin_t = _admin_token(client)
+    rev_id = _create_review(client, None, "adm_i")
+    # admin 列表可见
+    r = client.get("/admin/reviews", params={"keyword": "测试评价"}, headers=_h(admin_t))
+    assert r.status_code == 200
+    assert any(x["id"] == rev_id for x in r.json()["reviews"])
+    # 隐藏 → C 端不再展示
+    r = client.post(f"/admin/reviews/{rev_id}/hide", headers=_h(admin_t))
+    assert r.status_code == 200
+    r = client.get("/reviews")
+    assert r.status_code == 200
+    assert not any(x["id"] == rev_id for x in r.json()["reviews"])
+    # 显示 → 恢复
+    r = client.post(f"/admin/reviews/{rev_id}/show", headers=_h(admin_t))
+    assert r.status_code == 200
+    r = client.get("/reviews")
+    assert any(x["id"] == rev_id for x in r.json()["reviews"])
+    # 删除
+    r = client.delete(f"/admin/reviews/{rev_id}", headers=_h(admin_t))
+    assert r.status_code == 200
+    r = client.get("/admin/reviews", headers=_h(admin_t))
+    assert not any(x["id"] == rev_id for x in r.json()["reviews"])
+
+
+# ---------- M8 数据看板 ----------
+
+
+def test_admin_dashboard(client):
+    admin_t = _admin_token(client)
+    r = client.get("/admin/dashboard", headers=_h(admin_t))
+    assert r.status_code == 200
+    d = r.json()
+    for k in ("gmv", "order_count", "user_count", "new_users_today", "top_plans", "top_shops", "order_trend"):
+        assert k in d, k
+    assert isinstance(d["top_plans"], list) and isinstance(d["order_trend"], list)
+    # 未登录 401
+    assert client.get("/admin/dashboard").status_code == 401
