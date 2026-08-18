@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '../components/Button'
 import { Pill } from '../components/Pill'
 import { toast } from '../utils/toast'
@@ -1190,6 +1190,7 @@ function ChatsTab({ chats, loading, activeChat, messages, draft, busy, onOpen, o
 // 商家工作台：经营看板 + 订单管理 + 商品管理 + 评价管理 + 店铺设置
 export default function Merchant() {
   const nav = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [profile, setProfile] = useState(null)
   const [forbidden, setForbidden] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -1201,7 +1202,7 @@ export default function Merchant() {
   const [keyword, setKeyword] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [tab, setTab] = useState('dashboard')
+  const [tab, setTab] = useState(() => searchParams.get('tab') || 'dashboard')
   const [busyId, setBusyId] = useState('')
   const [expandedId, setExpandedId] = useState('')
   const [logiExpandedId, setLogiExpandedId] = useState('')
@@ -1477,6 +1478,7 @@ export default function Merchant() {
   // 切换 Tab：进入工作台首页时重置筛选，保证看到全量经营数据
   const switchTab = (t) => {
     setTab(t)
+    setSearchParams(t === 'dashboard' ? {} : { tab: t }, { replace: true })
     if (t === 'dashboard') {
       setStatus('')
       setFilterShop('')
@@ -1486,10 +1488,17 @@ export default function Merchant() {
     }
   }
 
+  // 底部商家导航 / 外部链接通过 ?tab= 切换工作台页签；URL 变化时同步内部 tab
+  useEffect(() => {
+    const t = searchParams.get('tab') || 'dashboard'
+    setTab(t)
+  }, [searchParams])
+
   // 商家内部预览：店铺装修 Tab（替代跳 C 端 /shop/:id）
   const viewShop = (id) => {
     setShopId(id || '')
     setTab('shop')
+    setSearchParams({ tab: 'shop' }, { replace: true })
   }
 
   // 商家内部预览：物流 Tab 并展开该单（替代跳 C 端 /logistics/:id）
@@ -1497,6 +1506,7 @@ export default function Merchant() {
     setStatus('')
     setLogiExpandedId(oid)
     setTab('logistics')
+    setSearchParams({ tab: 'logistics' }, { replace: true })
   }
 
   // 评价回复：写 reviews.reply / reply_at 后刷新列表
