@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Button } from '../components/Button'
 import { Pill } from '../components/Pill'
 import { toast } from '../utils/toast'
+import { statusMeta } from '../utils/status'
 import {
   merchantStats,
   merchantOrders,
@@ -22,6 +23,10 @@ import {
   merchantCreateCategory,
   merchantRenameCategory,
   merchantDeleteCategory,
+  merchantReplyReview,
+  merchantChats,
+  merchantChatMessages,
+  merchantSendChatMessage,
 } from '../api/shop'
 import { getProfile } from '../api/auth'
 import { FloraCorner, FloraSprig } from '../components/FloralDecor'
@@ -36,15 +41,6 @@ const STATUS_TABS = [
   { key: 'done', label: '已完成' },
   { key: 'canceled', label: '已取消' },
 ]
-
-const STATUS_META = {
-  created: { label: '待付款', cls: 'bg-pink/10 text-pink' },
-  pending_payment: { label: '待付款', cls: 'bg-pink/10 text-pink' },
-  paid: { label: '待发货', cls: 'bg-pink/10 text-pink' },
-  shipped: { label: '配送中', cls: 'bg-pink/10 text-pink' },
-  done: { label: '已完成', cls: 'bg-pink/10 text-pink' },
-  canceled: { label: '已取消', cls: 'bg-line/40 text-sub' },
-}
 
 const fmtMoney = (v) => `¥${Number(v || 0).toFixed(2)}`
 
@@ -110,9 +106,8 @@ function DiyPlanCard({ plan }) {
 }
 
 // 订单卡：明细 + 收件信息 + 状态操作（查看 DIY 方案 / 代发货 / 物流时间线）
-function OrderCard({ o, expanded, onToggle, plan, planBusy, busyId, onShip }) {
-  const nav = useNavigate()
-  const meta = STATUS_META[o.status] || { label: o.status, cls: 'bg-line/40 text-sub' }
+function OrderCard({ o, expanded, onToggle, plan, planBusy, busyId, onShip, onViewLogistics }) {
+  const meta = statusMeta(o.status)
   const items = o.items || []
   const recipient = o.recipient || {}
   const shopNames = o.shop_id ? [o.shop_id] : []
@@ -184,7 +179,7 @@ function OrderCard({ o, expanded, onToggle, plan, planBusy, busyId, onShip }) {
       <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-3">
         <p className="mr-auto font-serif-cn text-[15px] font-normal text-ink">共 {fmtMoney(o.total_price)}</p>
         <button
-          onClick={() => nav(`/logistics/${o.order_id}`)}
+          onClick={() => onViewLogistics(o.order_id)}
           className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
         >
           查看物流
@@ -241,7 +236,6 @@ function LogisticsTab({
   onDraft,
   logiBusy,
   onAddNode,
-  onGoDetail,
 }) {
   const activeCount = orders.filter((o) => o.status === 'paid' || o.status === 'shipped').length
   return (
@@ -289,7 +283,7 @@ function LogisticsTab({
       ) : (
         <div className="px-5">
           {orders.map((o) => {
-            const meta = STATUS_META[o.status] || { label: o.status, cls: 'bg-line/40 text-sub' }
+            const meta = statusMeta(o.status)
             const logs = o.logistics || []
             const expanded = logiExpandedId === o.order_id
             return (
@@ -342,13 +336,6 @@ function LogisticsTab({
                     className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
                   >
                     {expanded ? '收起' : '物流时间线'}
-                    <IconArrow width={10} height={10} />
-                  </button>
-                  <button
-                    onClick={() => onGoDetail(o.order_id)}
-                    className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
-                  >
-                    详情
                     <IconArrow width={10} height={10} />
                   </button>
                 </div>
@@ -408,8 +395,7 @@ function LogisticsTab({
 }
 
 // 工作台首页：今日经营 + 待办提醒 + 店铺状态 + 快捷入口 + 最近订单
-function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId }) {
-  const nav = useNavigate()
+function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, onViewShop }) {
   if (!stats) return null
   const pendingShip = (orders || []).filter((o) => o.status === 'paid')
   const badReviews = (reviews || []).filter((r) => r.rating <= 3)
@@ -533,10 +519,10 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId }
                   </p>
                 </div>
                 <button
-                  onClick={() => nav(`/shop/${s.id || s.shop_id}`)}
+                  onClick={() => onViewShop(s.id || s.shop_id)}
                   className="press shrink-0 text-[11px] tracking-[1px] text-gold"
                 >
-                  查看门店 →
+                  店铺设置 →
                 </button>
               </div>
             ))}
@@ -550,7 +536,7 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId }
           <p className="eyebrow">最近订单</p>
           <div className="mt-2 space-y-2">
             {recent.map((o) => {
-              const meta = STATUS_META[o.status] || { label: o.status, cls: 'bg-line/40 text-sub' }
+              const meta = statusMeta(o.status)
               return (
                 <div key={o.order_id} className="rounded-card bg-white p-3 border border-line">
                   <div className="flex items-center justify-between">
@@ -572,8 +558,7 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId }
 }
 
 // 商品管理：店铺选择 + 在售/下架列表 + 新建/编辑/上下架/删除 + 批量上下架
-function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm, onEdit, onToggle, onRemove, onBatchToggle, categories }) {
-  const nav = useNavigate()
+function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm, onEdit, onToggle, onRemove, onBatchToggle, categories, onPreviewShop }) {
   const catName = (id) => (categories.find((c) => c.id === id) || {}).name || ''
   const [batchMode, setBatchMode] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
@@ -643,10 +628,10 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
           )}
           {shopId && (
             <button
-              onClick={() => nav(`/shop/${shopId}`)}
+              onClick={() => onPreviewShop()}
               className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
             >
-              预览店铺
+              店铺装修
               <IconArrow width={10} height={10} />
             </button>
           )}
@@ -850,8 +835,7 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
 }
 
 // 店铺设置：店名 / 简介 / 价格区间 / 营业状态 / 店铺图片
-function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImage }) {
-  const nav = useNavigate()
+function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImage, onPreviewShop }) {
   if (!shop) {
     return (
       <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
@@ -897,10 +881,10 @@ function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImag
       <div className="flex items-center justify-between">
         <p className="eyebrow">{shop.name}</p>
         <button
-          onClick={() => nav(`/shop/${shop.id || shop.shop_id}`)}
+          onClick={() => onPreviewShop()}
           className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
         >
-          预览店铺
+          店铺预览
           <IconArrow width={10} height={10} />
         </button>
       </div>
@@ -1099,6 +1083,110 @@ function CategoriesTab({ categories, draft, onDraft, busy, onAdd, onRename, onRe
   )
 }
 
+// 商家-顾客会话：会话列表 + 消息气泡 + 发送（契约 4.1）
+function ChatsTab({ chats, loading, activeChat, messages, draft, busy, onOpen, onBack, onDraft, onSend }) {
+  if (activeChat) {
+    return (
+      <div className="flex min-h-[60vh] flex-col">
+        {/* 会话头部 */}
+        <div className="flex items-center gap-2 border-b border-line bg-white px-4 py-3">
+          <button onClick={onBack} className="press text-[12px] tracking-[1px] text-gold">
+            ← 返回
+          </button>
+          <div className="min-w-0">
+            <p className="truncate font-serif-cn text-[15px] font-normal text-ink">
+              {activeChat.nickname || '顾客'}
+            </p>
+            <p className="text-[10px] text-sub/70">{activeChat.shop_name || activeChat.shop_id}</p>
+          </div>
+        </div>
+        {/* 消息列表 */}
+        <div className="flex-1 space-y-2.5 overflow-y-auto px-4 py-4">
+          {messages.length === 0 ? (
+            <p className="py-10 text-center text-[11px] text-sub">还没有消息，打个招呼吧</p>
+          ) : (
+            messages.map((m) => (
+              <div key={m.id} className={`flex ${m.sender === 'merchant' ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[78%] rounded-[10px] px-3 py-2 text-[12px] leading-relaxed ${
+                    m.sender === 'merchant'
+                      ? 'rounded-tr-[2px] bg-gold text-[#FAF8F5]'
+                      : 'rounded-tl-[2px] border border-line bg-white text-ink'
+                  }`}
+                >
+                  <p>{m.content}</p>
+                  <p className={`mt-0.5 text-[9px] ${m.sender === 'merchant' ? 'text-[#FAF8F5]/70' : 'text-sub/70'}`}>
+                    {m.created_at}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        {/* 输入区 */}
+        <div className="flex items-center gap-2 border-t border-line bg-white px-4 py-3">
+          <input
+            value={draft}
+            onChange={(e) => onDraft(e.target.value)}
+            placeholder="回复顾客…"
+            maxLength={1000}
+            className="maison-field flex-1 !h-[40px] !text-[12px]"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                onSend()
+              }
+            }}
+          />
+          <Button className="!h-[40px] !text-[12px] !tracking-[1px]" disabled={busy || !draft.trim()} onClick={onSend}>
+            {busy ? '发送中…' : '发送'}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="px-5">
+      {loading ? (
+        <p className="mt-6 rounded-card bg-white p-8 text-center text-[12px] text-sub border border-line">加载中…</p>
+      ) : chats.length === 0 ? (
+        <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+          暂无会话，顾客在店铺发起咨询后会显示在这里
+        </p>
+      ) : (
+        chats.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => onOpen(c)}
+            className="press mt-3 flex w-full items-center gap-3 rounded-card bg-white p-3.5 text-left border border-line"
+          >
+            <span className="flex h-[40px] w-[40px] shrink-0 items-center justify-center rounded-full bg-gold/10 font-serif-cn text-[15px] font-normal text-gold">
+              {(c.nickname || '客')[0]}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-[13px] text-ink">{c.nickname || '顾客'}</p>
+                {c.unread_merchant > 0 && (
+                  <span className="shrink-0 rounded-full bg-pink px-1.5 py-0.5 text-[9px] leading-none text-white">
+                    {c.unread_merchant}
+                  </span>
+                )}
+              </div>
+              <p className="mt-0.5 flex items-center gap-1.5 text-[10px] text-sub">
+                <span className="truncate">{c.last_msg || '（暂无消息）'}</span>
+                <span className="shrink-0 text-sub/60">{c.last_at}</span>
+              </p>
+              <p className="mt-0.5 text-[10px] text-sub/70">{c.shop_name || c.shop_id}</p>
+            </div>
+            <IconArrow width={12} height={12} className="shrink-0 text-sub/60" />
+          </button>
+        ))
+      )}
+    </div>
+  )
+}
+
 // 商家工作台：经营看板 + 订单管理 + 商品管理 + 评价管理 + 店铺设置
 export default function Merchant() {
   const nav = useNavigate()
@@ -1133,14 +1221,31 @@ export default function Merchant() {
   const [categories, setCategories] = useState([])
   const [catBusy, setCatBusy] = useState(false)
   const [catDraft, setCatDraft] = useState('')
+  const [replyDraft, setReplyDraft] = useState({})
+  const [replyOpen, setReplyOpen] = useState('')
+  const [replyBusy, setReplyBusy] = useState('')
+  const [chats, setChats] = useState([])
+  const [chatLoading, setChatLoading] = useState(false)
+  const [activeChat, setActiveChat] = useState(null)
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatDraft, setChatDraft] = useState('')
+  const [chatBusy, setChatBusy] = useState(false)
 
+  // 店铺选择变化时同步加载该店商品 / 店铺资料
   useEffect(() => {
-    getProfile().then(setProfile).catch(() => {})
-  }, [])
+    if (!shopId || tab !== 'plans') return
+    merchantPlans(shopId)
+      .then(setShopPlans)
+      .catch(() => setShopPlans([]))
+  }, [shopId, tab])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (p = null) => {
     setLoading(true)
     try {
+      if (p && !['merchant', 'admin'].includes(p.role)) {
+        setForbidden(true)
+        return
+      }
       const [st, os, rs] = await Promise.all([
         merchantStats(),
         merchantOrders(filterShop, status, keyword, dateFrom, dateTo),
@@ -1165,17 +1270,29 @@ export default function Merchant() {
     }
   }, [status, filterShop, keyword, dateFrom, dateTo])
 
+  // 权限预检：先取账号角色，非商家/管理员直接进拒绝页，不发任何商家接口请求
+  // （避免普通用户打开 /merchant 时刷出一串 403 控制台噪音）。
   useEffect(() => {
-    load()
+    getProfile()
+      .then((p) => {
+        setProfile(p)
+        if (!p?.role) {
+          toast('请先登录商家账号', 'error')
+          nav('/profile')
+          return
+        }
+        if (!['merchant', 'admin'].includes(p.role)) {
+          setForbidden(true)
+          setLoading(false)
+          return
+        }
+        load()
+      })
+      .catch(() => {
+        setForbidden(true)
+        setLoading(false)
+      })
   }, [load])
-
-  // 店铺选择变化时同步加载该店商品 / 店铺资料
-  useEffect(() => {
-    if (!shopId || tab !== 'plans') return
-    merchantPlans(shopId)
-      .then(setShopPlans)
-      .catch(() => setShopPlans([]))
-  }, [shopId, tab])
 
   useEffect(() => {
     if (!shopId || tab !== 'shop') return
@@ -1369,6 +1486,87 @@ export default function Merchant() {
     }
   }
 
+  // 商家内部预览：店铺装修 Tab（替代跳 C 端 /shop/:id）
+  const viewShop = (id) => {
+    setShopId(id || '')
+    setTab('shop')
+  }
+
+  // 商家内部预览：物流 Tab 并展开该单（替代跳 C 端 /logistics/:id）
+  const viewLogistics = (oid) => {
+    setStatus('')
+    setLogiExpandedId(oid)
+    setTab('logistics')
+  }
+
+  // 评价回复：写 reviews.reply / reply_at 后刷新列表
+  const submitReviewReply = async (r) => {
+    const text = (replyDraft[r.id] || '').trim()
+    if (!text) {
+      toast('请输入回复内容', 'error')
+      return
+    }
+    if (replyBusy) return
+    setReplyBusy(r.id)
+    try {
+      await merchantReplyReview(r.id, text)
+      toast('回复已发布')
+      setReplyOpen('')
+      setReplyDraft((d) => ({ ...d, [r.id]: '' }))
+      load()
+    } catch (e) {
+      toast(e.message || '回复失败', 'error')
+    } finally {
+      setReplyBusy('')
+    }
+  }
+
+  // 商家-顾客会话：列表加载 / 打开会话 / 发送
+  const refreshChats = useCallback(async () => {
+    setChatLoading(true)
+    try {
+      setChats(await merchantChats())
+    } catch (e) {
+      toast(e.message || '会话加载失败', 'error')
+    } finally {
+      setChatLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (tab !== 'chats') return
+    refreshChats()
+  }, [tab, refreshChats])
+
+  const openChat = async (chat) => {
+    setActiveChat(chat)
+    setChatMessages([])
+    setChatDraft('')
+    try {
+      const data = await merchantChatMessages(chat.id)
+      setChatMessages(data.messages || [])
+    } catch (e) {
+      toast(e.message || '消息加载失败', 'error')
+    }
+  }
+
+  const sendChat = async () => {
+    const text = chatDraft.trim()
+    if (!text || !activeChat) return
+    if (chatBusy) return
+    setChatBusy(true)
+    try {
+      await merchantSendChatMessage(activeChat.id, text)
+      setChatDraft('')
+      const data = await merchantChatMessages(activeChat.id)
+      setChatMessages(data.messages || [])
+    } catch (e) {
+      toast(e.message || '发送失败', 'error')
+    } finally {
+      setChatBusy(false)
+    }
+  }
+
   // 分类管理：列表加载 + 新增 / 改名 / 删除（店铺装修）
   const refreshCategories = useCallback(async () => {
     try {
@@ -1546,13 +1744,14 @@ export default function Merchant() {
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-6 border-b border-line/60 px-2">
+      <div className="mt-6 grid grid-cols-7 border-b border-line/60 px-2">
         {[
           { key: 'dashboard', label: '工作台' },
           { key: 'orders', label: '订单管理' },
           { key: 'logistics', label: '物流管理' },
           { key: 'plans', label: '商品管理' },
           { key: 'reviews', label: '评价管理', badge: reviews.length },
+          { key: 'chats', label: '会话' },
           { key: 'shop', label: '店铺设置' },
         ].map((t) => (
           <button
@@ -1587,6 +1786,7 @@ export default function Merchant() {
           onGoTab={switchTab}
           onShip={ship}
           busyId={busyId}
+          onViewShop={viewShop}
         />
       ) : tab === 'orders' ? (
         <>
@@ -1691,6 +1891,7 @@ export default function Merchant() {
                   planBusy={planBusy}
                   busyId={busyId}
                   onShip={ship}
+                  onViewLogistics={viewLogistics}
                 />
               ))}
             </div>
@@ -1715,7 +1916,6 @@ export default function Merchant() {
           onDraft={(id, v) => setLogiDraft((d) => ({ ...d, [id]: v }))}
           logiBusy={logiBusy}
           onAddNode={addLogisticsNode}
-          onGoDetail={(id) => nav(`/logistics/${id}`)}
         />
       ) : tab === 'plans' ? (
         <ShopPlansTab
@@ -1730,6 +1930,7 @@ export default function Merchant() {
           onRemove={removeShopPlan}
           onBatchToggle={batchTogglePlans}
           categories={categories}
+          onPreviewShop={() => viewShop(shopId)}
         />
       ) : tab === 'shop' ? (
         <>
@@ -1740,6 +1941,7 @@ export default function Merchant() {
             onChange={setShopForm}
             imgBusy={imgBusy}
             onUploadImage={(field, f) => uploadImage(f, field)}
+            onPreviewShop={() => viewShop(shopForm?.id || shopForm?.shop_id || '')}
           />
           <CategoriesTab
             categories={categories}
@@ -1751,39 +1953,100 @@ export default function Merchant() {
             onRemove={removeCategory}
           />
         </>
-      ) : reviews.length === 0 ? (
-        <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
-          暂无评价
-        </p>
-      ) : (
-        <div className="px-5">
-          {reviews.map((r) => (
-            <div key={r.id} className="mt-3 rounded-card bg-white p-4 border border-line">
-              <div className="flex items-center justify-between">
-                <span className="font-serif-cn text-[14px] font-normal text-ink">{r.nickname || '匿名用户'}</span>
-                <span className="text-[10px] text-sub">{r.created_at}</span>
+      ) : tab === 'reviews' ? (
+        reviews.length === 0 ? (
+          <p className="mx-5 mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+            暂无评价
+          </p>
+        ) : (
+          <div className="px-5">
+            {reviews.map((r) => (
+              <div key={r.id} className="mt-3 rounded-card bg-white p-4 border border-line">
+                <div className="flex items-center justify-between">
+                  <span className="font-serif-cn text-[14px] font-normal text-ink">{r.nickname || '匿名用户'}</span>
+                  <span className="text-[10px] text-sub">{r.created_at}</span>
+                </div>
+                <div className="mt-1 flex items-center gap-1">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <IconStar
+                      key={s}
+                      width={13}
+                      height={13}
+                      filled={s <= r.rating}
+                      className={s <= r.rating ? 'text-pink' : 'text-line'}
+                    />
+                  ))}
+                  {r.plan_id && <span className="ml-2 text-[10px] text-sub/70">{r.plan_id}</span>}
+                </div>
+                {r.content && (
+                  <p className="mt-2 rounded-[2px] bg-bg px-3 py-2 text-[12px] leading-relaxed text-ink">
+                    {r.content}
+                  </p>
+                )}
+                {/* 商家回复（已回复展示 / 未回复可输入） */}
+                {r.reply ? (
+                  <div className="mt-2 rounded-[2px] bg-gold/10 px-3 py-2">
+                    <p className="text-[10px] tracking-[0.1em] text-gold">商家回复{r.reply_at ? ` · ${r.reply_at}` : ''}</p>
+                    <p className="mt-0.5 text-[12px] leading-relaxed text-dark">{r.reply}</p>
+                  </div>
+                ) : replyOpen === r.id ? (
+                  <div className="mt-2">
+                    <textarea
+                      value={replyDraft[r.id] || ''}
+                      onChange={(e) => setReplyDraft((d) => ({ ...d, [r.id]: e.target.value }))}
+                      placeholder="回复顾客评价…（选填，最多 500 字）"
+                      maxLength={500}
+                      rows={2}
+                      className="maison-field w-full resize-none"
+                    />
+                    <div className="mt-1.5 flex justify-end gap-2">
+                      <button
+                        onClick={() => {
+                          setReplyOpen('')
+                          setReplyDraft((d) => ({ ...d, [r.id]: '' }))
+                        }}
+                        className="press px-3 text-[11px] tracking-[1px] text-sub"
+                      >
+                        取消
+                      </button>
+                      <Button
+                        className="!h-[32px] !px-4 !text-[11px] !tracking-[1px]"
+                        disabled={replyBusy === r.id}
+                        onClick={() => submitReviewReply(r)}
+                      >
+                        {replyBusy === r.id ? '发布中…' : '发布回复'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setReplyOpen(r.id)}
+                    className="press mt-2 text-[11px] tracking-[1px] text-gold"
+                  >
+                    回复
+                  </button>
+                )}
               </div>
-              <div className="mt-1 flex items-center gap-1">
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <IconStar
-                    key={s}
-                    width={13}
-                    height={13}
-                    filled={s <= r.rating}
-                    className={s <= r.rating ? 'text-pink' : 'text-line'}
-                  />
-                ))}
-                {r.plan_id && <span className="ml-2 text-[10px] text-sub/70">{r.plan_id}</span>}
-              </div>
-              {r.content && (
-                <p className="mt-2 rounded-[2px] bg-bg px-3 py-2 text-[12px] leading-relaxed text-ink">
-                  {r.content}
-                </p>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )
+      ) : tab === 'chats' ? (
+        <ChatsTab
+          chats={chats}
+          loading={chatLoading}
+          activeChat={activeChat}
+          messages={chatMessages}
+          draft={chatDraft}
+          busy={chatBusy}
+          onOpen={openChat}
+          onBack={() => {
+            setActiveChat(null)
+            refreshChats()
+          }}
+          onDraft={setChatDraft}
+          onSend={sendChat}
+        />
+      ) : null}
 
       {/* 新建 / 编辑商品弹层 */}
       {formOpen && (

@@ -501,7 +501,10 @@ def merchant_stats(
     ).fetchone()
     ph = ",".join("?" * (len(args) // 2)) if args else ""
     rev_where, rev_args = "", []
-    if args:
+    if shop_ids == []:
+        # 无绑定商家：评价同样为空（与订单口径一致，避免泄漏全部评价）
+        rev_where = " AND 1=0"
+    elif args:
         rev_where = (
             f" AND (o.shop_id IN ({ph}) OR o.order_id IN (SELECT order_id FROM order_items WHERE shop IN ({ph})))"
         )
@@ -612,6 +615,21 @@ def merchant_reviews(
         args,
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def merchant_review_get(
+    review_id: str, shop_ids: list[str] | None = None
+) -> dict[str, Any] | None:
+    """按 ID 取单条评价（带商家范围校验；越界/不存在返回 None）。"""
+    conn = get_conn()
+    where, args = _shop_scope_sql(conn, shop_ids, alias="o.")
+    row = conn.execute(
+        f"""SELECT r.* FROM reviews r
+            JOIN orders o ON o.order_id = r.order_id
+            WHERE r.id=? AND 1=1{where}""",
+        [review_id, *args],
+    ).fetchone()
+    return dict(row) if row else None
 
 
 # --------------------------------------------------------------------------- #
