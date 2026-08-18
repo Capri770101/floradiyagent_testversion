@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import SmartImage from '../components/SmartImage'
 import { planImage } from '../assets/imageMap'
-import { listOrders } from '../api/shop'
+import { listOrders, orderAftersale } from '../api/shop'
 import { toast } from '../utils/toast'
 
 // 状态筛选 tab（键与后端 order.status 对齐）
@@ -16,14 +16,7 @@ const STATUS_TABS = [
   { key: 'canceled', label: '已取消' },
 ]
 
-const STATUS_META = {
-  created: { label: '待付款', cls: 'bg-pink/10 text-pink' },
-  pending_payment: { label: '待付款', cls: 'bg-pink/10 text-pink' },
-  paid: { label: '待发货', cls: 'bg-amber-50 text-amber-600' },
-  shipped: { label: '配送中', cls: 'bg-blue-50 text-blue-600' },
-  done: { label: '已完成', cls: 'bg-green-50 text-green-600' },
-  canceled: { label: '已取消', cls: 'bg-line/40 text-sub' },
-}
+import { statusMeta } from '../utils/status'
 
 const fmtMoney = (v) => `¥${Number(v || 0).toFixed(2)}`
 
@@ -33,6 +26,10 @@ export default function Orders() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('all')
+  const [asTarget, setAsTarget] = useState(null) // 申请售后的订单
+  const [asType, setAsType] = useState('refund')
+  const [asReason, setAsReason] = useState('')
+  const [asBusy, setAsBusy] = useState(false)
 
   useEffect(() => {
     listOrders()
@@ -45,6 +42,30 @@ export default function Orders() {
     () => (tab === 'all' ? orders : orders.filter((o) => o.status === tab)),
     [orders, tab],
   )
+
+  // 售后：已支付且未取消的订单可发起
+  const canAftersale = (o) => o.paid && o.status !== 'canceled'
+
+  const submitAftersale = async (e) => {
+    e.preventDefault()
+    if (asBusy || !asTarget) return
+    if (!asReason.trim()) {
+      toast('请填写售后原因', 'error')
+      return
+    }
+    setAsBusy(true)
+    try {
+      await orderAftersale(asTarget.order_id, { type: asType, reason: asReason.trim() })
+      toast('售后申请已提交，等待平台审核')
+      setAsTarget(null)
+      setAsReason('')
+      setAsType('refund')
+    } catch (err) {
+      toast(err.message || '提交失败', 'error')
+    } finally {
+      setAsBusy(false)
+    }
+  }
 
   return (
     <div className="flex h-full flex-col bg-bg">
@@ -88,18 +109,16 @@ export default function Orders() {
         ) : (
           <div className="space-y-3">
             {filtered.map((o) => {
-              const meta = STATUS_META[o.status] || { label: o.status, cls: 'bg-line/40 text-sub' }
+              const meta = statusMeta(o.status)
               const items = o.items || []
               const total = o.total_price != null
                 ? o.total_price
                 : items.reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0)
               const count = items.reduce((s, it) => s + (it.qty || 1), 0)
               return (
-                <button
+                <div
                   key={o.order_id}
-                  type="button"
-                  onClick={() => nav(`/logistics/${o.order_id}`)}
-                  className="press block w-full overflow-hidden rounded-card bg-white border border-line text-left"
+                  className="block w-full overflow-hidden rounded-card bg-white border border-line text-left"
                 >
                   <div className="flex items-center justify-between border-b border-line px-4 py-3">
                     <span className="text-[11px] text-sub">{o.order_id}</span>
@@ -128,16 +147,100 @@ export default function Orders() {
                   )}
                   <div className="flex items-center justify-between border-t border-line px-4 py-3">
                     <span className="text-[11px] text-sub">共 {count} 件</span>
-                    <span className="font-serif-cn text-[15px] font-normal text-ink">
-                      合计 {fmtMoney(total)}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      {canAftersale(o) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setAsTarget(o)
+                            setAsReason('')
+                            setAsType('refund')
+                          }}
+                          className="press rounded-[2px] border border-gold/40 px-2.5 py-1 text-[11px] tracking-[1px] text-gold"
+                        >
+                          申请售后
+                        </button>
+                      )}
+                      <span className="font-serif-cn text-[15px] font-normal text-ink">
+                        合计 {fmtMoney(total)}
+                      </span>
+                    </div>
                   </div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => nav(`/logistics/${o.order_id}`)}
+                    className="press block w-full border-t border-line bg-bg/50 py-2 text-center text-[11px] tracking-[1px] text-sub"
+                  >
+                    查看物流跟踪
+                  </button>
+                </div>
               )
             })}
           </div>
         )}
       </div>
+
+      {/* 申请售后弹层 */}
+      {asTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+          onClick={() => setAsTarget(null)}
+        >
+          <form
+            onSubmit={submitAftersale}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-h5 rounded-t-[20px] bg-white px-5 pb-8 pt-5"
+          >
+            <div className="mx-auto mb-4 h-[2px] w-9 bg-gold" />
+            <h3 className="font-serif-cn text-[19px] font-normal text-ink">申请售后</h3>
+            <p className="mt-1 text-[11px] text-sub">
+              订单 {asTarget.order_id} · 合计 {fmtMoney(asTarget.total_price)}
+            </p>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="mb-1 block text-[11px] text-sub">售后类型</label>
+                <div className="flex gap-2">
+                  {[
+                    { v: 'refund', l: '退款' },
+                    { v: 'return', l: '退货' },
+                    { v: 'exchange', l: '换货' },
+                  ].map((t) => (
+                    <button
+                      key={t.v}
+                      type="button"
+                      onClick={() => setAsType(t.v)}
+                      className={`press flex-1 rounded-[2px] border py-2.5 text-[12px] tracking-[1px] ${
+                        asType === t.v ? 'border-gold bg-gold/10 text-gold' : 'border-line bg-white text-sub'
+                      }`}
+                    >
+                      {t.l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-sub">原因 *</label>
+                <textarea
+                  value={asReason}
+                  onChange={(e) => setAsReason(e.target.value)}
+                  maxLength={200}
+                  rows={3}
+                  placeholder="请描述售后原因"
+                  className="maison-field w-full resize-none"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={asBusy}
+                className="press w-full rounded-[2px] bg-dark py-3 text-[12px] font-medium tracking-[1px] text-[#FAF8F5] disabled:opacity-40"
+              >
+                {asBusy ? '提交中…' : '提交申请'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   )
 }

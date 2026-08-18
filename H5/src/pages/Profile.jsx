@@ -7,6 +7,7 @@ import { FloraCorner, FloraSprig } from '../components/FloralDecor'
 import SectionTitle from '../components/SectionTitle'
 import { planImage } from '../assets/imageMap'
 import { toast } from '../utils/toast'
+import { statusMeta } from '../utils/status'
 import { getLocation, setLocation } from '../utils/location'
 import LocationPicker from '../components/LocationPicker'
 import { listOrders, orderAction, listCoupons, getPoints, listFavorites, postReview } from '../api/shop'
@@ -48,15 +49,6 @@ const PhoneIcon = (p) => (
 )
 
 // 08 我的
-const STATUS_META = {
-  created: { label: '待付款', color: 'text-pink' },
-  pending_payment: { label: '待付款', color: 'text-pink' },
-  paid: { label: '待发货', color: 'text-amber-600' },
-  shipped: { label: '配送中', color: 'text-blue-600' },
-  done: { label: '已完成', color: 'text-green-600' },
-  canceled: { label: '已取消', color: 'text-sub' },
-}
-
 // 本地静态展示数据（不再依赖 data/mock，避免 review 点名的「Profile 全 mock」）
 const STATS = [
   { label: '收藏', value: 0 },
@@ -67,6 +59,7 @@ const STATS = [
 const FUNCTIONS = [
   { label: '我的收藏', path: '/favorites' },
   { label: '我的地址', path: '/addresses' },
+  { label: '我的售后', path: '/my-aftersales' },
   { label: '领券中心', path: '/coupons' },
   { label: '客服中心', path: '/service' },
   { label: '关于跳舞兰', path: '/about' },
@@ -565,7 +558,7 @@ export default function Profile() {
           ) : (
             <div className="mt-3 space-y-3">
               {orders.map((o) => {
-                const meta = STATUS_META[o.status] || { label: o.status, color: 'text-sub' }
+                const meta = statusMeta(o.status)
                 const items = o.items || []
                 return (
                   <div key={o.order_id} className="overflow-hidden rounded-card bg-white border border-line">
@@ -575,7 +568,7 @@ export default function Profile() {
                       className="flex w-full items-center justify-between border-b border-line px-4 py-3 text-left"
                     >
                       <span className="text-[11px] text-sub">{o.order_id}</span>
-                      <span className={`text-[12px] font-medium ${meta.color}`}>{meta.label}</span>
+                      <span className={`text-[12px] font-medium ${meta.cls}`}>{meta.label}</span>
                     </button>
                     {items.slice(0, 2).map((it) => (
                       <div key={it.plan_id} className="flex items-center gap-3 px-4 py-2.5">
@@ -681,7 +674,14 @@ export default function Profile() {
       <div className="mt-9 px-5">
         <SectionTitle title="常用功能" />
         <div className="mt-3 overflow-hidden rounded-[4px] bg-white border border-line">
-          {[...ROLE_FUNCTIONS.filter((rf) => (Array.isArray(rf.role) ? rf.role.includes(user?.role) : rf.role === user?.role)), ...FUNCTIONS].map((f, i, all) => (
+          {[
+            ...ROLE_FUNCTIONS.filter((rf) => (Array.isArray(rf.role) ? rf.role.includes(user?.role) : rf.role === user?.role)),
+            // 非商家用户：商家入驻入口（M5）
+            ...(user && user.role !== 'merchant' && user.role !== 'admin'
+              ? [{ label: '商家入驻', path: '/merchant-apply' }]
+              : []),
+            ...FUNCTIONS,
+          ].map((f, i, all) => (
             <div
               key={f.label}
               role="button"

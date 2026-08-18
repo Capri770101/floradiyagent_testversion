@@ -32,7 +32,10 @@ from routers.common import (  # noqa: F401  # 共享单例/辅助（按需使用
     repo,
     resolve_uid,
 )
+from storage import admin as admin_store
+from storage import chats as chat_store
 from storage import commerce, diy
+from storage.db import get_conn
 
 router = APIRouter(tags=["merchant"])
 logger = logging.getLogger("api")
@@ -314,5 +317,131 @@ async def merchant_update_shop_endpoint(
     if not s:
         raise HTTPException(status_code=404, detail="店铺不存在")
     return {"shop": s}
+
+
+class ChatSendRequest(BaseModel):
+    """商家发送会话消息请求体。"""
+
+    content: str = Field(..., min_length=1, max_length=1000, description="消息内容")
+
+
+class ChatWithUserRequest(BaseModel):
+    """商家发起与某顾客的会话请求体。"""
+
+    user_id: str = Field(..., min_length=1, max_length=64, description="顾客用户 ID")
+    shop_id: str = Field(..., min_length=1, max_length=64, description="店铺 ID")
+
+
+class ReviewReplyRequest(BaseModel):
+    """评价回复请求体。"""
+
+    reply: str = Field(..., min_length=1, max_length=500, description="回复内容")
+
+
+@router.get("/merchant/chats")
+async def merchant_chats_endpoint(request: Request) -> dict[str, Any]:
+    """商家会话列表（按绑定店铺隔离，附顾客昵称/头像/店铺名与未读数）。"""
+    _, scope = await _merchant_scope(request)
+    return {"chats": await asyncio.to_thread(chat_store.list_merchant_chats, scope)}
+
+
+@router.get("/merchant/chats/{chat_id}/messages")
+async def merchant_chat_messages_endpoint(chat_id: str, request: Request) -> dict[str, Any]:
+    """商家读取会话消息（读取即清零商家侧未读），校验会话店铺在商家范围内。"""
+    _, scope = await _merchant_scope(request)
+    chat = await asyncio.to_thread(chat_store.get_chat, chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    if scope is not None and chat["shop_id"] not in scope:
+        raise HTTPException(status_code=403, detail="无权访问该会话")
+    messages = await asyncio.to_thread(
+        chat_store.list_messages, chat_id, chat_store.SENDER_MERCHANT
+    )
+    return {"chat": chat, "messages": messages}
+
+
+@router.post("/merchant/chats/{chat_id}/messages")
+async def merchant_send_message_endpoint(
+    chat_id: str, req: ChatSendRequest, request: Request
+) -> dict[str, Any]:
+    """商家发送消息（顾客未读 +1）。"""
+    _, scope = await _merchant_scope(request)
+    chat = await asyncio.to_thread(chat_store.get_chat, chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    if scope is not None and chat["shop_id"] not in scope:
+        raise HTTPException(status_code=403, detail="无权访问该会话")
+    message = await asyncio.to_thread(
+        chat_store.send_message, chat_id, chat_store.SENDER_MERCHANT, req.content.strip()
+    )
+    return {"message": message}
+
+
+@router.post("/merchant/chats/with-user")
+async def merchant_chat_with_user_endpoint(
+    req: ChatWithUserRequest, request: Request
+) -> dict[str, Any]:
+    """商家发起与某顾客的会话（不存在则创建），返回会话 + 最近消息。"""
+    _, scope = await _merchant_scope(request)
+    if scope is not None and req.shop_id not in scope:
+        raise HTTPException(status_code=403, detail="无权操作该店铺")
+    chat = await asyncio.to_thread(
+        chat_store.get_or_create_chat, req.shop_id, req.user_id
+    )
+    messages = await asyncio.to_thread(
+        chat_store.list_messages, chat["id"], chat_store.SENDER_MERCHANT
+    )
+    return {"chat": chat, "messages": messages}
+
+
+@router.post("/merchant/reviews/{review_id}/reply")
+async def merchant_review_reply_endpoint(
+    review_id: str, req: ReviewReplyRequest, request: Request
+) -> dict[str, Any]:
+    """商家回复评价（写 reply/reply_at；评价须属于商家范围内店铺的订单）。"""
+    _, scope = await _merchant_scope(request)
+    review = await asyncio.to_thread(commerce.merchant_review_get, review_id, scope)
+    if not review:
+        raise HTTPException(status_code=404, detail="评价不存在或不属于你的店铺")
+    updated = await asyncio.to_thread(chat_store.reply_review, review_id, req.reply)
+    return {"review": updated}
+
+
+class MerchantApplyRequest(BaseModel):
+    """商家入驻申请请求体（M5，登录即可提交，角色不限 user）。"""
+
+    shop_name: str = Field(..., min_length=1, max_length=40)
+    contact_name: str = Field("", max_length=30)
+    contact_phone: str = Field("", max_length=20)
+    license_no: str = Field("", max_length=40)
+    license_img: str = Field("", max_length=200)
+    address: str = Field("", max_length=120)
+    intro: str = Field("", max_length=200)
+
+
+@router.post("/merchant/apply")
+async def merchant_apply_endpoint(req: MerchantApplyRequest, request: Request) -> dict[str, Any]:
+    """提交商家入驻申请（管理员在后台审核，通过后提权并建店）。"""
+    uid = await resolve_uid(request, None)
+    try:
+        app = await asyncio.to_thread(
+            admin_store.create_application,
+            uid, req.shop_name, req.contact_name, req.contact_phone,
+            req.license_no, req.license_img, req.address, req.intro,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"application": app}
+
+
+@router.get("/me/merchant-application")
+async def my_merchant_application_endpoint(request: Request) -> dict[str, Any]:
+    """我的入驻申请（倒序，前端展示审核进度）。"""
+    uid = await resolve_uid(request, None)
+    rows = get_conn().execute(
+        "SELECT * FROM merchant_applications WHERE applicant_user_id=? ORDER BY created_at DESC",
+        (uid,),
+    ).fetchall()
+    return {"applications": [dict(r) for r in rows]}
 
 

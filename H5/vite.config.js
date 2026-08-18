@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -7,6 +8,19 @@ const BACKEND = process.env.VITE_PROXY_TARGET || 'http://localhost:8080'
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    environment: 'jsdom',
+    globals: true,
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: 'index.html',
+        // 独立管理后台入口（与移动端 H5 同仓但独立产物/路由，admin 逻辑不进移动端 bundle）
+        admin: 'admin.html',
+      },
+    },
+  },
   server: {
     host: true,
     port: 5173,

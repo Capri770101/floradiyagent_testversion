@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS users (
     avatar      TEXT,
     phone       TEXT,
     role        TEXT NOT NULL DEFAULT 'user',  -- user | merchant | admin（权限模型）
+    status      TEXT NOT NULL DEFAULT 'active', -- active | banned（管理后台禁用）
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS plans (
     category_id      TEXT,                       -- -> categories.id
     rating           REAL NOT NULL DEFAULT 4.8,  -- 评分（种子/商家后台维护，上线前可清空重灌）
     sold             INTEGER NOT NULL DEFAULT 0, -- 已售（种子演示值，正式上线由订单统计）
+    ai_reason        TEXT,                       -- 推荐理由（种子/商家后台维护，详情页 aiReason 来源）
     created_at       TEXT NOT NULL
 );
 
@@ -118,6 +120,7 @@ CREATE TABLE IF NOT EXISTS shops (
     min_delivery REAL NOT NULL DEFAULT 30,       -- 起送价（元）
     delivery_fee REAL NOT NULL DEFAULT 5,        -- 配送费（元）
     hours        TEXT NOT NULL DEFAULT '09:00 - 21:00',  -- 营业时间
+    delivery_time TEXT NOT NULL DEFAULT '30分钟',  -- 配送时长（详情页展示，商家后台维护）
     address      TEXT,                           -- 门店地址
     notice       TEXT,                           -- 公告
     created_at   TEXT NOT NULL
@@ -271,7 +274,7 @@ CREATE TABLE IF NOT EXISTS payments (
     paid_at       TEXT
 );
 
--- 评价
+-- 评价（商家可回复：reply/reply_at）
 CREATE TABLE IF NOT EXISTS reviews (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL,
@@ -279,7 +282,46 @@ CREATE TABLE IF NOT EXISTS reviews (
     order_id   TEXT,
     rating     INTEGER NOT NULL DEFAULT 5,
     content    TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    reply      TEXT,
+    reply_at   TEXT
+);
+
+-- 售后单（M4：用户发起退款/退货/换货，管理员审核并触发 sandbox 退款）
+CREATE TABLE IF NOT EXISTS aftersales (
+    id            TEXT PRIMARY KEY,
+    order_id      TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    shop_id       TEXT,
+    type          TEXT NOT NULL DEFAULT 'refund',   -- refund|return|exchange
+    reason        TEXT,
+    description   TEXT,
+    evidence_imgs TEXT,                             -- JSON 数组（图片路径）
+    status        TEXT NOT NULL DEFAULT 'pending',  -- pending|approved|rejected|refunded|closed
+    refund_amount REAL,
+    review_note   TEXT,                             -- 审核备注（拒绝原因等）
+    handled_by    TEXT,
+    handled_at    TEXT,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+-- 商家入驻申请（M5：用户提交执照等，管理员审核通过后提权并创建店铺）
+CREATE TABLE IF NOT EXISTS merchant_applications (
+    id                TEXT PRIMARY KEY,
+    applicant_user_id TEXT NOT NULL,                -- 申请人 users.id
+    shop_name         TEXT NOT NULL,
+    contact_name      TEXT,
+    contact_phone     TEXT,
+    license_no        TEXT,
+    license_img       TEXT,                         -- 执照图片路径
+    address           TEXT,
+    intro             TEXT,
+    status            TEXT NOT NULL DEFAULT 'pending', -- pending|approved|rejected
+    review_note       TEXT,
+    reviewed_by       TEXT,
+    reviewed_at       TEXT,
+    created_at        TEXT NOT NULL
 );
 
 -- 生图任务
@@ -361,6 +403,28 @@ CREATE TABLE IF NOT EXISTS point_records (
     order_id   TEXT,
     created_at TEXT NOT NULL
 );
+
+-- 商家-顾客会话（按店铺+顾客唯一；未读数分侧维护）
+CREATE TABLE IF NOT EXISTS shop_chats (
+    id             TEXT PRIMARY KEY,
+    shop_id        TEXT NOT NULL,                -- -> shops.id
+    user_id        TEXT NOT NULL,                -- -> users.id（顾客）
+    last_msg       TEXT,                         -- 最后一条消息摘要（会话列表展示）
+    last_at        TEXT,                         -- 最后消息时间
+    unread_user    INTEGER NOT NULL DEFAULT 0,   -- 顾客侧未读数（商家回复后 +1）
+    unread_merchant INTEGER NOT NULL DEFAULT 0,  -- 商家侧未读数（顾客发言后 +1）
+    created_at     TEXT NOT NULL,
+    UNIQUE (shop_id, user_id)
+);
+
+-- 会话消息（sender: user=顾客 | merchant=商家）
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id         TEXT PRIMARY KEY,
+    chat_id    TEXT NOT NULL,                    -- -> shop_chats.id
+    sender     TEXT NOT NULL,                    -- user|merchant
+    content    TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 #: 索引（交付级查询性能）
@@ -381,6 +445,9 @@ CREATE INDEX IF NOT EXISTS idx_merchant_shops_shop  ON merchant_shops(shop_id);
 CREATE INDEX IF NOT EXISTS idx_plans_category       ON plans(category_id);
 CREATE INDEX IF NOT EXISTS idx_shop_styles_style    ON shop_styles(style_id);
 CREATE INDEX IF NOT EXISTS idx_shop_scenes_scene    ON shop_scenes(scene_id);
+CREATE INDEX IF NOT EXISTS idx_chats_shop           ON shop_chats(shop_id, last_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chats_user           ON shop_chats(user_id, last_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_chat   ON chat_messages(chat_id, id ASC);
 """
 
 #: 旧库增量迁移：给已存在的表补缺失列（仅开发期存量数据需要）
@@ -423,16 +490,24 @@ _ALTERS = [
     # plans: 评分/已售（种子演示值，上线前可清空；正式由订单统计）
     ("plans", "rating", "ALTER TABLE plans ADD COLUMN rating REAL NOT NULL DEFAULT 4.8"),
     ("plans", "sold", "ALTER TABLE plans ADD COLUMN sold INTEGER NOT NULL DEFAULT 0"),
+    # plans: 推荐理由（详情页 aiReason 展示，种子/商家后台维护）
+    ("plans", "ai_reason", "ALTER TABLE plans ADD COLUMN ai_reason TEXT"),
     # shops: 经营信息（月售/起送/配送费/营业时间/地址/公告）
     ("shops", "sales", "ALTER TABLE shops ADD COLUMN sales INTEGER NOT NULL DEFAULT 0"),
     ("shops", "min_delivery", "ALTER TABLE shops ADD COLUMN min_delivery REAL NOT NULL DEFAULT 30"),
     ("shops", "delivery_fee", "ALTER TABLE shops ADD COLUMN delivery_fee REAL NOT NULL DEFAULT 5"),
     ("shops", "hours", "ALTER TABLE shops ADD COLUMN hours TEXT NOT NULL DEFAULT '09:00 - 21:00'"),
+    ("shops", "delivery_time", "ALTER TABLE shops ADD COLUMN delivery_time TEXT NOT NULL DEFAULT '30分钟'"),
     ("shops", "address", "ALTER TABLE shops ADD COLUMN address TEXT"),
     ("shops", "notice", "ALTER TABLE shops ADD COLUMN notice TEXT"),
     # shops: 店铺装修（封面横幅 / Logo，商家端上传，/uploads/...）
     ("shops", "cover", "ALTER TABLE shops ADD COLUMN cover TEXT"),
     ("shops", "logo", "ALTER TABLE shops ADD COLUMN logo TEXT"),
+    # reviews: 商家回复评价（商家中心新增能力）
+    ("reviews", "reply", "ALTER TABLE reviews ADD COLUMN reply TEXT"),
+    ("reviews", "reply_at", "ALTER TABLE reviews ADD COLUMN reply_at TEXT"),
+    # users: 管理后台禁用（active|banned）
+    ("users", "status", "ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"),
 ]
 
 

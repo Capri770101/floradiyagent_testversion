@@ -236,10 +236,12 @@ def login_user(username: str, password: str) -> str | None:
 
     conn = get_conn()
     row = conn.execute(
-        "SELECT id, password_hash FROM users WHERE username = ?", (username.strip(),)
+        "SELECT id, password_hash, status FROM users WHERE username = ?", (username.strip(),)
     ).fetchone()
     if not row or not row["password_hash"]:
         return None
+    if row["status"] == "banned":
+        return None  # 被禁用账号拒绝登录（管理后台 M2）
     if not _verify_password(password, row["password_hash"]):
         return None
     return create_token(row["id"])

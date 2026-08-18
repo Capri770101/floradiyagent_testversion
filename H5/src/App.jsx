@@ -23,6 +23,8 @@ import CouponCenter from './pages/CouponCenter'
 import Merchant from './pages/Merchant'
 import Logistics from './pages/Logistics'
 import Orders from './pages/Orders'
+import MerchantApply from './pages/MerchantApply'
+import MyAftersales from './pages/MyAftersales'
 
 // 404 兜底页：路由未命中时给出明确反馈与返回入口（review 点名缺失）
 function NotFound() {
@@ -164,6 +166,22 @@ export default function App() {
           element={
             <RequireAuth>
               <Admin />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/merchant-apply"
+          element={
+            <RequireAuth>
+              <MerchantApply />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/my-aftersales"
+          element={
+            <RequireAuth>
+              <MyAftersales />
             </RequireAuth>
           }
         />

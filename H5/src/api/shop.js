@@ -2,7 +2,7 @@
 // 契约见 api.py 的 /plans /shops /cart /orders /pay 端点。
 // 所有请求自动携带 Bearer 令牌（来自 auth.js），后端据此解析用户身份并隔离数据。
 
-import { authHeaders } from './auth'
+import { authHeaders, handleAuthFailure } from './auth'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -19,6 +19,7 @@ async function api(path, options = {}) {
   try {
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: ctrl.signal })
     if (!res.ok) {
+      handleAuthFailure(res)
       const text = await res.text().catch(() => '')
       throw new Error(`后端 ${res.status}: ${text.slice(0, 200)}`)
     }
@@ -222,12 +223,6 @@ export async function claimCouponOffer(offerId) {
 
 // ---------------- 商家端 ----------------
 
-// 商家可管理的店铺列表（按绑定隔离；admin 返回全部）
-export async function merchantShops() {
-  const data = await api('/merchant/shops')
-  return data.shops
-}
-
 export async function merchantStats(shopId = '') {
   const q = shopId ? `?shop_id=${encodeURIComponent(shopId)}` : ''
   const data = await api(`/merchant/stats${q}`)
@@ -361,6 +356,83 @@ export async function merchantRenameCategory(catId, name) {
 
 export async function merchantDeleteCategory(catId) {
   await api(`/merchant/categories/${encodeURIComponent(catId)}`, { method: 'DELETE' })
+}
+
+// ---------------- 商家-顾客会话（商家中心新增） ----------------
+
+export async function merchantChats() {
+  const data = await api('/merchant/chats')
+  return data.chats
+}
+
+export async function merchantChatMessages(chatId) {
+  const data = await api(`/merchant/chats/${encodeURIComponent(chatId)}/messages`)
+  return data
+}
+
+export async function merchantSendChatMessage(chatId, content) {
+  const data = await api(`/merchant/chats/${encodeURIComponent(chatId)}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
+  return data.message
+}
+
+export async function merchantReplyReview(reviewId, reply) {
+  const data = await api(`/merchant/reviews/${encodeURIComponent(reviewId)}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({ reply }),
+  })
+  return data.review
+}
+
+// 顾客侧：与店铺的会话（取或建）
+export async function userChatWithShop(shopId) {
+  const data = await api(`/chats/shop/${encodeURIComponent(shopId)}`)
+  return data
+}
+
+// ---------------- 售后（M4，用户侧） ----------------
+
+export async function orderAftersale(orderId, payload) {
+  const data = await api(`/orders/${encodeURIComponent(orderId)}/aftersale`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return data.aftersale
+}
+
+export async function myAftersales() {
+  const data = await api('/me/aftersales')
+  return data.aftersales
+}
+
+// ---------------- 商家入驻（M5，用户侧） ----------------
+
+export async function merchantApply(payload) {
+  const data = await api('/merchant/apply', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return data.application
+}
+
+export async function myMerchantApplication() {
+  const data = await api('/me/merchant-application')
+  return data.applications
+}
+
+export async function userChatMessages(chatId) {
+  const data = await api(`/chats/${encodeURIComponent(chatId)}/messages`)
+  return data
+}
+
+export async function userSendChatMessage(chatId, content) {
+  const data = await api(`/chats/${encodeURIComponent(chatId)}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
+  return data.message
 }
 
 // ---------------- 管理后台（方案 / 店铺 CRUD） ----------------

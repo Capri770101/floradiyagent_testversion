@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, Field
 
 from config import settings
 from routers.common import (  # noqa: F401  # 共享单例/辅助（按需使用）
@@ -31,6 +32,7 @@ from routers.common import (  # noqa: F401  # 共享单例/辅助（按需使用
     repo,
     resolve_uid,
 )
+from storage import admin as admin_store
 from storage import commerce
 from storage import payment as payment_module
 
@@ -273,10 +275,13 @@ async def del_favorite(plan_id: str, request: Request) -> dict[str, Any]:
 
 @router.get("/favorites/{plan_id}/status")
 async def favorite_status(plan_id: str, request: Request, user_id: str | None = None) -> dict[str, Any]:
-    """查询某方案是否已收藏（商品详情页心形按钮状态）。"""
+    """查询某方案是否已收藏（商品详情页心形按钮状态）。
+
+    未登录视为未收藏（返回 favorited=false），避免详情页未登录时刷 401 噪音。
+    """
     uid = await resolve_uid(request, user_id)
     if not uid:
-        raise HTTPException(status_code=401, detail="缺少用户身份")
+        return {"plan_id": plan_id, "favorited": False}
     return {"plan_id": plan_id, "favorited": await asyncio.to_thread(commerce.is_favorite, uid, plan_id)}
 
 
@@ -331,6 +336,52 @@ async def order_action_endpoint(
     if not o:
         raise HTTPException(status_code=404, detail="订单不存在")
     return {"order": o}
+
+
+class AftersaleCreateRequest(BaseModel):
+    """用户发起售后请求体。"""
+
+    type: str = Field("refund", description="refund|return|exchange")
+    reason: str = Field("", max_length=200)
+    description: str = Field("", max_length=1000)
+    evidence_imgs: list[str] = Field(default_factory=list)
+
+
+@router.post("/orders/{order_id}/aftersale")
+async def create_aftersale_endpoint(
+    order_id: str, req: AftersaleCreateRequest, request: Request
+) -> dict[str, Any]:
+    """用户对自己已支付订单发起售后（退款/退货/换货）。"""
+    uid = await resolve_uid(request, None)
+    await _assert_order_owner(order_id, uid)
+    try:
+        a = await asyncio.to_thread(
+            admin_store.create_aftersale,
+            order_id, uid, req.type, req.reason, req.description, req.evidence_imgs,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"aftersale": a}
+
+
+@router.get("/orders/{order_id}/aftersales")
+async def order_aftersales_endpoint(order_id: str, request: Request) -> dict[str, Any]:
+    """该订单的售后单列表（本人可见）。"""
+    uid = await resolve_uid(request, None)
+    await _assert_order_owner(order_id, uid)
+    from storage.db import get_conn
+
+    rows = get_conn().execute(
+        "SELECT * FROM aftersales WHERE order_id=? ORDER BY created_at DESC", (order_id,)
+    ).fetchall()
+    return {"aftersales": [dict(r) for r in rows]}
+
+
+@router.get("/me/aftersales")
+async def my_aftersales_endpoint(request: Request) -> dict[str, Any]:
+    """我的售后单列表。"""
+    uid = await resolve_uid(request, None)
+    return {"aftersales": await asyncio.to_thread(admin_store.list_user_aftersales, uid)}
 
 
 
