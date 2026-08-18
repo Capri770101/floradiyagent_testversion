@@ -394,7 +394,11 @@ def get_application(app_id: str) -> dict[str, Any] | None:
 
 
 def approve_application(app_id: str, admin_id: str) -> dict[str, Any] | None:
-    """审核通过：申请人提权 merchant + 创建/绑定店铺（shop 名取 shop_name）。"""
+    """审核通过：申请人提权 merchant + 创建/绑定店铺（shop 名取 shop_name）。
+
+    新店自动挂载 3 款种子方案（红线1：杜绝「进店无商品」空壳；
+    种子演示数据，商家后台可上下架/替换，上线前可清空重灌）。
+    """
     from storage import catalog
 
     conn = get_conn()
@@ -425,6 +429,17 @@ def approve_application(app_id: str, admin_id: str) -> dict[str, Any] | None:
         }
     )
     catalog.merchant_bind(app["applicant_user_id"], shop["shop_id"])
+    # 新店挂载种子方案（shop_plans 在售），避免进店空壳
+    seed_plans = [r[0] for r in conn.execute(
+        "SELECT id FROM plans WHERE id IN ('P001','P002','P003')"
+    ).fetchall()]
+    if seed_plans:
+        with transaction() as c:
+            for pid in seed_plans:
+                c.execute(
+                    "INSERT OR IGNORE INTO shop_plans(shop_id, plan_id, status) VALUES (?,?,'on')",
+                    (shop["shop_id"], pid),
+                )
     return get_application(app_id)
 
 

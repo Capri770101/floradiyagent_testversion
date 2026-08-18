@@ -52,7 +52,7 @@ flora_diy_agent/
 ├─ mcp_servers/          # 本地 MCP 服务器（vision：智谱 GLM-4V 读图）
 ├─ config.py             # 全部配置（含限流参数）
 ├─ security.py           # 微信 code2session / JWT / 手机号验证码 / 账号密码
-├─ tests/                # 177 用例（鉴权/权限/订单/支付/限流/价格防篡改/DIY 资产库/RAG…）
+├─ tests/                # 210 用例（鉴权/权限/订单/支付/限流/价格防篡改/DIY 资产库/RAG/管理后台…）
 ├─ H5/                   # React + Vite + Tailwind 移动端（跳舞兰视觉）
 └─ README.md
 ```
@@ -191,7 +191,7 @@ python cli.py revise -p plan.json -f "便宜点"
 ```
 
 **验收标准**：
-1. `pytest` 全绿（当前 **177 passed**，含限流/价格防篡改/DIY 资产库/鉴权/权限/订单/支付/RAG）。
+1. `pytest` 全绿（当前 **210 passed**，含限流/价格防篡改/DIY 资产库/鉴权/权限/订单/支付/RAG/管理后台）。
 2. `POST /chat` 完整走通：设计 → 生图 → 店铺推荐 → 下单 → `pay_jump`。
 3. 手机号登录（dev 验证码 `123456`）与微信登录可用。
 4. `npm run build`（H5）通过。

@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # ---- LLM（OpenAI 兼容接口）----
     llm_base_url: str = "https://api.openai.com/v1"
-    llm_api_key: str = ""  # 留空 → 启动即报错（系统已弃用 Mock，必须配置真实密钥）
+    llm_api_key: str = ""  # 留空 → LLM 降级 mock 模式（agent 返回占位回复）；需真实对话时配置真实密钥
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.3
     llm_max_tokens: int = 1500

@@ -211,8 +211,8 @@ function ShopCard({ shops, onPick }) {
                   {s.rating != null && (
                     <span className="mr-1">评分 {s.rating}</span>
                   )}
-                  {s.distance_km != null && (
-                    <span className="mr-1">{s.distance_km}km</span>
+                  {s.dist && (
+                    <span className="mr-1">{s.dist}</span>
                   )}
                   {s.price_range && <span>¥{s.price_range}</span>}
                 </p>

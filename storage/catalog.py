@@ -826,7 +826,41 @@ def _row_to_shop(row: Any, plan_ids: list[str]) -> dict[str, Any]:
     dist = float(d.get("distance_km") or 1.0)
     d.setdefault("min_delivery", (int(lo) // 10 * 10) if lo else 30)
     d.setdefault("delivery_fee", 3 if dist <= 1 else 5 if dist <= 2.5 else 8)
+    # menu 聚合（红线1：任何读取店铺详情的路径都能拿到「分类+在售商品」，
+    # 避免进店无商品的空壳——分类分组按 categories.sort，未分类归「其他」）
+    d["menu"] = _shop_menu_from(plan_ids)
     return d
+
+
+def _shop_menu_from(plan_ids: list[str]) -> list[dict[str, Any]]:
+    """按分类分组聚合在售方案，返回 [{id,name,items:[...]}]（menu 契约 1.4/1.5）。"""
+    if not plan_ids:
+        return []
+    conn = get_conn()
+    ph = ",".join("?" * len(plan_ids))
+    rows = conn.execute(
+        f"""SELECT id, name, price, desc, tags, category_id, effect_image_url, rating, sold
+            FROM plans WHERE id IN ({ph})""",
+        plan_ids,
+    ).fetchall()
+    cats = conn.execute("SELECT id, name FROM categories ORDER BY sort, id").fetchall()
+    cat_map = {c["id"]: c["name"] for c in cats}
+    items_by_cat: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        it = dict(r)
+        it["plan_id"] = it.pop("id")
+        it["image"] = it.pop("effect_image_url") or ""
+        it["sales"] = it.pop("sold")
+        try:
+            it["tags"] = json.loads(it["tags"]) if it.get("tags") else []
+        except (json.JSONDecodeError, TypeError):
+            it["tags"] = []
+        items_by_cat.setdefault(it.get("category_id") or "", []).append(it)
+    menu = []
+    for cid, items in items_by_cat.items():
+        if items:
+            menu.append({"id": cid, "name": cat_map.get(cid, "其他"), "items": items})
+    return menu
 
 
 # --------------------------------------------------------------------------- #

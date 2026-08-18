@@ -11,7 +11,7 @@ const SHOP = {
   name: '花漾工坊(盐田店)',
   rating: '4.8',
   status: '营业中',
-  distance_km: 1.2,
+  distance_km: 1.2, // 详情接口 _shop_full 返回 distance_km 数值（列表接口返回 dist，见 Agent 卡片）
   intro: '专注鲜花定制与同城速递，包装精致、准时送达。',
   sales: 520,
   min_delivery: 100,

@@ -434,18 +434,21 @@ async def pay_notify(provider: str, request: Request) -> Response:
     headers = dict(request.headers)
     try:
         result = await asyncio.to_thread(prov.verify_notify, body, headers)
-    except Exception:  # noqa: BLE001
-        logger.exception("[pay/notify] 验签异常 provider=%s", provider)
-        result = None
+    except Exception as exc:  # noqa: BLE001
+        # 服务端处理异常（区别于验签不通过）：显式记录并返回 500 让渠道重试，
+        # 不误当「验签失败」吞掉掩盖问题
+        logger.error("[pay/notify] 验签处理异常 provider=%s: %r", provider, exc)
+        if provider == "alipay":
+            return Response(content="failure", media_type="text/plain")
+        return JSONResponse(status_code=500, content={"code": "FAIL", "message": "回调处理异常"})
 
-    if result is None:
-        # 无法验签：要求渠道重试（不标记订单）
+    if not result or not getattr(result, "paid", False):
+        # 验签不通过：要求渠道重试（不标记订单）
         if provider == "alipay":
             return Response(content="failure", media_type="text/plain")
         return JSONResponse(status_code=400, content={"code": "FAIL", "message": "验签失败"})
 
-    if result.paid:
-        await asyncio.to_thread(commerce.mark_order_paid, result.order_id, result.transaction_id)
+    await asyncio.to_thread(commerce.mark_order_paid, result.order_id, result.transaction_id)
     # 返回渠道约定的成功响应
     if provider == "alipay":
         return Response(content="success", media_type="text/plain")

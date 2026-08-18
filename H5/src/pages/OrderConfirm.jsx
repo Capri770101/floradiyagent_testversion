@@ -32,18 +32,20 @@ export default function OrderConfirm() {
   const [recipient, setRecipient] = useState({ name: '', phone: '', address: '' })
   const [deliveryOptions, setDeliveryOptions] = useState([])
   const [delivery, setDelivery] = useState('')
+  const [shippingFee, setShippingFee] = useState(null)
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [addresses, setAddresses] = useState([])
   const [selectedAddr, setSelectedAddr] = useState(null)
 
-  // 配送时段由后端运营配置下发（红线2：不写死在页面）
+  // 配送时段 / 配送费由后端运营配置下发（红线2：不写死在页面）
   useEffect(() => {
     publicConfig()
       .then((cfg) => {
         const opts = cfg.delivery_options || []
         setDeliveryOptions(opts)
         if (opts.length > 0) setDelivery((cur) => cur || opts[0])
+        if (cfg.shipping_fee != null) setShippingFee(cfg.shipping_fee)
       })
       .catch(() => {})
   }, [])
@@ -228,7 +230,7 @@ export default function OrderConfirm() {
 
         <div className="mt-4 space-y-2 rounded-card bg-white p-4 text-[12px] border border-line">
           <Row label="商品金额" value={`¥${order.total_price}`} />
-          <Row label="配送费" value={`¥20`} />
+          <Row label="配送费" value={`¥${Number(shippingFee ?? 0).toFixed(2)}`} />
           <Row
             label="优惠券"
             value={`-¥${Number(order.discount || 0)}`}
