@@ -395,7 +395,7 @@ function LogisticsTab({
 }
 
 // 工作台首页：今日经营 + 待办提醒 + 店铺状态 + 快捷入口 + 最近订单
-function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, onViewShop }) {
+function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, onViewShop, onPreviewShop }) {
   if (!stats) return null
   const pendingShip = (orders || []).filter((o) => o.status === 'paid')
   const badReviews = (reviews || []).filter((r) => r.rating <= 3)
@@ -518,12 +518,20 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, 
                     <span>月售 {s.sales ?? '-'}</span>
                   </p>
                 </div>
-                <button
-                  onClick={() => onViewShop(s.id || s.shop_id)}
-                  className="press shrink-0 text-[11px] tracking-[1px] text-gold"
-                >
-                  店铺设置 →
-                </button>
+                <div className="flex shrink-0 items-center gap-2.5">
+                  <button
+                    onClick={() => onViewShop(s.id || s.shop_id)}
+                    className="press text-[11px] tracking-[1px] text-sub"
+                  >
+                    店铺设置
+                  </button>
+                  <button
+                    onClick={() => onPreviewShop(s.id || s.shop_id)}
+                    className="press text-[11px] tracking-[1px] text-gold"
+                  >
+                    预览门店 →
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -631,7 +639,7 @@ function ShopPlansTab({ shops, plans, onSelectShop, shopId, planBusy, onOpenForm
               onClick={() => onPreviewShop()}
               className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
             >
-              店铺装修
+              预览店铺
               <IconArrow width={10} height={10} />
             </button>
           )}
@@ -886,7 +894,7 @@ function ShopSettingsTab({ shop, saving, onSave, onChange, imgBusy, onUploadImag
           onClick={() => onPreviewShop()}
           className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
         >
-          店铺预览
+          预览前台店铺
           <IconArrow width={10} height={10} />
         </button>
       </div>
@@ -1498,11 +1506,17 @@ export default function Merchant() {
     setTab(t)
   }, [searchParams])
 
-  // 商家内部预览：店铺装修 Tab（替代跳 C 端 /shop/:id）
+  // 商家内部：店铺装修 Tab（资料编辑 / 装修）
   const viewShop = (id) => {
     setShopId(id || '')
     setTab('shop')
     setSearchParams({ tab: 'shop' }, { replace: true })
+  }
+
+  // 前台预览：跳转 C 端店铺详情页（查看顾客视角的门店）
+  const previewShop = (id) => {
+    const target = id || shopId || shopForm?.id || shopForm?.shop_id
+    if (target) nav(`/shop/${target}`)
   }
 
   // 商家内部预览：物流 Tab 并展开该单（替代跳 C 端 /logistics/:id）
@@ -1798,6 +1812,7 @@ export default function Merchant() {
           onShip={ship}
           busyId={busyId}
           onViewShop={viewShop}
+          onPreviewShop={previewShop}
         />
       ) : tab === 'orders' ? (
         <>
@@ -1941,7 +1956,7 @@ export default function Merchant() {
           onRemove={removeShopPlan}
           onBatchToggle={batchTogglePlans}
           categories={categories}
-          onPreviewShop={() => viewShop(shopId)}
+          onPreviewShop={() => previewShop(shopId)}
         />
       ) : tab === 'shop' ? (
         <>
@@ -1952,7 +1967,7 @@ export default function Merchant() {
             onChange={setShopForm}
             imgBusy={imgBusy}
             onUploadImage={(field, f) => uploadImage(f, field)}
-            onPreviewShop={() => viewShop(shopForm?.id || shopForm?.shop_id || '')}
+            onPreviewShop={() => previewShop(shopForm?.id || shopForm?.shop_id || '')}
           />
           <CategoriesTab
             categories={categories}
