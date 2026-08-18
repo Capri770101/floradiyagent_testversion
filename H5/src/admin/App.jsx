@@ -8,6 +8,8 @@ import { Orders } from './pages/Orders'
 import { Aftersales } from './pages/Aftersales'
 import { MerchantApply } from './pages/MerchantApply'
 import { Reviews } from './pages/Reviews'
+import { Config } from './pages/Config'
+import { Content } from './pages/Content'
 
 const MENU = [
   { key: 'dashboard', label: '数据看板', sub: 'GMV / 订单 / 热销' },
@@ -16,6 +18,8 @@ const MENU = [
   { key: 'aftersales', label: '售后管理', sub: '退款 / 退货 / 换货' },
   { key: 'apply', label: '商家入驻', sub: '审核申请 / 已入驻' },
   { key: 'reviews', label: '评价审核', sub: '隐藏 / 显示 / 删除' },
+  { key: 'config', label: '运营配置', sub: '配送时段 / 运费' },
+  { key: 'content', label: '内容管理', sub: 'FAQ / 公告 / 分类' },
 ]
 
 export function AdminApp() {
@@ -75,7 +79,16 @@ export function AdminApp() {
     setUser(null)
   }
 
-  const Page = { dashboard: Dashboard, users: Users, orders: Orders, aftersales: Aftersales, apply: MerchantApply, reviews: Reviews }[page]
+  const Page = {
+    dashboard: Dashboard,
+    users: Users,
+    orders: Orders,
+    aftersales: Aftersales,
+    apply: MerchantApply,
+    reviews: Reviews,
+    config: Config,
+    content: Content,
+  }[page]
 
   return (
     <div className="flex min-h-screen bg-bg text-ink">

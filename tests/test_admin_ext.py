@@ -295,3 +295,64 @@ def test_admin_dashboard(client):
     assert isinstance(d["top_plans"], list) and isinstance(d["order_trend"], list)
     # 未登录 401
     assert client.get("/admin/dashboard").status_code == 401
+
+
+# ---------- M7 运营配置 ----------
+
+
+def test_operations_config_flow(client):
+    admin_t = _admin_token(client)
+    # 默认（seed 兜底）
+    r = client.get("/config")
+    assert r.status_code == 200
+    assert r.json()["delivery_options"] and r.json()["shipping_fee"] is not None
+    # admin 改配送时段 + 运费 → 公开接口同步
+    r = client.put(
+        "/admin/config",
+        json={"delivery_options": ["今天 20:00–22:00", "明天 08:00–10:00"], "shipping_fee": 8},
+        headers=_h(admin_t),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["delivery_options"] == ["今天 20:00–22:00", "明天 08:00–10:00"]
+    assert r.json()["shipping_fee"] == 8
+    r = client.get("/config")
+    assert r.json()["delivery_options"] == ["今天 20:00–22:00", "明天 08:00–10:00"]
+    # 非法输入：Pydantic 校验拒绝（422）或业务校验（400）
+    r = client.put("/admin/config", json={"shipping_fee": -1}, headers=_h(admin_t))
+    assert r.status_code in (400, 422)
+    # 未登录 401
+    assert client.get("/admin/config").status_code == 401
+
+
+def test_content_faqs_flow(client):
+    admin_t = _admin_token(client)
+    r = client.put(
+        "/admin/content/faqs",
+        json={"faqs": [{"q": "测试问题", "a": "测试答案"}]},
+        headers=_h(admin_t),
+    )
+    assert r.status_code == 200
+    r = client.get("/config")
+    assert any(f["q"] == "测试问题" for f in r.json()["faqs"])
+    # 公告
+    r = client.put(
+        "/admin/content/announcements",
+        json={"announcements": [{"content": "平台公告：春节正常营业"}]},
+        headers=_h(admin_t),
+    )
+    assert r.status_code == 200
+    r = client.get("/config")
+    assert any(a["content"].startswith("平台公告") for a in r.json()["announcements"])
+
+
+def test_admin_categories_crud(client):
+    admin_t = _admin_token(client)
+    r = client.post("/admin/categories", json={"name": "后台测试分类"}, headers=_h(admin_t))
+    assert r.status_code == 200, r.text
+    cid = r.json()["category"]["id"]
+    r = client.put(f"/admin/categories/{cid}", json={"name": "后台测试分类2"}, headers=_h(admin_t))
+    assert r.status_code == 200
+    assert r.json()["category"]["name"] == "后台测试分类2"
+    r = client.delete(f"/admin/categories/{cid}", headers=_h(admin_t))
+    assert r.status_code == 200
+    assert client.get("/admin/categories", headers=_h(admin_t)).status_code == 200

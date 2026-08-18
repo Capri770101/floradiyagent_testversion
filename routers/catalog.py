@@ -23,10 +23,16 @@ from routers.common import (  # noqa: F401  # 共享单例/辅助（按需使用
     repo,
     resolve_uid,
 )
+from storage import config as config_store
 from tools import get_tool_specs
 
 router = APIRouter(tags=["catalog"])
 logger = logging.getLogger("api")
+
+@router.get("/config")
+async def public_config() -> dict[str, Any]:
+    """公开运营配置（H5 读：配送时段/运费/FAQ/公告；后端 seed 兜底，前端不做业务兜底）。"""
+    return await asyncio.to_thread(config_store.public_config)
 
 @router.get("/health")
 async def health() -> dict[str, Any]:
@@ -93,9 +99,18 @@ async def list_plans(keyword: str = "") -> dict[str, Any]:
 @router.get("/plans/{plan_id}")
 async def plan_detail(plan_id: str) -> dict[str, Any]:
     p = await asyncio.to_thread(repo.get_plan, plan_id)
+    if p:
+        return {"plan": _plan_full(p)}
+    # DIY_ 前缀方案（用户自定义）回落 diy_plans 资产库，支持刷新/直链进入详情页。
+    # 注意：DIY 方案直接返回资产库原样结构（与对话「确认方案」传入的 plan 一致，
+    # 前端 DiyDetail.normalizePlan 直接消费 design/effect_prompt/diy_steps 等字段），
+    # 不走 _plan_full——那是商品详情序列化器，会丢弃 DIY 专属字段。
+    from storage import diy as diy_store
+
+    p = await asyncio.to_thread(diy_store.get_diy_plan, plan_id)
     if not p:
         raise HTTPException(status_code=404, detail="方案不存在")
-    return {"plan": _plan_full(p)}
+    return {"plan": p}
 
 
 

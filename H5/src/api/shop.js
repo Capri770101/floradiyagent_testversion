@@ -407,6 +407,12 @@ export async function myAftersales() {
   return data.aftersales
 }
 
+// ---------------- 运营配置（M7/M9：配送时段/FAQ/公告 后端下发） ----------------
+
+export async function publicConfig() {
+  return api('/config')
+}
+
 // ---------------- 商家入驻（M5，用户侧） ----------------
 
 export async function merchantApply(payload) {

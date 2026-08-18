@@ -1,28 +1,63 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { TopBar } from '../components/TopBar'
+import { publicConfig } from '../api/shop'
 
-// 客服中心：静态服务信息页（FAQ 入口 + 联系方式）
-const FAQS = [
-  { q: '下单后多久发货？', a: '支付成功后 24 小时内由花店发货，配送时间 1-3 天，节假日顺延。' },
-  { q: '花束可以指定配送时间吗？', a: '可以，在确认订单页填写期望配送时间，花店会按备注安排。' },
-  { q: '收到的花不满意怎么办？', a: '可在订单完成后评价并联系客服，我们将按流程处理退换。' },
-  { q: '积分有什么用？', a: '每笔支付都会返还积分，未来可在积分商城兑换鲜花券与周边。' },
-]
-
+// 客服中心：FAQ 与公告由运营配置后端下发（红线2：不写死在页面）
 export default function Service() {
+  const [faqs, setFaqs] = useState([])
+  const [announcements, setAnnouncements] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    publicConfig()
+      .then((cfg) => {
+        setFaqs(cfg.faqs || [])
+        setAnnouncements(cfg.announcements || [])
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
   return (
     <div className="flex h-full flex-col bg-bg">
       <TopBar title="客服中心" />
       <div className="flex-1 overflow-y-auto px-5 pt-4 pb-8">
-        <h2 className="text-[16px] font-medium text-dark">常见问题</h2>
-        <div className="mt-3 space-y-3">
-          {FAQS.map((f) => (
-            <div key={f.q} className="rounded-card bg-white p-4 border border-line">
-              <p className="text-[13px] font-medium text-dark">Q：{f.q}</p>
-              <p className="mt-1.5 text-[12px] leading-relaxed text-sub">A：{f.a}</p>
+        {/* 平台公告 */}
+        {announcements.length > 0 && (
+          <>
+            <h2 className="text-[16px] font-medium text-dark">平台公告</h2>
+            <div className="mt-3 space-y-3">
+              {announcements.map((a, i) => (
+                <div key={i} className="rounded-card bg-white p-4 border border-line">
+                  <p className="text-[12px] leading-relaxed text-sub">{a.content}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+            <div className="mt-6" />
+          </>
+        )}
+
+        <h2 className="text-[16px] font-medium text-dark">常见问题</h2>
+        {loading ? (
+          <p className="mt-3 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+            加载中…
+          </p>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {faqs.map((f) => (
+              <div key={f.q} className="rounded-card bg-white p-4 border border-line">
+                <p className="text-[13px] font-medium text-dark">Q：{f.q}</p>
+                <p className="mt-1.5 text-[12px] leading-relaxed text-sub">A：{f.a}</p>
+              </div>
+            ))}
+            {faqs.length === 0 && (
+              <p className="rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+                暂无常见问题
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="mt-6 rounded-card bg-white p-4 border border-line">
           <p className="text-[13px] font-medium text-dark">联系客服</p>
           <p className="mt-1.5 text-[12px] leading-relaxed text-sub">

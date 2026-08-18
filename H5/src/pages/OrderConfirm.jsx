@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
-import { getOrder, updateOrder, listAddresses } from '../api/shop'
+import { getOrder, updateOrder, listAddresses, publicConfig } from '../api/shop'
 import { calcPayable } from '../utils/price'
 import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
@@ -21,8 +21,6 @@ function Row({ label, value, valueClass = 'text-ink' }) {
   )
 }
 
-const DELIVERY_OPTIONS = ['今天 18:00–20:00', '明天 10:00–12:00', '后天 14:00–16:00']
-
 // 06 订单确认
 export default function OrderConfirm() {
   const nav = useNavigate()
@@ -32,11 +30,23 @@ export default function OrderConfirm() {
   const [loading, setLoading] = useState(true)
   // 收货人 / 配送时间 / 备注：真实可编辑，去支付时写回订单（review 点名的「假交互」修复）
   const [recipient, setRecipient] = useState({ name: '', phone: '', address: '' })
-  const [delivery, setDelivery] = useState(DELIVERY_OPTIONS[0])
+  const [deliveryOptions, setDeliveryOptions] = useState([])
+  const [delivery, setDelivery] = useState('')
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [addresses, setAddresses] = useState([])
   const [selectedAddr, setSelectedAddr] = useState(null)
+
+  // 配送时段由后端运营配置下发（红线2：不写死在页面）
+  useEffect(() => {
+    publicConfig()
+      .then((cfg) => {
+        const opts = cfg.delivery_options || []
+        setDeliveryOptions(opts)
+        if (opts.length > 0) setDelivery((cur) => cur || opts[0])
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     listAddresses()
@@ -186,21 +196,25 @@ export default function OrderConfirm() {
         </div>
 
         <SectionTitle title="配送时间" />
-        <div className="flex flex-wrap gap-2">
-          {DELIVERY_OPTIONS.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => setDelivery(opt)}
-              className={`rounded-pill px-3 py-1.5 text-[12px] transition ${
-                delivery === opt
-                  ? 'bg-pink text-white'
-                  : 'bg-white text-sub border border-line'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
+        {deliveryOptions.length === 0 ? (
+          <p className="px-1 text-[11px] text-sub">配送时段加载中…</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {deliveryOptions.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => setDelivery(opt)}
+                className={`rounded-pill px-3 py-1.5 text-[12px] transition ${
+                  delivery === opt
+                    ? 'bg-pink text-white'
+                    : 'bg-white text-sub border border-line'
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        )}
 
         <SectionTitle title="订单备注" />
         <div className="field-shell rounded-card bg-white p-4 border border-line">

@@ -325,6 +325,12 @@ CREATE TABLE IF NOT EXISTS merchant_applications (
     created_at        TEXT NOT NULL
 );
 
+-- 运营配置（M7/M9：配送时段/运费/优惠券规则/FAQ/公告 后端化，灭前端写死）
+CREATE TABLE IF NOT EXISTS operations_config (
+    key        TEXT PRIMARY KEY,                    -- delivery_options|shipping_fee|coupon_rules|faqs|announcements
+    value      TEXT                                 -- JSON 字符串
+);
+
 -- 生图任务
 CREATE TABLE IF NOT EXISTS image_tasks (
     task_id    TEXT PRIMARY KEY,

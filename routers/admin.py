@@ -27,6 +27,7 @@ from routers.common import (  # noqa: F401  # 共享单例/辅助（按需使用
     resolve_uid,
 )
 from storage import admin as admin_store
+from storage import config as config_store
 
 router = APIRouter(tags=["admin"])
 logger = logging.getLogger("api")
@@ -411,5 +412,105 @@ async def admin_dashboard(request: Request, days: int = Query(7, ge=1, le=90)) -
     """平台数据看板（GMV/订单/用户/热销/趋势）。"""
     await _require_admin(request)
     return await asyncio.to_thread(admin_store.dashboard_stats, days)
+
+
+# --------------------------------------------------------------------------- #
+# M7 运营配置 / M9 内容管理
+# --------------------------------------------------------------------------- #
+
+
+class OperationsWriteRequest(BaseModel):
+    """运营配置整体写请求（仅更新传入字段）。"""
+
+    delivery_options: list[str] | None = None
+    shipping_fee: float | None = Field(None, ge=0)
+    coupon_rules: dict[str, Any] | None = None
+
+
+@router.get("/admin/config")
+async def admin_get_config(request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    return await asyncio.to_thread(config_store.admin_config)
+
+
+@router.put("/admin/config")
+async def admin_put_config(req: OperationsWriteRequest, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    try:
+        data = await asyncio.to_thread(
+            config_store.update_operations, req.model_dump(exclude_none=True)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return data
+
+
+class FaqsWriteRequest(BaseModel):
+    faqs: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@router.get("/admin/content/faqs")
+async def admin_get_faqs(request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    return {"faqs": await asyncio.to_thread(config_store.get_config, config_store.K_FAQS, config_store.DEFAULTS[config_store.K_FAQS])}
+
+
+@router.put("/admin/content/faqs")
+async def admin_put_faqs(req: FaqsWriteRequest, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    return {"faqs": await asyncio.to_thread(config_store.update_faqs, req.faqs)}
+
+
+class AnnouncementsWriteRequest(BaseModel):
+    announcements: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@router.get("/admin/content/announcements")
+async def admin_get_announcements(request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    return {"announcements": await asyncio.to_thread(config_store.get_config, config_store.K_ANNOUNCE, config_store.DEFAULTS[config_store.K_ANNOUNCE])}
+
+
+@router.put("/admin/content/announcements")
+async def admin_put_announcements(req: AnnouncementsWriteRequest, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    return {"announcements": await asyncio.to_thread(config_store.update_announcements, req.announcements)}
+
+
+# 分类 CRUD（与商家端 merchantCategories 同源，storage.catalog 共用）
+@router.get("/admin/categories")
+async def admin_list_categories(request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    return {"categories": await asyncio.to_thread(catalog_store.list_categories)}
+
+
+class CategoryWriteRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=20)
+
+
+@router.post("/admin/categories")
+async def admin_create_category(req: CategoryWriteRequest, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    c = await asyncio.to_thread(catalog_store.create_category, req.name)
+    if not c:
+        raise HTTPException(status_code=400, detail="分类名不能为空或已存在")
+    return {"category": c}
+
+
+@router.put("/admin/categories/{cat_id}")
+async def admin_rename_category(cat_id: str, req: CategoryWriteRequest, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    c = await asyncio.to_thread(catalog_store.rename_category, cat_id, req.name)
+    if not c:
+        raise HTTPException(status_code=400, detail="分类不存在或名称重复")
+    return {"category": c}
+
+
+@router.delete("/admin/categories/{cat_id}")
+async def admin_delete_category(cat_id: str, request: Request) -> dict[str, Any]:
+    await _require_admin(request)
+    if not await asyncio.to_thread(catalog_store.delete_category, cat_id):
+        raise HTTPException(status_code=404, detail="分类不存在")
+    return {"ok": True}
 
 
