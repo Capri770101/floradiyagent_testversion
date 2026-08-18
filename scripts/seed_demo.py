@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from security import register_user  # noqa: E402
-from storage import commerce  # noqa: E402
+from storage import chats, commerce  # noqa: E402
 from storage.db import get_conn, init_db  # noqa: E402
 
 DEMO_USER = "capri_demo"
@@ -147,7 +147,30 @@ def seed() -> None:
         conn.commit()
         print(f"  + {order_id} [{spec['status']}] {spec['name']} ×{spec['qty']} @ {spec['shop']}")
 
-    print("演示数据灌入完成 ✅")
+    # 演示会话：capri_demo ↔ S001（商家中心「顾客会话」有可见数据）
+    chat = chats.get_or_create_chat("S001", uid)
+    has_msgs = conn.execute(
+        "SELECT 1 FROM chat_messages WHERE chat_id=? LIMIT 1", (chat["id"],)
+    ).fetchone()
+    if not has_msgs:
+        chats.send_message(chat["id"], chats.SENDER_USER, "你好，我的订单可以改配送时间吗？")
+        chats.send_message(chat["id"], chats.SENDER_MERCHANT, "您好，可以的。请问希望改到几点呢？确认后我帮您安排～")
+        print(f"  + 演示会话 {chat['id']}（顾客 1 条 + 商家 1 条回复）")
+
+    # 演示评价回复：取演示账号的 done 订单，若已有评价则补回复
+    done_order = conn.execute(
+        "SELECT order_id FROM orders WHERE user_id=? AND status='done' LIMIT 1", (uid,)
+    ).fetchone()
+    if done_order:
+        review = conn.execute(
+            "SELECT * FROM reviews WHERE order_id=? LIMIT 1", (done_order["order_id"],)
+        ).fetchone()
+        if not review:
+            review = commerce.create_review(uid, done_order["order_id"], 5, "花很新鲜，包装精致，配送也准时，下次还来！")
+        chats.reply_review(review["id"], "感谢您的认可！小店会继续用心做好每一束花，期待再次为您服务～")
+        print(f"  + 评价回复已灌入（{review['id']}）")
+
+    print("演示数据灌入完成")
 
 
 if __name__ == "__main__":

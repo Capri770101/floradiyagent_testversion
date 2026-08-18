@@ -26,7 +26,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import settings, setup_logging
-from routers import admin, auth, catalog, chat, commerce, merchant
+from routers import admin, auth, catalog, chat, chats, commerce, merchant
 from routers.common import METRICS, _limiter, agent, repo  # noqa: F401  # api._limiter 供测试引用
 from security import wx_code2session  # noqa: F401  # 测试 mock 点（api.wx_code2session）
 from storage.db import init_db
@@ -134,6 +134,7 @@ async def unhandled_exc_handler(request: Request, exc: Exception) -> JSONRespons
 
 app.include_router(auth.router)
 app.include_router(chat.router)
+app.include_router(chats.router)
 app.include_router(catalog.router)
 app.include_router(commerce.router)
 app.include_router(merchant.router)

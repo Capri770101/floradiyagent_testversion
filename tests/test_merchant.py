@@ -147,11 +147,13 @@ def test_merchant_shops_endpoint(client):
     assert [s["id"] for s in r.json()["shops"]] == ["S001"]
 
 
-def test_admin_sees_all_shops(client):
+def test_admin_cannot_access_merchant_console(client):
+    """平台管理员走独立管理后台，无权访问商家工作台（2026-08 决策）。"""
     token = _register(client, "mer_admin", role="admin")
     r = client.get("/merchant/shops", headers=_merchant_headers(token))
-    assert r.status_code == 200
-    assert len(r.json()["shops"]) >= 1
+    assert r.status_code == 403
+    r = client.get("/merchant/stats", headers=_merchant_headers(token))
+    assert r.status_code == 403
 
 
 def test_merchant_plans_forbidden_outside_scope(client):

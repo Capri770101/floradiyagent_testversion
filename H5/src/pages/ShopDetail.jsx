@@ -43,7 +43,7 @@ function ShopHeader({ shop, noticeOpen, onToggleNotice }) {
               <span className="font-medium text-dark">{shop.rating}</span>
               <span className="text-sub">月售 {shop.sales}</span>
               <span className="text-sub">·</span>
-              <span className="text-sub">{shop.dist}</span>
+              <span className="text-sub">{shop.distance_km != null && shop.distance_km !== '' ? `${shop.distance_km}km` : ''}</span>
             </p>
           </div>
           <span

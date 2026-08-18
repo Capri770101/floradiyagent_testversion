@@ -418,7 +418,7 @@ export default function Agent() {
             name: p.name,
             price: p.price,
             qty: 1,
-            shop: p.merchant || '跳舞兰',
+            shop: p.merchant_name || '',
           },
         ])
         nav('/order', { state: { orderId: order.order_id } })
@@ -473,8 +473,9 @@ export default function Agent() {
         ...hist,
         {
           role: 'assistant',
-          content:
-            '抱歉，连接后端失败了，请确认服务已启动（后端 uvicorn 在 8080，且 H5 用 npm run dev 访问）。',
+          content: /504|处理超时/.test(e.message)
+            ? '生成花艺方案需要一点时间，请稍后重试；若多次超时可把需求简化一些再发。'
+            : '抱歉，连接后端失败了，请确认服务已启动（后端 uvicorn 在 8080，且 H5 用 npm run dev 访问）。',
           error: true,
         },
       ])

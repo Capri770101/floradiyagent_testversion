@@ -66,10 +66,9 @@ const FUNCTIONS = [
   { label: '设置', path: '/settings' },
 ]
 
-// 管理类入口仅对对应角色展示（管理后台→admin；商家工作台→merchant 或 admin）
+// 管理类入口仅对对应角色展示（商家工作台→merchant；admin 走独立管理后台 /admin.html）
 const ROLE_FUNCTIONS = [
-  { role: 'admin', label: '管理后台', path: '/admin' },
-  { role: ['merchant', 'admin'], label: '商家工作台', path: '/merchant' },
+  { role: 'merchant', label: '商家工作台', path: '/merchant' },
 ]
 
 export default function Profile() {
@@ -103,7 +102,7 @@ export default function Profile() {
     }
   }, [])
 
-  // 登录成功后的去向：优先跳回被守卫拦截的页面；否则按角色进对应工作台
+  // 登录成功后的去向：优先跳回被守卫拦截的页面；否则商家进工作台，其余留在个人中心
   const redirectAfterLogin = (p) => {
     const from = location.state?.from
     if (from && from !== '/profile') {
@@ -111,7 +110,6 @@ export default function Profile() {
       return
     }
     if (p?.role === 'merchant') nav('/merchant', { replace: true })
-    else if (p?.role === 'admin') nav('/admin', { replace: true })
   }
 
   async function submit(e) {

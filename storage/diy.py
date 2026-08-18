@@ -166,6 +166,18 @@ def _row_to_plan(row: Any) -> dict[str, Any]:
         "meaning": row["meaning"],
     }
     budget = row["budget"]
+    style_label = row["style"] or "定制"
+    main_names = [f["name"] for f in flowers if f.get("bucket") == "主花"]
+    fill_names = [f["name"] for f in flowers if f.get("bucket") == "填充"]
+    foli_names = [f["name"] for f in flowers if f.get("bucket") == "叶材"]
+    colors = _j(row["color_scheme"], [])
+    effect_prompt = (
+        f"{style_label}风格花束，"
+        f"主花为{'、'.join(main_names) or '玫瑰'}，"
+        f"搭配{'、'.join(fill_names) or '满天星'}与{'、'.join(foli_names) or '尤加利'}，"
+        f"色调{'/'.join(colors) or '温柔粉'}，{row['packaging'] or '花束'}包装，"
+        f"背景干净柔和，摄影级静物，高级感"
+    )
     return {
         "plan_id": row["id"],
         "name": row["name"],
@@ -182,6 +194,7 @@ def _row_to_plan(row: Any) -> dict[str, Any]:
         "card_message": row["card_message"],
         "budget_breakdown": _j(row["budget_breakdown"], {}),
         "effect_image_url": row["effect_image_url"],
+        "effect_prompt": effect_prompt,
         "price": budget,  # 兼容 _filter_plans_by_requirement / _rank_plans 的预算命中
         "tags": [row["style"], row["occasion"], row["recipient"]],
         "requirement": row["requirement"],

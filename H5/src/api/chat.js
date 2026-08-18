@@ -2,7 +2,7 @@
 // 后端契约见 DESIGN_SPEC_H5.md §4（ui: text/plan_card/dialog_options/shop_card/pay_jump）。
 // 身份统一来自 auth.js（登录态用令牌身份，未登录用匿名 uid），并自动携带 Bearer 令牌。
 
-import { getUserId, authHeaders } from './auth'
+import { getUserId, authHeaders, handleAuthFailure } from './auth'
 import { getLocation } from '../utils/location'
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
@@ -23,6 +23,7 @@ export async function sendChat({ message, sessionId, userId }) {
     body: JSON.stringify(body),
   })
   if (!res.ok) {
+    handleAuthFailure(res)
     const text = await res.text().catch(() => '')
     throw new Error(`后端返回 ${res.status}：${text.slice(0, 200)}`)
   }
@@ -36,7 +37,10 @@ export async function listConversations(userId) {
     `${API_BASE}/conversations?user_id=${encodeURIComponent(userId)}`,
     { headers: authHeaders() }
   )
-  if (!res.ok) throw new Error(`加载会话列表失败 ${res.status}`)
+  if (!res.ok) {
+    handleAuthFailure(res)
+    throw new Error(`加载会话列表失败 ${res.status}`)
+  }
   const data = await res.json()
   return data.conversations || []
 }
@@ -47,7 +51,10 @@ export async function createConversation(userId, title) {
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ user_id: userId, title: title || '新对话' }),
   })
-  if (!res.ok) throw new Error(`新建会话失败 ${res.status}`)
+  if (!res.ok) {
+    handleAuthFailure(res)
+    throw new Error(`新建会话失败 ${res.status}`)
+  }
   const data = await res.json()
   return data.conversation_id
 }
@@ -57,7 +64,10 @@ export async function getMessages(convId, userId) {
     `${API_BASE}/conversations/${encodeURIComponent(convId)}/messages?user_id=${encodeURIComponent(userId)}`,
     { headers: authHeaders() }
   )
-  if (!res.ok) throw new Error(`加载消息失败 ${res.status}`)
+  if (!res.ok) {
+    handleAuthFailure(res)
+    throw new Error(`加载消息失败 ${res.status}`)
+  }
   const data = await res.json()
   return data.messages || []
 }
@@ -67,7 +77,10 @@ export async function deleteConversation(convId, userId) {
     `${API_BASE}/conversations/${encodeURIComponent(convId)}?user_id=${encodeURIComponent(userId)}`,
     { method: 'DELETE', headers: authHeaders() }
   )
-  if (!res.ok) throw new Error(`删除会话失败 ${res.status}`)
+  if (!res.ok) {
+    handleAuthFailure(res)
+    throw new Error(`删除会话失败 ${res.status}`)
+  }
   return true
 }
 
@@ -80,7 +93,10 @@ export async function renameConversation(convId, title, userId) {
       body: JSON.stringify({ user_id: userId, title }),
     }
   )
-  if (!res.ok) throw new Error(`重命名失败 ${res.status}`)
+  if (!res.ok) {
+    handleAuthFailure(res)
+    throw new Error(`重命名失败 ${res.status}`)
+  }
   return true
 }
 
@@ -89,7 +105,10 @@ export async function getImageTask(taskId) {
   const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, {
     headers: authHeaders(),
   })
-  if (!res.ok) throw new Error(`查询生图任务失败 ${res.status}`)
+  if (!res.ok) {
+    handleAuthFailure(res)
+    throw new Error(`查询生图任务失败 ${res.status}`)
+  }
   return res.json()
 }
 

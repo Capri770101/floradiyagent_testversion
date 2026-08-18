@@ -190,13 +190,17 @@ async def login(req: LoginRequest, request: Request) -> dict[str, Any]:
 
 @router.get("/auth/me")
 async def auth_me(request: Request) -> dict[str, Any]:
-    """获取当前登录用户资料（需 Bearer 令牌）。"""
+    """获取当前登录用户资料（需 Bearer 令牌）。
+
+    未登录/令牌无效时返回 200 + user=null（而非 401），
+    让前端把「未登录」视为正常状态，避免每次挂载刷出 401 控制台噪音。
+    """
     uid = await get_current_user(request)
     if not uid:
-        raise HTTPException(status_code=401, detail="未登录或令牌无效")
+        return {"user": None}
     profile = security.get_user_profile(uid)
     if not profile:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        return {"user": None}
     return {"user": profile}
 
 

@@ -2,7 +2,7 @@
 // 契约见后端 POST /image/generate（提交）与 GET /tasks/{task_id}（轮询）。
 // 后端已对下载地址做 SSRF 白名单 + 私网 IP 校验，前端只负责提交 prompt 与轮询结果。
 
-import { authHeaders } from './auth'
+import { authHeaders, handleAuthFailure } from './auth'
 
 export const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
@@ -15,6 +15,7 @@ export async function generateEffectImage(prompt) {
     body: JSON.stringify({ prompt }),
   })
   if (!res.ok) {
+    handleAuthFailure(res)
     const text = await res.text().catch(() => '')
     throw new Error(`生图请求失败 ${res.status}：${text.slice(0, 200)}`)
   }
@@ -29,7 +30,10 @@ export async function pollImageTask(taskId, { timeoutMs = 60000, intervalMs = 20
     const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, {
       headers: authHeaders(),
     })
-    if (!res.ok) throw new Error(`轮询生图失败 ${res.status}`)
+    if (!res.ok) {
+      handleAuthFailure(res)
+      throw new Error(`轮询生图失败 ${res.status}`)
+    }
     const data = await res.json()
     if (data.status === 'done' && data.result_url) return data
     if (data.status === 'failed') throw new Error('生图失败，请重试')

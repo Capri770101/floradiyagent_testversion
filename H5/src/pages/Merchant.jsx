@@ -1247,7 +1247,7 @@ export default function Merchant() {
   const load = useCallback(async (p = null) => {
     setLoading(true)
     try {
-      if (p && !['merchant', 'admin'].includes(p.role)) {
+      if (p && p.role !== 'merchant') {
         setForbidden(true)
         return
       }
@@ -1286,7 +1286,7 @@ export default function Merchant() {
           nav('/profile')
           return
         }
-        if (!['merchant', 'admin'].includes(p.role)) {
+        if (p.role !== 'merchant') {
           setForbidden(true)
           setLoading(false)
           return
@@ -1686,7 +1686,7 @@ export default function Merchant() {
             无商家权限
             <br />
             <span className="mt-1 block text-[11px] text-sub/70">
-              仅 merchant / admin 角色可查看经营数据，请联系系统管理员授权
+              仅商家角色可查看经营数据，请联系系统管理员授权
             </span>
           </p>
         </div>

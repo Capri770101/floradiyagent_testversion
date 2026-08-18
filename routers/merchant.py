@@ -1,8 +1,8 @@
 """routers/merchant.py —— 商家工作台（api.py 拆分，2026-08 重构）。
 
-权限模型：merchant/admin 角色可访问；数据按「商家-店铺绑定」隔离——
-普通商家只能查看/管理自己绑定店铺的订单、评价、商品与店铺资料，
-admin 不受绑定限制（scope=None 表示全部店铺）。
+权限模型：仅 merchant 角色可访问（平台管理员走独立管理后台，2026-08 决策）；
+数据按「商家-店铺绑定」隔离——商家只能查看/管理自己绑定店铺的订单、
+评价、商品与店铺资料，未绑定则看不到任何店铺数据。
 """
 from __future__ import annotations
 
@@ -55,11 +55,9 @@ async def merchant_stats_endpoint(request: Request, shop_id: str = "") -> dict[s
 
 @router.get("/merchant/shops")
 async def merchant_shops_endpoint(request: Request) -> dict[str, Any]:
-    """商家可管理的店铺列表（admin 返回全部店铺）。"""
-    uid, scope = await _merchant_scope(request)
+    """商家可管理的店铺列表（按 merchant_shops 绑定隔离）。"""
+    uid, _scope = await _merchant_scope(request)
     shops = await asyncio.to_thread(catalog_store.merchant_shops, uid)
-    if scope is None:
-        shops = await asyncio.to_thread(catalog_store.list_shops)
     return {"shops": shops}
 
 

@@ -85,10 +85,11 @@ def test_admin_role_allows_crud(client):
     assert r.status_code == 200
 
 
-def test_admin_can_access_merchant(client):
+def test_admin_cannot_access_merchant(client):
+    """平台管理员走独立管理后台，无权访问商家工作台（2026-08 决策）。"""
     token = _register(client, "perm_admin2", role="admin")
     r = client.get("/merchant/stats", headers=_h(token))
-    assert r.status_code == 200
+    assert r.status_code == 403
 
 
 # --------------------------------------------------------------------------- #

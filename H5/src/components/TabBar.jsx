@@ -14,7 +14,7 @@ const C_TABS = [
   { to: '/profile', label: '我的', Icon: IconUser },
 ]
 
-// 商家/管理员：底部导航换成商家自己的功能（替代无用的 C 端入口）。
+// 商家：底部导航换成商家自己的功能（替代无用的 C 端入口；admin 走独立管理后台）。
 // 每项通过 /merchant?tab=xxx 与工作台顶部页签联动；「我的」保留退出登录/账号设置。
 const M_TABS = [
   { to: '/merchant', tab: '', label: '经营', Icon: IconStore },
@@ -49,7 +49,8 @@ export function TabBar() {
       .catch(() => {})
   }, [location])
 
-  const isBiz = role === 'merchant' || role === 'admin'
+  // 商家底部导航：仅 merchant 角色（admin 走独立管理后台，不占用客户端商家工作台）
+  const isBiz = role === 'merchant'
   if (isBiz) {
     const activeTab = new URLSearchParams(location.search).get('tab') || ''
     return (

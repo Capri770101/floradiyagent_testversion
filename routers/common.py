@@ -346,7 +346,8 @@ def _plan_full(p: dict[str, Any]) -> dict[str, Any]:
     """方案详情（商品详情页 / DIY 详情直链兜底）。"""
     base = _plan_card(p)
     base["detail"] = p.get("desc", "")
-    base["aiReason"] = f"根据你的需求，这束「{p['name']}」{p.get('desc', '')}"
+    # 推荐理由：DB plans.ai_reason 为唯一来源（seed/商家后台维护），缺省时模板兜底
+    base["aiReason"] = p.get("ai_reason") or f"根据你的需求，这束「{p['name']}」{p.get('desc', '')}"
     base["main_flowers"] = p.get("main_flowers") or _derive_flowers(p)
     base["packaging"] = p.get("packaging") or _derive_packaging(p)
     base["effect_image_url"] = p.get("effect_image_url")
@@ -428,13 +429,13 @@ def _shop_full(s: dict[str, Any]) -> dict[str, Any]:
         "name": s["name"],
         "rating": str(s.get("rating", "4.8")),
         "status": "营业中",
-        "dist": f"{s.get('distance_km')}km",
+        "distance_km": float(s.get("distance_km") or 0),
         "intro": s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
         # 美团式经营信息（DB 字段；演示值由 seed 灌入，上线前可清空重灌真实数据）
         "sales": int(s.get("sales", 0)),
         "min_delivery": float(s.get("min_delivery") or 30),
         "delivery_fee": float(s.get("delivery_fee") or 5),
-        "delivery_time": "约30分钟",
+        "delivery_time": s.get("delivery_time") or "30分钟",
         "hours": s.get("hours") or "09:00 - 21:00",
         "address": s.get("address") or "深圳市盐田区海景路 1 号（示例地址）",
         "notice": s.get("notice") or s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
@@ -524,25 +525,20 @@ class FavoriteRequest(BaseModel):
 
 
 async def _require_merchant(request: Request) -> str:
-    """商家校验：必须携带有效 JWT 且角色为 merchant 或 admin，否则 401/403。"""
+    """商家校验：必须携带有效 JWT 且角色为 merchant，否则 401/403。
+
+    平台管理员（admin）走独立管理后台，不占用商家工作台（2026-08 决策）。
+    """
     uid = security.resolve_strict(request)
     role = await asyncio.to_thread(security.get_user_role, uid)
-    if role not in ("merchant", "admin"):
+    if role != "merchant":
         raise HTTPException(status_code=403, detail="需要商家权限")
     return uid
 
 
-async def _merchant_scope(request: Request) -> tuple[str, list[str] | None]:
-    """商家身份 + 可管理店铺范围。
-
-    Returns:
-        (uid, shop_ids)：admin 返回 None（全部店铺）；普通商家返回绑定店铺 id 列表
-        （未绑定返回空列表——严格隔离，看不到任何店铺数据）。
-    """
+async def _merchant_scope(request: Request) -> tuple[str, list[str]]:
+    """商家身份 + 可管理店铺范围（绑定店铺 id 列表；未绑定返回空列表——严格隔离）。"""
     uid = await _require_merchant(request)
-    role = await asyncio.to_thread(security.get_user_role, uid)
-    if role == "admin":
-        return uid, None
     shop_ids = await asyncio.to_thread(catalog_store.merchant_shop_ids, uid)
     return uid, shop_ids
 

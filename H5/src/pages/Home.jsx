@@ -151,7 +151,7 @@ export default function Home() {
                 {profile || isLoggedIn() ? (
                   <>
                     <p className="truncate font-serif-cn text-[15px] font-normal text-ink">
-                      {profile?.nickname || profile?.username || 'Capri'}
+                      {profile?.nickname || profile?.username || ''}
                     </p>
                     <p className="mt-0.5 truncate text-[10px] text-stone">
                       {profile?.id || '个人中心'}

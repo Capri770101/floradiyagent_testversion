@@ -5,15 +5,7 @@ import { getOrder } from '../api/shop'
 import { planImage } from '../assets/imageMap'
 import SmartImage from '../components/SmartImage'
 import { toast } from '../utils/toast'
-
-const STATUS_META = {
-  created: { label: '待付款', cls: 'bg-pink/10 text-pink' },
-  pending_payment: { label: '待付款', cls: 'bg-pink/10 text-pink' },
-  paid: { label: '待发货', cls: 'bg-pink/10 text-pink' },
-  shipped: { label: '配送中', cls: 'bg-pink/10 text-pink' },
-  done: { label: '已完成', cls: 'bg-pink/10 text-pink' },
-  canceled: { label: '已取消', cls: 'bg-line/40 text-sub' },
-}
+import { statusMeta } from '../utils/status'
 
 const fmtMoney = (v) => `¥${Number(v || 0).toFixed(2)}`
 
@@ -26,12 +18,12 @@ export default function Logistics() {
 
   useEffect(() => {
     getOrder(orderId)
-      .then((r) => setOrder(r.order || null))
+      .then((o) => setOrder(o || null))
       .catch((e) => toast(e.message || '加载失败', 'error'))
       .finally(() => setLoading(false))
   }, [orderId])
 
-  const meta = order ? STATUS_META[order.status] || { label: order.status, cls: 'bg-line/40 text-sub' } : null
+  const meta = order ? statusMeta(order.status) : null
   const items = order?.items || []
   const recipient = order?.recipient || {}
   const logistics = order?.logistics || []

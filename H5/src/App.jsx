@@ -16,7 +16,6 @@ import About from './pages/About'
 import Settings from './pages/Settings'
 import Category from './pages/Category'
 import Cart from './pages/Cart'
-import Admin from './pages/Admin'
 import Addresses from './pages/Addresses'
 import Favorites from './pages/Favorites'
 import CouponCenter from './pages/CouponCenter'
@@ -158,14 +157,6 @@ export default function App() {
           element={
             <RequireAuth>
               <Addresses />
-            </RequireAuth>
-          }
-        />
-        <Route
-          path="/admin"
-          element={
-            <RequireAuth>
-              <Admin />
             </RequireAuth>
           }
         />

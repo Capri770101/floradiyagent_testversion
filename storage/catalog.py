@@ -672,14 +672,16 @@ def seed_catalog() -> None:
             # 评分/已售：种子演示值（确定性，正式上线由订单统计，可清空重灌）
             rating = p.get("rating", round(4.5 + (abs(hash(p["plan_id"])) % 5) * 0.1, 1))
             sold = p.get("sold", 120 + (abs(hash(p["plan_id"])) % 600))
+            # 推荐理由：优先方案自带文案，否则由 desc 确定性生成后落库（详情页 aiReason 唯一来源）
+            reason = p.get("ai_reason") or f"根据你的需求，这束「{p['name']}」{p.get('desc', '')}"
             conn.execute(
                 """INSERT OR IGNORE INTO plans
-                   (id, name, price, desc, effect_image_url, merchant_name, tags, style, category_id, rating, sold, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   (id, name, price, desc, effect_image_url, merchant_name, tags, style, category_id, rating, sold, ai_reason, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     p["plan_id"], p["name"], p["price"], p["desc"], p["effect_image_url"],
                     p["merchant_name"], json.dumps(p["tags"], ensure_ascii=False),
-                    p["style"], p["category_id"], rating, sold, _now(),
+                    p["style"], p["category_id"], rating, sold, reason, _now(),
                 ),
             )
         for s in _SHOPS:
@@ -694,16 +696,17 @@ def seed_catalog() -> None:
             if z:
                 zone = z.group(1)
             addr_no = 8 + (abs(hash(s.get("shop_id", ""))) % 88)
+            delivery_time = f"约{int(10 + _d * 4)}分钟"  # 配送时长：按距离确定性推导后落库（商家后台可改）
             conn.execute(
                 """INSERT OR IGNORE INTO shops
                    (id, name, rating, distance_km, price_range, lat, lng, status, intro,
-                    sales, min_delivery, delivery_fee, hours, address, notice, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    sales, min_delivery, delivery_fee, hours, delivery_time, address, notice, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     s["shop_id"], s["name"], s["rating"], s["distance_km"], s["price_range"],
                     s["lat"], s["lng"], "营业中", s["intro"],
                     200 + (abs(hash(s.get("shop_id", ""))) % 800),  # 月售（演示）
-                    min_delivery, delivery_fee, "09:00 - 21:00",
+                    min_delivery, delivery_fee, "09:00 - 21:00", delivery_time,
                     f"深圳市{zone}区海景路 {addr_no} 号（示例地址）",
                     s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
                     _now(),
@@ -719,9 +722,14 @@ def seed_catalog() -> None:
         for p in _PLANS:
             rating = p.get("rating", round(4.5 + (abs(hash(p["plan_id"])) % 5) * 0.1, 1))
             sold = p.get("sold", 120 + (abs(hash(p["plan_id"])) % 600))
+            reason = p.get("ai_reason") or f"根据你的需求，这束「{p['name']}」{p.get('desc', '')}"
             conn.execute(
                 "UPDATE plans SET rating=?, sold=? WHERE id=? AND (sold IS NULL OR sold=0)",
                 (rating, sold, p["plan_id"]),
+            )
+            conn.execute(
+                "UPDATE plans SET ai_reason=? WHERE id=? AND (ai_reason IS NULL OR ai_reason='')",
+                (reason, p["plan_id"]),
             )
         for s in _SHOPS:
             m = re.match(r"\s*(\d+)\s*-\s*(\d+)\s*", str(s.get("price_range", "")))
@@ -744,6 +752,12 @@ def seed_catalog() -> None:
                     s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
                     s["shop_id"],
                 ),
+            )
+            # 配送时长：新列回填（按距离推导，仅缺省/默认值时写入；
+            # 商家后台暂未提供该字段编辑入口，覆盖默认值安全）
+            conn.execute(
+                "UPDATE shops SET delivery_time=? WHERE id=? AND (delivery_time IS NULL OR delivery_time='' OR delivery_time='30分钟')",
+                (f"约{int(10 + _d * 4)}分钟", s["shop_id"]),
             )
         # 商家智库档案（shop_profiles + shop_styles + shop_scenes）
         for p in _SHOP_PROFILES:

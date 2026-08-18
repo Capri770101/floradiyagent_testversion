@@ -153,7 +153,7 @@ class Settings(BaseSettings):
     # ---- 智能体参数 ----
     max_iterations: int = 8          # ReAct 单轮最大迭代，超出则中止说明
     history_limit: int = 20         # 短期记忆每次载入最近 N 条
-    request_timeout: float = 60.0    # 单请求全程超时兜底
+    request_timeout: float = 180.0   # 单请求全程超时兜底（DIY 定制含多次 LLM 调用，放宽至 3 分钟）
 
     # ---- 接口限流（内存滑动窗口；防刷 LLM 账单 / 撞验证码）----
     rate_limit_enabled: bool = True  # False=整体关闭（仅限压测/联调）

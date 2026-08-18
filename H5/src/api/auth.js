@@ -64,6 +64,17 @@ export function authHeaders() {
   return t ? { Authorization: `Bearer ${t}` } : {}
 }
 
+// 令牌失效统一处理：携带令牌的请求收到 401（过期/被篡改）→ 清除本地会话，
+// 后续请求回落匿名身份，避免每个接口重复 401 刷控制台。
+// 返回 true 表示本次 401 已按会话失效处理。
+export function handleAuthFailure(res) {
+  if (res.status === 401 && getToken()) {
+    clearSession()
+    return true
+  }
+  return false
+}
+
 // 统一把 HTTP 状态码映射为对用户友好的文案：不透传后端 detail/JSON，避免技术性报错露给用户。
 // 各接口对业务状态码（如 401 验证码错误、409 用户名已存在）单独给出更精准的文案。
 function friendly(status, fallback) {
