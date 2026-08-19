@@ -5,13 +5,12 @@ import { Button } from '../components/Button'
 import { IconArrow } from '../components/icons'
 import { FloraCorner, FloraSprig } from '../components/FloralDecor'
 import SectionTitle from '../components/SectionTitle'
-import { planImage } from '../assets/imageMap'
 import { toast } from '../utils/toast'
-import { statusMeta } from '../utils/status'
 import { getLocation, setLocation } from '../utils/location'
 import LocationPicker from '../components/LocationPicker'
-import { listOrders, orderAction, listCoupons, getPoints, listFavorites, postReview } from '../api/shop'
-import { IconStar } from '../components/icons'
+import Reveal from '../components/Reveal'
+import { listOrders, listCoupons, listFavorites } from '../api/shop'
+import { unreadCount } from '../api/notify'
 import {
   isLoggedIn,
   getUserId,
@@ -49,15 +48,16 @@ const PhoneIcon = (p) => (
 )
 
 // 08 我的
-// 本地静态展示数据（不再依赖 data/mock，避免 review 点名的「Profile 全 mock」）
-const STATS = [
-  { label: '收藏', value: 0 },
-  { label: '订单', value: 0 },
-  { label: '优惠券', value: 0 },
-  { label: '积分', value: 0 },
+// 四模块卡（收藏/订单/优惠券/积分）：仅作功能导航，点击跳转对应页面，具体内容不内嵌
+
+// 四模块功能导航（点击跳转，不内嵌内容）：优惠券/积分合并（领券中心同页含积分商城）
+const MODULES = [
+  { label: '收藏', path: '/favorites', key: 'fav' },
+  { label: '订单', path: '/orders', key: 'order' },
+  { label: '优惠券', path: '/coupons?tab=mine', key: 'coupon' },
+  { label: '消息', path: '/notifications', key: 'notify' },
 ]
 const FUNCTIONS = [
-  { label: '我的收藏', path: '/favorites' },
   { label: '我的地址', path: '/addresses' },
   { label: '我的售后', path: '/my-aftersales' },
   { label: '领券中心', path: '/coupons' },
@@ -85,15 +85,10 @@ export default function Profile() {
   const [codeBusy, setCodeBusy] = useState(false)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
-  const [orders, setOrders] = useState([])
-  const [expanded, setExpanded] = useState(null)
+  const [orderCount, setOrderCount] = useState(0)
   const [couponCount, setCouponCount] = useState(0)
-  const [points, setPoints] = useState(0)
   const [favCount, setFavCount] = useState(0)
-  const [reviewTarget, setReviewTarget] = useState(null) // 待评价订单
-  const [reviewRating, setReviewRating] = useState(5)
-  const [reviewContent, setReviewContent] = useState('')
-  const [reviewBusy, setReviewBusy] = useState(false)
+  const [notifyCount, setNotifyCount] = useState(0)
   const [showLoc, setShowLoc] = useState(false) // 登录后首次选择定位
 
   useEffect(() => {
@@ -213,7 +208,7 @@ export default function Profile() {
     if (!isLoggedIn()) return
     try {
       const orders = await listOrders()
-      setOrders(orders)
+      setOrderCount(orders.length)
     } catch (e) {
       toast(e.message || '订单加载失败', 'error')
     }
@@ -225,56 +220,19 @@ export default function Profile() {
 
   useEffect(() => {
     if (!isLoggedIn()) return
-    Promise.all([listCoupons(), getPoints(), listFavorites()])
-      .then(([cs, ps, favs]) => {
+    Promise.all([listCoupons(), listFavorites(), unreadCount()])
+      .then(([cs, favs, unread]) => {
         setCouponCount(cs.filter((c) => c.status === 'unused').length)
-        setPoints(ps.balance)
         setFavCount(favs.count || 0)
+        setNotifyCount(unread || 0)
       })
       .catch(() => {})
   }, [])
 
-  const act = async (oid, action) => {
-    try {
-      await orderAction(oid, action)
-      toast(action === 'ship' ? '已模拟发货' : action === 'complete' ? '已确认收货' : '订单已取消')
-      loadOrders()
-    } catch (e) {
-      toast(e.message || '操作失败', 'error')
-    }
-  }
-
-  const goPay = (oid) => nav('/pay', { state: { orderId: oid } })
-
-  const openReview = (o) => {
-    setReviewTarget(o)
-    setReviewRating(5)
-    setReviewContent('')
-  }
-
-  const submitReview = async () => {
-    if (reviewBusy || !reviewTarget) return
-    setReviewBusy(true)
-    try {
-      await postReview({
-        order_id: reviewTarget.order_id,
-        rating: reviewRating,
-        content: reviewContent.trim(),
-      })
-      toast('评价成功，感谢你的反馈')
-      setReviewTarget(null)
-      loadOrders()
-    } catch (e) {
-      toast(e.message || '评价失败', 'error')
-    } finally {
-      setReviewBusy(false)
-    }
-  }
-
   return (
     <div className="min-h-full bg-bg pb-8">
       {/* 头部文艺色带：暖渐变 + 角落花枝 + 衬线标题 */}
-      <div className="hero-flora relative px-5 pb-5 pt-7 shadow-soft">
+      <div className="animate-hero hero-flora relative px-5 pb-5 pt-7 shadow-soft" style={{ animationDelay: '0ms' }}>
         <FloraCorner
           className="pointer-events-none absolute -right-2 -top-1 text-white/50"
           style={{ width: 92, height: 92 }}
@@ -284,7 +242,8 @@ export default function Profile() {
       </div>
 
       {/* 用户区：登录态显示资料，未登录显示登录/注册入口 */}
-      {user ? (
+      <Reveal delay={80}>
+        {user ? (
         <div className="mt-4 flex items-center gap-3 px-5">
           <SmartImage imgKey="avatar" className="h-[56px] w-[56px] rounded-full" />
           <div className="min-w-0 flex-1">
@@ -443,6 +402,7 @@ export default function Profile() {
           <p className="mt-3 text-[10px] text-sub/70">未注册的手机号 / 微信将自动创建账号</p>
         </div>
       )}
+      </Reveal>
 
       {/* 登录方式选择弹层：微信 / 手机号 */}
       {loginOpen && (
@@ -487,7 +447,8 @@ export default function Profile() {
       )}
 
       {/* 会员卡 */}
-      <div className="relative mx-5 mt-5 flex h-[58px] items-center justify-between overflow-hidden rounded-[4px] bg-dark px-4">
+      <Reveal delay={160}>
+        <div className="relative mx-5 mt-5 flex h-[58px] items-center justify-between overflow-hidden rounded-[4px] bg-dark px-4">
         <FloraSprig
           className="pointer-events-none absolute -right-2 -bottom-3 text-white/15"
           style={{ width: 72, height: 72 }}
@@ -499,7 +460,7 @@ export default function Profile() {
             className="h-7 w-7 shrink-0 rounded-full border border-white/30 bg-white object-cover"
           />
           <div>
-            <p className="text-[13px] font-medium text-white">跳舞兰 金牌会员</p>
+            <p className="text-[13px] font-medium text-white">跳舞兰 · {user?.nickname || '花友'}</p>
             <p className="mt-1 text-[10px]" style={{ color: '#DDD2C8' }}>
               开通享更多专属权益
             </p>
@@ -512,165 +473,42 @@ export default function Profile() {
         >
           立即开通
         </Button>
-      </div>
+        </div>
+      </Reveal>
 
-      {/* 数据 */}
-      <div className="mx-5 mt-5 grid grid-cols-4 rounded-[4px] bg-white py-4 border border-line">
-        {STATS.map((s) => (
-          <div key={s.label} className="flex flex-col items-center">
-            <span className="text-[16px] font-medium text-dark">
-              {s.label === '订单'
-                ? orders.length
-                : s.label === '优惠券'
-                  ? couponCount
-                  : s.label === '积分'
-                    ? points
-                    : s.label === '收藏'
-                      ? favCount
-                      : s.value}
-            </span>
-            <span className="mt-1 text-[10px] text-sub">{s.label}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* 我的订单（真实数据：状态流转 + 物流时间线） */}
-      <div className="mt-8 px-5">
-        <SectionTitle
-          title="我的订单"
-          action={
+      {/* 四模块功能导航（收藏/订单/优惠券/消息）：仅显示数字徽标，点击跳转对应页面 */}
+      <Reveal delay={240}>
+        <div className="mx-5 mt-5 grid grid-cols-4 gap-2">
+        {MODULES.map((m) => {
+          const count =
+            m.key === 'order'
+              ? orderCount
+              : m.key === 'coupon'
+                ? couponCount
+                : m.key === 'notify'
+                  ? notifyCount
+                  : favCount
+          return (
             <button
+              key={m.key}
               type="button"
-              onClick={() => nav('/orders')}
-              className="press text-[12px] tracking-[1px] text-sub"
+              onClick={() => nav(m.path)}
+              className="press flex flex-col items-center rounded-[4px] border border-ink/10 bg-white py-4 shadow-soft"
             >
-              全部 ›
+              <span className="text-[18px] font-medium text-ink">{count}</span>
+              <span className="mt-1 text-[11px] tracking-[1px] text-sub">{m.label}</span>
             </button>
-          }
-        />
-        {isLoggedIn() ? (
-          orders.length === 0 ? (
-            <p className="mt-3 rounded-card bg-white p-4 text-center text-[12px] text-sub border border-line">
-              还没有订单，去 Agent 页让花艺师帮你设计一束吧
-            </p>
-          ) : (
-            <div className="mt-3 space-y-3">
-              {orders.map((o) => {
-                const meta = statusMeta(o.status)
-                const items = o.items || []
-                return (
-                  <div key={o.order_id} className="overflow-hidden rounded-card bg-white border border-line">
-                    <button
-                      type="button"
-                      onClick={() => nav(`/logistics/${o.order_id}`)}
-                      className="flex w-full items-center justify-between border-b border-line px-4 py-3 text-left"
-                    >
-                      <span className="text-[11px] text-sub">{o.order_id}</span>
-                      <span className={`text-[12px] font-medium ${meta.cls}`}>{meta.label}</span>
-                    </button>
-                    {items.slice(0, 2).map((it) => (
-                      <div key={it.plan_id} className="flex items-center gap-3 px-4 py-2.5">
-                        <SmartImage
-                          src={planImage(it)}
-                          imgKey="home_rec_1"
-                          className="h-[44px] w-[44px] shrink-0 rounded-[4px]"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] text-dark">{it.name}</p>
-                          <p className="text-[11px] text-sub">
-                            ¥{it.price} × {it.qty}
-                            {it.shop ? ` · ${it.shop}` : ''}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="flex items-center justify-between px-4 py-2.5">
-                      <button
-                        className="press text-[12px] text-pink"
-                        onClick={() => setExpanded(expanded === o.order_id ? null : o.order_id)}
-                      >
-                        {expanded === o.order_id ? '收起物流' : '查看物流'}
-                      </button>
-                      <p className="text-[13px] font-medium text-dark">
-                        共 ¥{Number(o.total_price || 0).toFixed(2)}
-                      </p>
-                    </div>
-
-                    {expanded === o.order_id && (
-                      <div className="border-t border-line px-4 py-3">
-                        {(o.logistics || []).map((e, i) => (
-                          <div key={e.seq} className="flex gap-3">
-                            <div className="flex flex-col items-center">
-                              <span
-                                className={`mt-1 h-2 w-2 rounded-full ${
-                                  i === 0 ? 'bg-pink' : 'bg-line'
-                                }`}
-                              />
-                              {i < (o.logistics || []).length - 1 && (
-                                <span className="w-px flex-1 bg-line" />
-                              )}
-                            </div>
-                            <div className="pb-3">
-                              <p
-                                className={`text-[12px] ${
-                                  i === 0 ? 'font-medium text-dark' : 'text-sub'
-                                }`}
-                              >
-                                {e.text}
-                              </p>
-                              <p className="text-[10px] text-sub/70">{e.created_at}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="flex justify-end gap-2 border-t border-line px-4 py-3">
-                      {(o.status === 'created' || o.status === 'pending_payment') && (
-                        <>
-                          <Button
-                            variant="secondary"
-                            className="!h-[30px] !rounded-pill !text-[12px]"
-                            onClick={() => act(o.order_id, 'cancel')}
-                          >
-                            取消订单
-                          </Button>
-                          <Button className="!h-[30px] !rounded-pill !text-[12px]" onClick={() => goPay(o.order_id)}>
-                            去支付
-                          </Button>
-                        </>
-                      )}
-                      {o.status === 'paid' && (
-                        <Button className="!h-[30px] !rounded-pill !text-[12px]" onClick={() => act(o.order_id, 'ship')}>
-                          模拟发货
-                        </Button>
-                      )}
-                      {o.status === 'shipped' && (
-                        <Button className="!h-[30px] !rounded-pill !text-[12px]" onClick={() => act(o.order_id, 'complete')}>
-                          确认收货
-                        </Button>
-                      )}
-                      {o.status === 'done' && (
-                        <Button className="!h-[30px] !rounded-pill !text-[12px]" onClick={() => openReview(o)}>
-                          评价
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
           )
-        ) : (
-          <p className="mt-3 rounded-card bg-white p-4 text-center text-[12px] text-sub border border-line">
-            登录后查看你的订单
-          </p>
-        )}
-      </div>
+        })}
+        </div>
+      </Reveal>
 
       {/* 常用功能 */}
       <div className="mt-9 px-5">
-        <SectionTitle title="常用功能" />
+        <Reveal delay={320}>
+          <SectionTitle title="常用功能" />
+        </Reveal>
+        <Reveal delay={400}>
         <div className="mt-3 overflow-hidden rounded-[4px] bg-white border border-line">
           {[
             ...ROLE_FUNCTIONS.filter((rf) => (Array.isArray(rf.role) ? rf.role.includes(user?.role) : rf.role === user?.role)),
@@ -686,75 +524,42 @@ export default function Profile() {
               tabIndex={0}
               onClick={() => (f.path ? nav(f.path) : undefined)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') e.preventDefault()
+                if ((e.key === 'Enter' || e.key === ' ') && f.path) {
+                  e.preventDefault()
+                  nav(f.path)
+                }
               }}
               className={`flex cursor-pointer items-center justify-between px-4 py-3.5 ${
                 i < all.length - 1 ? 'border-b border-line' : ''
               }`}
             >
               <span className="text-[12px] text-ink">{f.label}</span>
-              <IconArrow width={16} height={16} className="text-sub" />
+              <span className="flex items-center gap-2">
+                {f.badge === 'notify' && notifyCount > 0 && (
+                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-pink px-1.5 text-[10px] leading-none text-white">
+                    {notifyCount > 99 ? '99+' : notifyCount}
+                  </span>
+                )}
+                <IconArrow width={16} height={16} className="text-sub" />
+              </span>
             </div>
           ))}
         </div>
+        </Reveal>
       </div>
 
       {/* 退出登录（仅登录态显示；底部独立入口，避免头像栏拥挤） */}
       {user && (
-        <div className="mt-6 px-5">
-          <button
-            onClick={logout}
-            className="w-full rounded-[4px] border border-line bg-white py-3 text-center text-[13px] tracking-wide text-burgundy"
-          >
-            退出登录
-          </button>
-        </div>
-      )}
-
-      {/* 评价弹窗 */}
-      {reviewTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
-          onClick={() => setReviewTarget(null)}
-        >
-          <div
-            className="w-full max-w-[430px] rounded-t-[20px] bg-white p-5 pb-7"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-center text-[16px] font-medium text-dark">评价订单</h3>
-            <p className="mt-1 text-center text-[11px] text-sub">
-              订单 {reviewTarget.order_id} · 已完成，欢迎分享你的体验
-            </p>
-            <div className="mt-4 flex justify-center gap-2">
-              {[1, 2, 3, 4, 5].map((s) => (
-                <button
-                  key={s}
-                  aria-label={`${s} 星`}
-                  onClick={() => setReviewRating(s)}
-                  className="p-1"
-                >
-                  <IconStar
-                    width={26}
-                    height={26}
-                    filled={s <= reviewRating}
-                    className={s <= reviewRating ? 'text-pink' : 'text-line'}
-                  />
-                </button>
-              ))}
-            </div>
-            <textarea
-              value={reviewContent}
-              onChange={(e) => setReviewContent(e.target.value)}
-              placeholder="说说这束花的体验吧（选填）"
-              maxLength={500}
-              rows={3}
-              className="mt-4 w-full resize-none rounded-[4px] border border-line bg-bg p-3 text-[12px] text-ink outline-none placeholder:text-sub/60 focus:border-pink"
-            />
-            <Button className="mt-4 w-full" onClick={submitReview} disabled={reviewBusy}>
-              {reviewBusy ? '提交中…' : '提交评价'}
-            </Button>
+        <Reveal delay={480}>
+          <div className="mt-6 px-5">
+            <button
+              onClick={logout}
+              className="w-full rounded-[4px] border border-line bg-white py-3 text-center text-[13px] tracking-wide text-burgundy"
+            >
+              退出登录
+            </button>
           </div>
-        </div>
+        </Reveal>
       )}
 
       {/* 登录后首次定位选择 */}

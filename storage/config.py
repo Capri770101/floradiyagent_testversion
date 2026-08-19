@@ -16,6 +16,7 @@ K_SHIPPING = "shipping_fee"
 K_COUPON = "coupon_rules"
 K_FAQS = "faqs"
 K_ANNOUNCE = "announcements"
+K_REC_WEIGHTS = "recommend_weights"
 
 # seed 默认值（上线前可改/清空重灌）
 DEFAULTS: dict[str, Any] = {
@@ -31,6 +32,13 @@ DEFAULTS: dict[str, Any] = {
         {"q": "积分有什么用？", "a": "每笔支付都会返还积分，未来可在积分商城兑换鲜花券与周边。"},
     ],
     K_ANNOUNCE: [],
+    # 推荐融合权重（模块三：score = w_distance*距离分 + w_pref*偏好分 + w_heat*热度分，
+    # 运营可在管理端 operations_config 覆写调参）
+    K_REC_WEIGHTS: {
+        "w_distance": 0.4,
+        "w_pref": 0.4,
+        "w_heat": 0.2,
+    },
 }
 
 
@@ -75,6 +83,7 @@ def public_config() -> dict[str, Any]:
         "coupon_rules": get_config(K_COUPON, DEFAULTS[K_COUPON]),
         "faqs": get_config(K_FAQS, DEFAULTS[K_FAQS]),
         "announcements": get_config(K_ANNOUNCE, DEFAULTS[K_ANNOUNCE]),
+        "recommend_weights": get_config(K_REC_WEIGHTS, DEFAULTS[K_REC_WEIGHTS]),
     }
 
 
@@ -100,6 +109,19 @@ def update_operations(data: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(rules, dict):
             raise ValueError("优惠券规则必须是对象")
         set_config(K_COUPON, rules)
+    if "recommend_weights" in data:
+        w = data["recommend_weights"]
+        if not isinstance(w, dict):
+            raise ValueError("推荐权重必须是对象")
+        merged = dict(get_config(K_REC_WEIGHTS, DEFAULTS[K_REC_WEIGHTS]))
+        for k in ("w_distance", "w_pref", "w_heat"):
+            if k not in w or w[k] is None:
+                continue
+            v = w[k]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 1:
+                raise ValueError(f"{k} 必须是 0~1 的数字")
+            merged[k] = float(v)
+        set_config(K_REC_WEIGHTS, merged)
     return public_config()
 
 
@@ -116,11 +138,18 @@ def update_faqs(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def update_announcements(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """整体写公告（[{text, link?}] 或 [{content}]，归一为 {content}）。"""
+    """整体写公告（[{text, link?}] 或 [{content}]，归一为 {content}）。
+
+    联动通知中心（模块一）：发布新公告后向全部注册用户广播站内通知。
+    """
     cleaned = []
     for it in items:
         content = str(it.get("content") or it.get("text") or "").strip()
         if content:
             cleaned.append({"content": content[:200]})
     set_config(K_ANNOUNCE, cleaned)
+    if cleaned:
+        from storage import notify
+
+        notify.broadcast("平台公告", cleaned[0]["content"])
     return cleaned

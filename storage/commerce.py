@@ -764,26 +764,37 @@ def update_cart_item(
     item_id: str,
     qty: int | None = None,
     selected: bool | None = None,
+    user_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """更新购物车项数量或勾选状态；任一为 None 则不改该字段。"""
+    """更新购物车项数量或勾选状态；任一为 None 则不改该字段。
+
+    必须传 user_id 做归属校验（WHERE item_id=? AND user_id=?），防止越权改他人购物车项（IDOR）。
+    user_id 缺失时直接拒绝，绝不按 item_id 裸查。
+    """
+    if not user_id:
+        return None
     conn = get_conn()
-    row = conn.execute("SELECT * FROM cart_items WHERE item_id=?", (item_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM cart_items WHERE item_id=? AND user_id=?", (item_id, user_id)
+    ).fetchone()
     if not row:
         return None
     if qty is not None:
         qty = max(1, int(qty))
         conn.execute(
-            "UPDATE cart_items SET qty=?, updated_at=? WHERE item_id=?",
-            (qty, _now(), item_id),
+            "UPDATE cart_items SET qty=?, updated_at=? WHERE item_id=? AND user_id=?",
+            (qty, _now(), item_id, user_id),
         )
     if selected is not None:
         conn.execute(
-            "UPDATE cart_items SET selected=?, updated_at=? WHERE item_id=?",
-            (1 if selected else 0, _now(), item_id),
+            "UPDATE cart_items SET selected=?, updated_at=? WHERE item_id=? AND user_id=?",
+            (1 if selected else 0, _now(), item_id, user_id),
         )
     conn.commit()
     return _row_to_dict(
-        conn.execute("SELECT * FROM cart_items WHERE item_id=?", (item_id,)).fetchone()
+        conn.execute(
+            "SELECT * FROM cart_items WHERE item_id=? AND user_id=?", (item_id, user_id)
+        ).fetchone()
     )
 
 
@@ -816,10 +827,18 @@ def merge_cart(from_user_id: str, to_user_id: str) -> int:
     return merged
 
 
-def remove_cart_item(item_id: str) -> bool:
-    """删除购物车项，返回是否真的删到了。"""
+def remove_cart_item(item_id: str, user_id: str | None = None) -> bool:
+    """删除购物车项，返回是否真的删到了。
+
+    必须传 user_id 做归属校验（WHERE item_id=? AND user_id=?），防止越权删他人购物车项（IDOR）。
+    user_id 缺失时直接返回 False，绝不按 item_id 裸删。
+    """
+    if not user_id:
+        return False
     conn = get_conn()
-    cur = conn.execute("DELETE FROM cart_items WHERE item_id=?", (item_id,))
+    cur = conn.execute(
+        "DELETE FROM cart_items WHERE item_id=? AND user_id=?", (item_id, user_id)
+    )
     conn.commit()
     return cur.rowcount > 0
 
@@ -947,8 +966,10 @@ def create_order(
             _now(),
         ),
     )
-    # 自动抵扣最优可用优惠券（新人立减等）；折扣落订单并标记券已用
-    apply_best_coupon(order_id, user_id, total)
+    # 自动抵扣最优可用优惠券（新人立减等）；折扣落订单并标记券已用。
+    # 防御：total<=0 时跳过，避免给 0 元单套用门槛为 0 的券。
+    if total > 0:
+        apply_best_coupon(order_id, user_id, total)
     # 若购物车项带 item_id，下单后移除（避免重复结算）
     for it in priced:
         iid = it.get("item_id")
@@ -956,6 +977,14 @@ def create_order(
             conn.execute("DELETE FROM cart_items WHERE item_id=?", (iid,))
     _append_logistics(order_id, "订单已创建，等待支付")
     conn.commit()
+    # 通知中心（模块一）：下单成功落站内通知
+    from storage import notify
+
+    notify.try_create(
+        user_id, notify.T_ORDER, "订单已创建",
+        f"{rname or '收花人'}的花束订单已提交，等待支付",
+        ref_type="order", ref_id=order_id,
+    )
     return get_order(order_id)
 
 
@@ -1095,6 +1124,14 @@ def add_logistics_event(order_id: str, text: str) -> dict[str, Any] | None:
         raise ValueError("物流节点内容不能为空")
     _append_logistics(order_id, text)
     conn.commit()
+    # 通知中心（模块一）：商家追加物流节点通知顾客
+    from storage import notify
+
+    notify.try_create(
+        row["user_id"], notify.T_LOGISTICS, "物流更新",
+        text[:120],
+        ref_type="order", ref_id=order_id,
+    )
     return get_order(order_id)
 
 
@@ -1114,6 +1151,14 @@ def ship_order(order_id: str) -> dict[str, Any] | None:
     _append_logistics(order_id, "包裹已揽收，正在发往深圳转运中心")
     _append_logistics(order_id, "包裹到达深圳转运中心，正在分拣")
     conn.commit()
+    # 通知中心（模块一）：发货通知顾客
+    from storage import notify
+
+    notify.try_create(
+        row["user_id"], notify.T_ORDER, "订单已发货",
+        f"订单 {order_id} 已由商家发货，正在配送途中",
+        ref_type="order", ref_id=order_id,
+    )
     return get_order(order_id)
 
 
@@ -1132,6 +1177,14 @@ def complete_order(order_id: str) -> dict[str, Any] | None:
     _append_logistics(order_id, "包裹已到达配送网点，快递员正在派送")
     _append_logistics(order_id, "已签收，感谢惠顾 FloraDIY")
     conn.commit()
+    # 通知中心（模块一）：签收通知顾客（可去评价）
+    from storage import notify
+
+    notify.try_create(
+        row["user_id"], notify.T_ORDER, "订单已签收",
+        f"订单 {order_id} 已签收，期待您对本次花束的反馈",
+        ref_type="order", ref_id=order_id,
+    )
     return get_order(order_id)
 
 
@@ -1148,7 +1201,23 @@ def cancel_order(order_id: str) -> dict[str, Any] | None:
         "UPDATE orders SET status='canceled' WHERE order_id=?", (order_id,)
     )
     _append_logistics(order_id, "订单已取消")
+    # 返还该订单占用（已标记 used）的优惠券（与过期自动取消一致）
+    cid = row["coupon_id"]
+    if cid:
+        conn.execute(
+            """UPDATE coupons SET status='unused', order_id=NULL, used_at=NULL
+               WHERE id=? AND status='used'""",
+            (cid,),
+        )
     conn.commit()
+    # 通知中心（模块一）：取消通知顾客
+    from storage import notify
+
+    notify.try_create(
+        row["user_id"], notify.T_ORDER, "订单已取消",
+        f"订单 {order_id} 已取消，如已使用优惠券将自动返还",
+        ref_type="order", ref_id=order_id,
+    )
     return get_order(order_id)
 
 
@@ -1186,9 +1255,15 @@ def pay_order(
     if order["status"] not in ("created", "pending_payment"):
         raise ValueError(f"当前状态 {order['status']} 不可支付")
 
+    # 优惠券抵扣：应付金额 = total_price - discount（各支付渠道按此金额下单收款）。
+    # 不改动订单原值，仅向支付渠道传入应付金额，保证「展示的折扣」与「实付」一致。
+    pay_order_ctx = dict(order)
+    payable = max(0.0, float(order.get("total_price") or 0) - float(order.get("discount") or 0))
+    pay_order_ctx["total_price"] = payable
+
     provider = payment_module.get_provider()
     try:
-        intent = provider.create_payment(order, method, extra)
+        intent = provider.create_payment(pay_order_ctx, method, extra)
     except payment_module.PaymentError:
         logger.exception("支付下单失败 order=%s method=%s", order_id, method)
         raise
@@ -1204,20 +1279,33 @@ def pay_order(
         (pay_id, order_id, method, intent.amount, pay_status, intent.transaction_id, now, paid_at),
     )
     if intent.paid:
-        conn.execute(
-            "UPDATE orders SET paid=1, status='paid', paid_at=? WHERE order_id=?",
+        # 幂等：仅当本次成功把订单从未支付翻转为已支付时才发积分/通知，
+        # 避免沙箱重复调用（双击）重复发放积分。
+        cur = conn.execute(
+            "UPDATE orders SET paid=1, status='paid', paid_at=? WHERE order_id=? AND paid=0",
             (now, order_id),
         )
         _append_logistics(order_id, "支付成功，商家备货中")
-        add_points(
-            order["user_id"],
-            max(1, int(round(float(order.get("total_price") or 0)))),
-            "订单消费返积分",
-            order_id,
-        )
+        if cur.rowcount > 0:
+            add_points(
+                order["user_id"],
+                max(1, int(round(float(order.get("total_price") or 0)))),
+                "订单消费返积分",
+                order_id,
+            )
     else:
         conn.execute("UPDATE orders SET status='pending_payment' WHERE order_id=?", (order_id,))
     conn.commit()
+
+    if intent.paid:
+        # 通知中心（模块一）：沙箱渠道下单即支付成功
+        from storage import notify
+
+        notify.try_create(
+            order["user_id"], notify.T_ORDER, "支付成功",
+            f"订单 {order_id} 已支付 ¥{intent.amount}，商家备货中",
+            ref_type="order", ref_id=order_id,
+        )
 
     result = intent.to_dict()
     result["payment_id"] = pay_id
@@ -1240,9 +1328,12 @@ def mark_order_paid(order_id: str, transaction_id: str = "") -> bool:
     row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
     if not row:
         return False
+    # 幂等：订单已支付则直接返回（重复回调不再重复发积分/插支付行）
+    if row["paid"]:
+        return True
     now = _now()
     conn.execute(
-        "UPDATE orders SET paid=1, status='paid', paid_at=? WHERE order_id=?",
+        "UPDATE orders SET paid=1, status='paid', paid_at=? WHERE order_id=? AND paid=0",
         (now, order_id),
     )
     _append_logistics(order_id, "支付成功，商家备货中")
@@ -1268,6 +1359,14 @@ def mark_order_paid(order_id: str, transaction_id: str = "") -> bool:
              "paid", transaction_id, now, now),
         )
     conn.commit()
+    # 通知中心（模块一）：真实网关回调确认支付成功
+    from storage import notify
+
+    notify.try_create(
+        row["user_id"], notify.T_ORDER, "支付成功",
+        f"订单 {order_id} 已支付 ¥{float(row['total_price'] or 0)}，商家备货中",
+        ref_type="order", ref_id=order_id,
+    )
     return True
 
 

@@ -6,11 +6,14 @@ import { Button } from '../components/Button'
 import { IconRefresh, IconFlower } from '../components/icons'
 import { normalizePlan } from '../components/DiyPlanCard'
 import { createOrder, getPlan } from '../api/shop'
+import { recommendPlans } from '../api/recommend'
+import { useRecommend } from '../hooks/useRecommend'
 import { generateEffectImage, pollImageTask, API_BASE } from '../api/image'
 import { getUserId } from '../api/chat'
 import { isLoggedIn } from '../api/auth'
 import { toast } from '../utils/toast'
 import SmartImage from '../components/SmartImage'
+import Reveal from '../components/Reveal'
 
 // 03 DIY 方案详情（真实数据）
 // 主路径：对话「确认方案」经路由 state 传入完整 plan（含 design 花材/包装），直接渲染；
@@ -41,6 +44,15 @@ export default function DiyDetail() {
   }, [id, plan])
 
   const p = normalizePlan(plan)
+
+  // 同风格方案（模块三）：style 就绪后按词表分组命中 /recommend/plans
+  const { items: recPlans, state: recState } = useRecommend(
+    () =>
+      recommendPlans({ limit: 6, style: p?.style }).then((list) =>
+        list.filter((it) => it.id !== plan.plan_id),
+      ),
+    { enabled: !!p?.style, deps: [plan?.plan_id, p?.style] },
+  )
   const parseNum = (v) => {
     const n = Number(v)
     if (!Number.isNaN(n)) return n
@@ -129,6 +141,7 @@ export default function DiyDetail() {
 
       <div className="flex-1 overflow-y-auto">
         {/* 顶部效果图：已生成则展示真实图，否则用占位色块；有 effect_prompt 时可一键生图 */}
+        <Reveal>
         <div className="relative mx-4 mt-3 h-[210px] overflow-hidden rounded-[4px] bg-line">
           {img.status === 'done' && img.url ? (
             <img
@@ -158,6 +171,8 @@ export default function DiyDetail() {
             </div>
           )}
         </div>
+        </Reveal>
+        <Reveal delay={80}>
         <div className="px-6 pt-4">
           <h1 className="text-[19px] font-medium text-dark">{p.name}</h1>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -166,13 +181,17 @@ export default function DiyDetail() {
             ))}
           </div>
         </div>
+        </Reveal>
 
         <div className="px-6 pt-6">
+          <Reveal>
           <h2 className="text-[16px] font-medium text-dark">花材清单</h2>
+          </Reveal>
           <div className="mt-3 space-y-3">
             {p.flowers.length ? (
               p.flowers.map((f, i) => (
-                <div key={i} className="flex items-start gap-3">
+                <Reveal key={i} delay={i * 140}>
+                <div className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-4 w-4 items-center justify-center text-pink">
                     <IconFlower width={16} height={16} />
                   </span>
@@ -186,6 +205,7 @@ export default function DiyDetail() {
                     )}
                   </span>
                 </div>
+                </Reveal>
               ))
             ) : (
               <p className="text-[12px] text-sub">—</p>
@@ -193,35 +213,98 @@ export default function DiyDetail() {
           </div>
         </div>
 
+        <Reveal>
         <div className="px-6 pt-7">
           <h2 className="text-[16px] font-medium text-dark">包装设计</h2>
           <p className="mt-2 text-[12px] text-sub">{p.packaging || '—'}</p>
         </div>
+        </Reveal>
 
         {p.diySteps && (
+          <Reveal>
           <div className="px-6 pt-7">
             <h2 className="text-[16px] font-medium text-dark">DIY 操作步骤</h2>
             <p className="mt-2 whitespace-pre-line text-[12px] text-sub">
               {p.diySteps}
             </p>
           </div>
+          </Reveal>
         )}
         {p.careTips && (
+          <Reveal>
           <div className="px-6 pt-7">
             <h2 className="text-[16px] font-medium text-dark">养护建议</h2>
             <p className="mt-2 whitespace-pre-line text-[12px] text-sub">
               {p.careTips}
             </p>
           </div>
+          </Reveal>
         )}
         {p.meaning && (
+          <Reveal>
           <div className="px-6 pt-7">
             <h2 className="text-[16px] font-medium text-dark">花语寓意</h2>
             <p className="mt-2 whitespace-pre-line text-[12px] text-sub">
               {p.meaning}
             </p>
           </div>
+          </Reveal>
         )}
+
+        {/* 同风格方案（模块三：数据来自 /recommend/plans?style=） */}
+        <div className="px-6 pt-7">
+          <Reveal>
+          <h2 className="text-[16px] font-medium text-dark">同风格方案</h2>
+          <p className="mt-0.5 text-[10px] text-sub">与「{p.style || '本方案'}」风格相近的更多选择</p>
+          </Reveal>
+          <div className="mt-3 space-y-3">
+            {recState === 'loading' &&
+              Array.from({ length: 2 }).map((_, i) => (
+                <div key={i} className="h-[180px] animate-pulse rounded-[4px] bg-line" />
+              ))}
+            {recState === 'error' && (
+              <p className="py-4 text-center text-[11px] text-sub">推荐加载失败，请稍后重试</p>
+            )}
+            {recState === 'empty' && (
+              <p className="py-4 text-center text-[11px] text-sub">暂无同风格方案</p>
+            )}
+            {recState === 'ok' &&
+              recPlans.map((r, i) => (
+                <Reveal key={r.id} delay={i * 140}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => nav(`/product/${r.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      nav(`/product/${r.id}`)
+                    }
+                  }}
+                  className="flex items-center gap-3 rounded-[4px] border border-line bg-white p-3"
+                >
+                  <SmartImage
+                    imgKey={`plan_${r.id}`}
+                    className="h-[52px] w-[52px] shrink-0 rounded-[2px]"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-serif-cn text-[15px] font-normal text-ink">{r.name}</p>
+                    <p className="mt-0.5 line-clamp-1 text-[11px] text-sub">{r.desc}</p>
+                    <p className="mt-1 flex items-center gap-1.5 text-[11px] text-ink">
+                      <span className="text-[9px] text-stone">¥</span>
+                      {r.price}
+                      {r.style && (
+                        <span className="ml-1 rounded-[2px] bg-sand px-1.5 py-px text-[9px] text-gold-dark">
+                          {r.style}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                </Reveal>
+              ))}
+          </div>
+        </div>
       </div>
 
       <div className="shrink-0 border-t border-line bg-bg px-6 py-4">

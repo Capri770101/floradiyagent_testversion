@@ -5,13 +5,14 @@
   "type": "module",
   "description": "FloraDIY H5 移动端（React + Vite + Tailwind），对接后端 /chat。",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src --max-warnings=100",
     "test": "vitest run"
   },
   "dependencies": {
+    "pinyin-pro": "^3.29.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2"

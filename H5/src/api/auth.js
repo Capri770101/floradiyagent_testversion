@@ -114,7 +114,11 @@ export async function login({ username, password }) {
   })
   if (!res.ok) {
     throw new Error(
-      res.status === 401 ? '用户名或密码错误，请重新输入' : friendly(res.status, '登录失败，请稍后重试'),
+      res.status === 401
+        ? '用户名或密码错误，请重新输入'
+        : res.status === 403
+          ? '管理员账号请使用管理后台登录'
+          : friendly(res.status, '登录失败，请稍后重试'),
     )
   }
   const data = await res.json()
@@ -129,6 +133,11 @@ export async function getProfile() {
     throw new Error(res.status === 401 ? '登录已过期，请重新登录' : friendly(res.status, '获取资料失败，请稍后重试'))
   }
   const data = await res.json()
+  // 管理员不能使用 C 端：残留的管理员令牌一律清除，按未登录处理
+  if (data.user && data.user.role === 'admin') {
+    clearSession()
+    throw new Error('管理员账号请使用管理后台登录')
+  }
   return data.user
 }
 

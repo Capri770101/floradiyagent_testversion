@@ -2,8 +2,11 @@ import React, { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import SmartImage from '../components/SmartImage'
+import { Button } from '../components/Button'
+import Reveal from '../components/Reveal'
+import { IconStar } from '../components/icons'
 import { planImage } from '../assets/imageMap'
-import { listOrders, orderAftersale } from '../api/shop'
+import { listOrders, orderAction, orderAftersale, postReview } from '../api/shop'
 import { toast } from '../utils/toast'
 
 // 状态筛选 tab（键与后端 order.status 对齐）
@@ -26,22 +29,79 @@ export default function Orders() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('all')
+  const [kw, setKw] = useState('')
+  const [busyId, setBusyId] = useState(null)
   const [asTarget, setAsTarget] = useState(null) // 申请售后的订单
   const [asType, setAsType] = useState('refund')
   const [asReason, setAsReason] = useState('')
   const [asBusy, setAsBusy] = useState(false)
+  const [reviewTarget, setReviewTarget] = useState(null) // 待评价订单
+  const [reviewRating, setReviewRating] = useState(5)
+  const [reviewContent, setReviewContent] = useState('')
+  const [reviewBusy, setReviewBusy] = useState(false)
 
-  useEffect(() => {
+  const loadOrders = () => {
     listOrders()
       .then(setOrders)
       .catch((e) => toast(e.message || '订单加载失败', 'error'))
       .finally(() => setLoading(false))
-  }, [])
+  }
 
-  const filtered = useMemo(
-    () => (tab === 'all' ? orders : orders.filter((o) => o.status === tab)),
-    [orders, tab],
-  )
+  useEffect(loadOrders, [])
+
+  // 订单操作：取消 / 模拟发货 / 确认收货
+  const act = async (oid, action) => {
+    if (busyId) return
+    setBusyId(oid)
+    try {
+      await orderAction(oid, action)
+      toast(action === 'ship' ? '已模拟发货' : action === 'complete' ? '已确认收货' : '订单已取消')
+      loadOrders()
+    } catch (e) {
+      toast(e.message || '操作失败', 'error')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const goPay = (oid) => nav('/pay', { state: { orderId: oid } })
+
+  const openReview = (o) => {
+    setReviewTarget(o)
+    setReviewRating(5)
+    setReviewContent('')
+  }
+
+  const submitReview = async () => {
+    if (reviewBusy || !reviewTarget) return
+    setReviewBusy(true)
+    try {
+      await postReview({
+        order_id: reviewTarget.order_id,
+        rating: reviewRating,
+        content: reviewContent.trim(),
+      })
+      toast('评价成功，感谢你的反馈')
+      setReviewTarget(null)
+      loadOrders()
+    } catch (e) {
+      toast(e.message || '评价失败', 'error')
+    } finally {
+      setReviewBusy(false)
+    }
+  }
+
+  const filtered = useMemo(() => {
+    const q = kw.trim().toLowerCase()
+    let list = tab === 'all' ? orders : orders.filter((o) => o.status === tab)
+    if (q) {
+      list = list.filter((o) => {
+        const items = (o.items || []).map((it) => `${it.name} ${it.plan_id} ${it.shop || ''}`).join(' ')
+        return `${o.order_id} ${o.status} ${items}`.toLowerCase().includes(q)
+      })
+    }
+    return list
+  }, [orders, tab, kw])
 
   // 售后：已支付且未取消的订单可发起
   const canAftersale = (o) => o.paid && o.status !== 'canceled'
@@ -87,15 +147,29 @@ export default function Orders() {
         ))}
       </div>
 
+      <div className="shrink-0 px-4 pb-3">
+        <input
+          value={kw}
+          onChange={(e) => setKw(e.target.value)}
+          placeholder="搜索订单号 / 商品名称"
+          className="maison-field w-full !rounded-pill !px-4"
+        />
+      </div>
+
       <div className="flex-1 overflow-y-auto px-4 pb-6">
         {loading ? (
           <p className="mt-6 rounded-card bg-white p-8 text-center text-[12px] text-sub border border-line">
             加载中…
           </p>
         ) : filtered.length === 0 ? (
+          <Reveal>
           <div className="py-16 text-center">
             <p className="font-serif-cn text-[18px] font-normal text-ink">
-              {tab === 'all' ? '还没有订单' : '该状态下暂无订单'}
+              {kw.trim()
+                ? '没有匹配的订单'
+                : tab === 'all'
+                  ? '还没有订单'
+                  : '该状态下暂无订单'}
             </p>
             <p className="mt-2 text-[11px] text-sub">去首页挑一束心仪的花吧</p>
             <button
@@ -103,12 +177,13 @@ export default function Orders() {
               onClick={() => nav('/')}
               className="press mt-5 rounded-[2px] bg-dark px-8 py-2.5 text-[12px] font-medium tracking-[1px] text-[#FAF8F5]"
             >
-              去逛逛
+               去逛逛
             </button>
           </div>
+          </Reveal>
         ) : (
           <div className="space-y-3">
-            {filtered.map((o) => {
+            {filtered.map((o, i) => {
               const meta = statusMeta(o.status)
               const items = o.items || []
               const total = o.total_price != null
@@ -116,8 +191,8 @@ export default function Orders() {
                 : items.reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0)
               const count = items.reduce((s, it) => s + (it.qty || 1), 0)
               return (
+                <Reveal key={o.order_id} delay={i * 140}>
                 <div
-                  key={o.order_id}
                   className="block w-full overflow-hidden rounded-card bg-white border border-line text-left"
                 >
                   <div className="flex items-center justify-between border-b border-line px-4 py-3">
@@ -162,24 +237,125 @@ export default function Orders() {
                           申请售后
                         </button>
                       )}
+                      {(o.status === 'created' || o.status === 'pending_payment') && (
+                        <>
+                          <Button
+                            variant="secondary"
+                            className="!h-[28px] !rounded-pill !text-[11px]"
+                            disabled={busyId === o.order_id}
+                            onClick={() => act(o.order_id, 'cancel')}
+                          >
+                            取消订单
+                          </Button>
+                          <Button
+                            className="!h-[28px] !rounded-pill !text-[11px]"
+                            disabled={busyId === o.order_id}
+                            onClick={() => goPay(o.order_id)}
+                          >
+                            去支付
+                          </Button>
+                        </>
+                      )}
+                      {o.status === 'paid' && (
+                        <Button
+                          className="!h-[28px] !rounded-pill !text-[11px]"
+                          disabled={busyId === o.order_id}
+                          onClick={() => act(o.order_id, 'ship')}
+                        >
+                          模拟发货
+                        </Button>
+                      )}
+                      {o.status === 'shipped' && (
+                        <Button
+                          className="!h-[28px] !rounded-pill !text-[11px]"
+                          disabled={busyId === o.order_id}
+                          onClick={() => act(o.order_id, 'complete')}
+                        >
+                          确认收货
+                        </Button>
+                      )}
+                      {o.status === 'done' && (
+                        <Button
+                          className="!h-[28px] !rounded-pill !text-[11px]"
+                          onClick={() => openReview(o)}
+                        >
+                          评价
+                        </Button>
+                      )}
                       <span className="font-serif-cn text-[15px] font-normal text-ink">
                         合计 {fmtMoney(total)}
                       </span>
                     </div>
                   </div>
+                  {o.shop_id && (
+                    <button
+                      type="button"
+                      onClick={() => nav(`/chat/${encodeURIComponent(o.shop_id)}`)}
+                      className="press block w-full border-t border-line bg-bg/50 py-2 text-center text-[11px] tracking-[1px] text-sub"
+                    >
+                      联系商家
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => nav(`/logistics/${o.order_id}`)}
                     className="press block w-full border-t border-line bg-bg/50 py-2 text-center text-[11px] tracking-[1px] text-sub"
                   >
-                    查看物流跟踪
+                     查看物流跟踪
                   </button>
                 </div>
+                </Reveal>
               )
             })}
           </div>
         )}
       </div>
+
+      {/* 评价弹窗 */}
+      {reviewTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+          onClick={() => setReviewTarget(null)}
+        >
+          <div
+            className="w-full max-w-[430px] rounded-t-[20px] bg-white p-5 pb-7"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-center text-[16px] font-medium text-dark">评价订单</h3>
+            <p className="mt-1 text-center text-[11px] text-sub">
+              订单 {reviewTarget.order_id} · 已完成，欢迎分享你的体验
+            </p>
+            <div className="mt-4 flex justify-center gap-2">
+              {[1, 2, 3, 4, 5].map((s) => (
+                <button
+                  key={s}
+                  aria-label={`${s} 星`}
+                  onClick={() => setReviewRating(s)}
+                  className="p-1"
+                >
+                  <IconStar
+                    width={26}
+                    height={26}
+                    filled={s <= reviewRating}
+                    className={s <= reviewRating ? 'text-pink' : 'text-line'}
+                  />
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={reviewContent}
+              onChange={(e) => setReviewContent(e.target.value)}
+              placeholder="说说这束花的体验吧（选填）"
+              maxLength={500}
+              rows={3}
+              className="mt-4 w-full resize-none rounded-[4px] border border-line bg-bg p-3 text-[12px] text-ink outline-none placeholder:text-sub/60 focus:border-pink"
+            />
+            <Button className="mt-4 w-full" onClick={submitReview} disabled={reviewBusy}>
+              {reviewBusy ? '提交中…' : '提交评价'}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* 申请售后弹层 */}
       {asTarget && (

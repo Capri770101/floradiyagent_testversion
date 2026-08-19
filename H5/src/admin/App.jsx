@@ -10,9 +10,11 @@ import { MerchantApply } from './pages/MerchantApply'
 import { Reviews } from './pages/Reviews'
 import { Config } from './pages/Config'
 import { Content } from './pages/Content'
+import { Shops } from './pages/Shops'
 
 const MENU = [
   { key: 'dashboard', label: '数据看板', sub: 'GMV / 订单 / 热销' },
+  { key: 'shops', label: '店铺管理', sub: '合作花店 CRUD' },
   { key: 'users', label: '用户管理', sub: '禁用 / 提权' },
   { key: 'orders', label: '订单管理', sub: '全局视角 / 状态干预' },
   { key: 'aftersales', label: '售后管理', sub: '退款 / 退货 / 换货' },
@@ -81,6 +83,7 @@ export function AdminApp() {
 
   const Page = {
     dashboard: Dashboard,
+    shops: Shops,
     users: Users,
     orders: Orders,
     aftersales: Aftersales,

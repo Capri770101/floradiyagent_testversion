@@ -95,6 +95,13 @@ CREATE TABLE IF NOT EXISTS diy_plans (
     card_message     TEXT,
     budget_breakdown TEXT,                       -- JSON 对象
     effect_image_url TEXT,
+    -- 卡片内容扩充（模块二）：LLM 设计产出 + 规则兜底，旧方案留空（前端显示 —）
+    difficulty       TEXT,                       -- 制作难度（入门/进阶/高手）
+    est_time         INTEGER,                    -- 预计耗时（分钟）
+    shelf_life       TEXT,                       -- 保鲜期/花期（收到后可养几天）
+    suitable_for     TEXT,                       -- JSON 数组：适宜人群
+    caution          TEXT,                       -- 禁忌/提醒（如花粉过敏慎选）
+    mood_tags        TEXT,                       -- JSON 数组：情绪标签（文字版）
     status           TEXT NOT NULL DEFAULT 'confirmed',
     order_count      INTEGER NOT NULL DEFAULT 0,
     created_at       TEXT NOT NULL,
@@ -432,6 +439,20 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     content    TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+
+-- 站内消息通知中心（模块一）：业务动作（下单/支付/发货/签收/评价回复/售后/公告）落一条通知
+CREATE TABLE IF NOT EXISTS notifications (
+    id           TEXT PRIMARY KEY,               -- N_ 前缀
+    user_id      TEXT NOT NULL,                  -- 接收者 -> users.id
+    type         TEXT NOT NULL,                  -- order_status|logistics|review_reply|aftersale|announcement|system
+    title        TEXT NOT NULL,
+    body         TEXT NOT NULL DEFAULT '',
+    ref_type     TEXT,                           -- plan|order|shop|aftersale 等，点击跳转用
+    ref_id       TEXT,                           -- 关联业务 id
+    push_channel TEXT NOT NULL DEFAULT 'inbox',  -- inbox|wechat（预留，本期仅 inbox）
+    is_read      INTEGER NOT NULL DEFAULT 0,     -- 0=未读 1=已读
+    created_at   TEXT NOT NULL
+);
 """
 
 #: 索引（交付级查询性能）
@@ -455,6 +476,7 @@ CREATE INDEX IF NOT EXISTS idx_shop_scenes_scene    ON shop_scenes(scene_id);
 CREATE INDEX IF NOT EXISTS idx_chats_shop           ON shop_chats(shop_id, last_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chats_user           ON shop_chats(user_id, last_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_chat   ON chat_messages(chat_id, id ASC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user   ON notifications(user_id, created_at DESC);
 """
 
 #: 旧库增量迁移：给已存在的表补缺失列（仅开发期存量数据需要）
@@ -517,6 +539,13 @@ _ALTERS = [
     ("users", "status", "ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"),
     # reviews: 管理后台隐藏（visible|hidden）
     ("reviews", "status", "ALTER TABLE reviews ADD COLUMN status TEXT NOT NULL DEFAULT 'visible'"),
+    # diy_plans: 卡片内容扩充（模块二：难度/耗时/保鲜期/适宜人群/禁忌/情绪标签）
+    ("diy_plans", "difficulty", "ALTER TABLE diy_plans ADD COLUMN difficulty TEXT"),
+    ("diy_plans", "est_time", "ALTER TABLE diy_plans ADD COLUMN est_time INTEGER"),
+    ("diy_plans", "shelf_life", "ALTER TABLE diy_plans ADD COLUMN shelf_life TEXT"),
+    ("diy_plans", "suitable_for", "ALTER TABLE diy_plans ADD COLUMN suitable_for TEXT"),
+    ("diy_plans", "caution", "ALTER TABLE diy_plans ADD COLUMN caution TEXT"),
+    ("diy_plans", "mood_tags", "ALTER TABLE diy_plans ADD COLUMN mood_tags TEXT"),
 ]
 
 

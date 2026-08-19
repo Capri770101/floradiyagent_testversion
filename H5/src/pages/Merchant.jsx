@@ -23,16 +23,28 @@ import {
   merchantCreateCategory,
   merchantRenameCategory,
   merchantDeleteCategory,
-  merchantReplyReview,
   merchantChats,
   merchantChatMessages,
   merchantSendChatMessage,
+  merchantChatWithUser,
+  merchantReplyReview,
 } from '../api/shop'
 import { getProfile } from '../api/auth'
 import { FloraCorner, FloraSprig } from '../components/FloralDecor'
-import { IconStar, IconPin, IconClock, IconPlus, IconArrow, IconTrash, IconSearch } from '../components/icons'
+import {
+  IconStar,
+  IconPin,
+  IconClock,
+  IconPlus,
+  IconArrow,
+  IconTrash,
+  IconSearch,
+  IconChat,
+  IconSend,
+} from '../components/icons'
 import { planImage } from '../assets/imageMap'
 import SmartImage from '../components/SmartImage'
+import Reveal from '../components/Reveal'
 
 const STATUS_TABS = [
   { key: '', label: '全部' },
@@ -105,8 +117,8 @@ function DiyPlanCard({ plan }) {
   )
 }
 
-// 订单卡：明细 + 收件信息 + 状态操作（查看 DIY 方案 / 代发货 / 物流时间线）
-function OrderCard({ o, expanded, onToggle, plan, planBusy, busyId, onShip, onViewLogistics }) {
+// 订单卡：明细 + 收件信息 + 状态操作（查看 DIY 方案 / 代发货 / 物流时间线 / 联系顾客）
+function OrderCard({ o, expanded, onToggle, plan, planBusy, busyId, onShip, onViewLogistics, onContact }) {
   const meta = statusMeta(o.status)
   const items = o.items || []
   const recipient = o.recipient || {}
@@ -178,6 +190,13 @@ function OrderCard({ o, expanded, onToggle, plan, planBusy, busyId, onShip, onVi
 
       <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-3">
         <p className="mr-auto font-serif-cn text-[15px] font-normal text-ink">共 {fmtMoney(o.total_price)}</p>
+        <button
+          onClick={() => onContact?.(o)}
+          className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
+        >
+          <IconChat width={12} height={12} />
+          联系顾客
+        </button>
         <button
           onClick={() => onViewLogistics(o.order_id)}
           className="press flex items-center gap-1 text-[12px] tracking-[1px] text-gold"
@@ -395,7 +414,7 @@ function LogisticsTab({
 }
 
 // 工作台首页：今日经营 + 待办提醒 + 店铺状态 + 快捷入口 + 最近订单
-function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, onViewShop, onPreviewShop }) {
+function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, onViewShop, onPreviewShop, unreadChats }) {
   if (!stats) return null
   const pendingShip = (orders || []).filter((o) => o.status === 'paid')
   const badReviews = (reviews || []).filter((r) => r.rating <= 3)
@@ -409,6 +428,7 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, 
   ]
   const quick = [
     { key: 'orders', label: '订单管理', sub: `${stats.pending_ship ?? 0} 单待发货` },
+    { key: 'chats', label: '顾客会话', sub: unreadChats ? `${unreadChats} 条未读消息` : '联系顾客 / 咨询' },
     { key: 'plans', label: '商品管理', sub: '上下架 / 编辑' },
     { key: 'reviews', label: '评价管理', sub: badReviews.length ? `${badReviews.length} 条中差评` : `${stats.review_count ?? 0} 条评价` },
     { key: 'shop', label: '店铺设置', sub: '资料 / 装修' },
@@ -418,89 +438,97 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, 
     <div className="px-5">
       {/* 今日经营大数字卡 */}
       <div className="mt-4 grid grid-cols-2 gap-2.5">
-        {cards.map((c) => (
-          <div key={c.label} className="rounded-card bg-white shadow-card p-3.5 border border-line">
-            <p className="text-[10px] tracking-[0.15em] text-sub">{c.label}</p>
-            <p className={`mt-1 font-serif-cn text-[22px] font-normal ${c.accent ? 'text-burgundy' : 'text-ink'}`}>
-              {c.value}
-            </p>
-            <p className="mt-0.5 text-[10px] text-sub/70">{c.hint}</p>
-          </div>
+        {cards.map((c, i) => (
+          <Reveal key={c.label} delay={i * 100}>
+            <div className="rounded-card bg-white shadow-card p-3.5 border border-line">
+              <p className="text-[10px] tracking-[0.15em] text-sub">{c.label}</p>
+              <p className={`mt-1 font-serif-cn text-[22px] font-normal ${c.accent ? 'text-burgundy' : 'text-ink'}`}>
+                {c.value}
+              </p>
+              <p className="mt-0.5 text-[10px] text-sub/70">{c.hint}</p>
+            </div>
+          </Reveal>
         ))}
       </div>
 
       {/* 待办提醒 */}
-      <div className="mt-5">
-        <p className="eyebrow">待办提醒</p>
-        {pendingShip.length === 0 && badReviews.length === 0 ? (
-          <p className="mt-2 rounded-card bg-white shadow-card p-5 text-center text-[12px] text-sub border border-line">
-            暂无待办，一切正常 🎉
-          </p>
-        ) : (
-          <div className="mt-2 space-y-2">
-            {pendingShip.slice(0, 4).map((o) => (
-              <div
-                key={o.order_id}
-                onClick={() => onGoTab('orders')}
-                className="press flex w-full cursor-pointer items-center justify-between rounded-card bg-white shadow-card p-3 text-left border border-line"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-[12px] text-ink">{o.order_id}</p>
-                  <p className="mt-0.5 truncate text-[10px] text-sub">
-                    {(o.items || []).map((it) => it.name).join('、')} · 共 {fmtMoney(o.total_price)}
-                  </p>
-                </div>
-                <Button
-                  className="!h-[30px] !px-4 !text-[11px] !tracking-[1px]"
-                  disabled={busyId === o.order_id}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onShip(o.order_id)
-                  }}
+      <Reveal delay={120}>
+        <div className="mt-5">
+          <p className="eyebrow">待办提醒</p>
+          {pendingShip.length === 0 && badReviews.length === 0 ? (
+            <p className="mt-2 rounded-card bg-white shadow-card p-5 text-center text-[12px] text-sub border border-line">
+              暂无待办，一切正常 🎉
+            </p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {pendingShip.slice(0, 4).map((o) => (
+                <div
+                  key={o.order_id}
+                  onClick={() => onGoTab('orders')}
+                  className="press flex w-full cursor-pointer items-center justify-between rounded-card bg-white shadow-card p-3 text-left border border-line"
                 >
-                  {busyId === o.order_id ? '发货中…' : '去发货'}
-                </Button>
-              </div>
-            ))}
-            {badReviews.slice(0, 2).map((r) => (
-              <button
-                key={r.id}
-                onClick={() => onGoTab('reviews')}
-                className="press flex w-full items-center justify-between rounded-card bg-white shadow-card p-3 text-left border border-line"
-              >
-                <div className="min-w-0">
-                  <p className="text-[12px] text-ink">
-                    {'★'.repeat(r.rating)}
-                    <span className="ml-2 text-[10px] text-sub">中差评待处理</span>
-                  </p>
-                  <p className="mt-0.5 truncate text-[10px] text-sub">{r.content || '（无文字评价）'}</p>
+                  <div className="min-w-0">
+                    <p className="truncate text-[12px] text-ink">{o.order_id}</p>
+                    <p className="mt-0.5 truncate text-[10px] text-sub">
+                      {(o.items || []).map((it) => it.name).join('、')} · 共 {fmtMoney(o.total_price)}
+                    </p>
+                  </div>
+                  <Button
+                    className="!h-[30px] !px-4 !text-[11px] !tracking-[1px]"
+                    disabled={busyId === o.order_id}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onShip(o.order_id)
+                    }}
+                  >
+                    {busyId === o.order_id ? '发货中…' : '去发货'}
+                  </Button>
                 </div>
-                <IconArrow width={12} height={12} className="shrink-0 text-sub" />
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+              {badReviews.slice(0, 2).map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => onGoTab('reviews')}
+                  className="press flex w-full items-center justify-between rounded-card bg-white shadow-card p-3 text-left border border-line"
+                >
+                  <div className="min-w-0">
+                    <p className="text-[12px] text-ink">
+                      {'★'.repeat(r.rating)}
+                      <span className="ml-2 text-[10px] text-sub">中差评待处理</span>
+                    </p>
+                    <p className="mt-0.5 truncate text-[10px] text-sub">{r.content || '（无文字评价）'}</p>
+                  </div>
+                  <IconArrow width={12} height={12} className="shrink-0 text-sub" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </Reveal>
 
       {/* 快捷入口 */}
-      <div className="mt-6">
-        <p className="eyebrow">快捷入口</p>
-        <div className="mt-2 grid grid-cols-2 gap-2.5">
-          {quick.map((q) => (
-            <button
-              key={q.key}
-              onClick={() => onGoTab(q.key)}
-              className="press rounded-card bg-white shadow-card p-3.5 text-left border border-line"
-            >
-              <p className="text-[13px] font-medium text-ink">{q.label}</p>
-              <p className="mt-1 text-[10px] text-sub">{q.sub}</p>
-            </button>
-          ))}
+      <Reveal delay={200}>
+        <div className="mt-6">
+          <p className="eyebrow">快捷入口</p>
+          <div className="mt-2 grid grid-cols-2 gap-2.5">
+            {quick.map((q, i) => (
+              <Reveal key={q.key} delay={i * 80}>
+                <button
+                  onClick={() => onGoTab(q.key)}
+                  className="press rounded-card bg-white shadow-card p-3.5 text-left border border-line"
+                >
+                  <p className="text-[13px] font-medium text-ink">{q.label}</p>
+                  <p className="mt-1 text-[10px] text-sub">{q.sub}</p>
+                </button>
+              </Reveal>
+            ))}
+          </div>
         </div>
-      </div>
+      </Reveal>
 
       {/* 店铺状态 */}
       {shops.length > 0 && (
+        <Reveal delay={280}>
         <div className="mt-6">
           <p className="eyebrow">我的店铺</p>
           <div className="mt-2 space-y-2">
@@ -536,6 +564,7 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, 
             ))}
           </div>
         </div>
+        </Reveal>
       )}
 
       {/* 最近订单 */}
@@ -543,19 +572,21 @@ function DashboardTab({ stats, orders, reviews, shops, onGoTab, onShip, busyId, 
         <div className="mt-6 pb-2">
           <p className="eyebrow">最近订单</p>
           <div className="mt-2 space-y-2">
-            {recent.map((o) => {
+            {recent.map((o, i) => {
               const meta = statusMeta(o.status)
               return (
-                <div key={o.order_id} className="rounded-card bg-white shadow-card p-3 border border-line">
-                  <div className="flex items-center justify-between">
-                    <p className="truncate text-[11px] text-sub">{o.order_id}</p>
-                    <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>{meta.label}</span>
+                <Reveal key={o.order_id} delay={i * 100}>
+                  <div className="rounded-card bg-white shadow-card p-3 border border-line">
+                    <div className="flex items-center justify-between">
+                      <p className="truncate text-[11px] text-sub">{o.order_id}</p>
+                      <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>{meta.label}</span>
+                    </div>
+                    <p className="mt-1 truncate text-[12px] text-ink">
+                      {(o.items || []).map((it) => it.name).join('、')}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-gold">{fmtMoney(o.total_price)}</p>
                   </div>
-                  <p className="mt-1 truncate text-[12px] text-ink">
-                    {(o.items || []).map((it) => it.name).join('、')}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-gold">{fmtMoney(o.total_price)}</p>
-                </div>
+                </Reveal>
               )
             })}
           </div>
@@ -1595,6 +1626,44 @@ export default function Merchant() {
     }
   }
 
+  // 订单「联系顾客」：直达该订单顾客的会话（无会话则创建）
+  const contactChat = async (o) => {
+    const uid = o.user_id
+    const sid = o.shop_id
+    if (!uid || !sid) {
+      toast('该订单缺少顾客或店铺信息', 'error')
+      return
+    }
+    setTab('chats')
+    setSearchParams({ tab: 'chats' }, { replace: true })
+    try {
+      const data = await merchantChatWithUser(uid, sid)
+      setActiveChat({
+        ...data.chat,
+        nickname: o.recipient_name || '顾客',
+        shop_name: sid,
+      })
+      setChatMessages(data.messages || [])
+      setChatDraft('')
+    } catch (e) {
+      toast(e.message || '会话打开失败', 'error')
+    }
+  }
+
+  // 会话详情轮询：打开会话期间每 5s 拉取新消息（商家回复后顾客可即时收到）
+  useEffect(() => {
+    if (!activeChat?.id || tab !== 'chats') return
+    const timer = setInterval(async () => {
+      try {
+        const data = await merchantChatMessages(activeChat.id)
+        setChatMessages(data.messages || [])
+      } catch {
+        // 轮询失败静默，下次重试
+      }
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [activeChat?.id, tab])
+
   // 分类管理：列表加载 + 新增 / 改名 / 删除（店铺装修）
   const refreshCategories = useCallback(async () => {
     try {
@@ -1712,6 +1781,7 @@ export default function Merchant() {
   const shopNames = shops.map((s) => s.name).join(' / ')
   const pendingCount = stats?.pending_ship ?? 0
   const currentShop = shops.find((s) => s.id === shopId)
+  const unreadChats = chats.reduce((n, c) => n + (c.unread_merchant || 0), 0)
 
   return (
     <div className="min-h-full bg-bg pb-8">
@@ -1720,45 +1790,48 @@ export default function Merchant() {
           className="pointer-events-none absolute -right-2 -top-1 text-white/50"
           style={{ width: 92, height: 92 }}
         />
-        <p className="eyebrow">Merchant Console</p>
-        <h1 className="mt-2 font-serif-cn text-[28px] font-normal text-ink">商家工作台</h1>
-        <div className="mx-auto mt-3 h-px w-9 bg-gold" />
-        <p className="mt-3 text-[12px] text-sub">
+        <p className="animate-hero eyebrow" style={{ animationDelay: '0ms' }}>Merchant Console</p>
+        <h1 className="animate-hero mt-2 font-serif-cn text-[28px] font-normal text-ink" style={{ animationDelay: '80ms' }}>
+          商家工作台
+        </h1>
+        <div className="animate-hero mx-auto mt-3 h-px w-9 bg-gold" style={{ animationDelay: '160ms' }} />
+        <p className="animate-hero mt-3 text-[12px] text-sub" style={{ animationDelay: '240ms' }}>
           {profile?.nickname || profile?.username || '商家'} · 打理每一束花的旅程
         </p>
       </div>
 
-      <div className="relative mx-5 mt-5 overflow-hidden rounded-card bg-white shadow-card p-4 border border-line">
-        <FloraSprig
-          className="pointer-events-none absolute -right-2 -bottom-3 text-gold/20"
-          style={{ width: 64, height: 64 }}
-        />
-        <div className="flex items-baseline justify-between">
-          <p className="eyebrow">经营总览</p>
-          {shopNames && <span className="max-w-[55%] truncate text-[10px] text-sub">{shopNames}</span>}
-        </div>
-        <div className="mt-3 grid grid-cols-4">
-          {[
-            { label: '订单', value: stats ? `${stats.order_count}` : '-' },
-            { label: 'GMV', value: stats ? fmtMoney(stats.gmv) : '-' },
-            { label: '待发货', value: stats ? `${stats.pending_ship}` : '-' },
-            { label: '已完成', value: stats ? `${stats.done_count}` : '-' },
-          ].map((c, i) => (
-            <div key={c.label} className={`flex flex-col items-center ${i > 0 ? 'border-l border-line' : ''}`}>
-              <span className="max-w-full truncate font-serif-cn text-[17px] font-normal text-ink">{c.value}</span>
-              <span className="mt-1 text-[10px] tracking-[0.15em] text-sub">{c.label}</span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 flex items-center justify-center gap-5 border-t border-line pt-3 text-center">
-          <span className="text-[10px] tracking-[0.15em] text-sub">
-            评价{' '}
-            <span className="font-serif-cn text-[13px] font-normal text-ink">
-              {stats?.review_count ?? '-'}
+      <Reveal delay={120}>
+        <div className="relative mx-5 mt-5 overflow-hidden rounded-card bg-white shadow-card p-4 border border-line">
+          <FloraSprig
+            className="pointer-events-none absolute -right-2 -bottom-3 text-gold/20"
+            style={{ width: 64, height: 64 }}
+          />
+          <div className="flex items-baseline justify-between">
+            <p className="eyebrow">经营总览</p>
+            {shopNames && <span className="max-w-[55%] truncate text-[10px] text-sub">{shopNames}</span>}
+          </div>
+          <div className="mt-3 grid grid-cols-4">
+            {[
+              { label: '订单', value: stats ? `${stats.order_count}` : '-' },
+              { label: 'GMV', value: stats ? fmtMoney(stats.gmv) : '-' },
+              { label: '待发货', value: stats ? `${stats.pending_ship}` : '-' },
+              { label: '已完成', value: stats ? `${stats.done_count}` : '-' },
+            ].map((c, i) => (
+              <div key={c.label} className={`flex flex-col items-center ${i > 0 ? 'border-l border-line' : ''}`}>
+                <span className="max-w-full truncate font-serif-cn text-[17px] font-normal text-ink">{c.value}</span>
+                <span className="mt-1 text-[10px] tracking-[0.15em] text-sub">{c.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center justify-center gap-5 border-t border-line pt-3 text-center">
+            <span className="text-[10px] tracking-[0.15em] text-sub">
+              评价{' '}
+              <span className="font-serif-cn text-[13px] font-normal text-ink">
+                {stats?.review_count ?? '-'}
+              </span>
             </span>
-          </span>
-          <span className="text-[10px] tracking-[0.15em] text-sub">
-            平均分{' '}
+            <span className="text-[10px] tracking-[0.15em] text-sub">
+              平均分{' '}
             <span className="font-serif-cn text-[13px] font-normal text-ink">
               {stats && stats.avg_rating ? Number(stats.avg_rating).toFixed(1) : '-'}
             </span>
@@ -1771,6 +1844,7 @@ export default function Merchant() {
           </span>
         </div>
       </div>
+      </Reveal>
 
       {/* 内部导航：只保留底部导航没有的页签（经营/订单/商品/会话 已由底部导航承载） */}
       <div className="mt-6 grid grid-cols-3 border-b border-line/60 px-2">
@@ -1813,6 +1887,7 @@ export default function Merchant() {
           busyId={busyId}
           onViewShop={viewShop}
           onPreviewShop={previewShop}
+          unreadChats={unreadChats}
         />
       ) : tab === 'orders' ? (
         <>
@@ -1907,18 +1982,20 @@ export default function Merchant() {
             </p>
           ) : (
             <div className="px-5">
-              {orders.map((o) => (
-                <OrderCard
-                  key={o.order_id}
-                  o={o}
-                  expanded={expandedId === o.order_id}
-                  onToggle={() => togglePlan(o)}
-                  plan={plans[o.order_id]}
-                  planBusy={planBusy}
-                  busyId={busyId}
-                  onShip={ship}
-                  onViewLogistics={viewLogistics}
-                />
+              {orders.map((o, i) => (
+                <Reveal key={o.order_id} delay={i * 100}>
+                  <OrderCard
+                    o={o}
+                    expanded={expandedId === o.order_id}
+                    onToggle={() => togglePlan(o)}
+                    plan={plans[o.order_id]}
+                    planBusy={planBusy}
+                    busyId={busyId}
+                    onShip={ship}
+                    onViewLogistics={viewLogistics}
+                    onContact={contactChat}
+                  />
+                </Reveal>
               ))}
             </div>
           )}

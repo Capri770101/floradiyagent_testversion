@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
+import Reveal from '../components/Reveal'
 import { myAftersales } from '../api/shop'
 
 const AS_STATUS = {
@@ -32,6 +33,7 @@ export default function MyAftersales() {
         {loading ? (
           <p className="mt-6 rounded-card bg-white p-8 text-center text-[12px] text-sub border border-line">加载中…</p>
         ) : rows.length === 0 ? (
+          <Reveal>
           <div className="py-16 text-center">
             <p className="font-serif-cn text-[18px] font-normal text-ink">还没有售后记录</p>
             <p className="mt-2 text-[11px] text-sub">已支付订单可在「我的订单」中发起退款/退货/换货</p>
@@ -42,12 +44,14 @@ export default function MyAftersales() {
               去订单页
             </button>
           </div>
+          </Reveal>
         ) : (
           <div className="mt-3 space-y-3">
-            {rows.map((a) => {
+            {rows.map((a, i) => {
               const m = AS_STATUS[a.status] || { label: a.status, cls: 'bg-line/40 text-sub' }
               return (
-                <div key={a.id} className="rounded-card bg-white p-4 border border-line">
+                <Reveal key={a.id} delay={i * 140}>
+                <div className="rounded-card bg-white p-4 border border-line">
                   <div className="flex items-center justify-between">
                     <p className="text-[11px] text-sub">{a.id}</p>
                     <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${m.cls}`}>{m.label}</span>
@@ -62,6 +66,7 @@ export default function MyAftersales() {
                   </div>
                   <p className="mt-2 border-t border-line pt-2 text-[10px] text-sub/70">{a.created_at}</p>
                 </div>
+                </Reveal>
               )
             })}
           </div>

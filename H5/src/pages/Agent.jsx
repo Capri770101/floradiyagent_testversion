@@ -11,13 +11,14 @@ import {
   getImageTask,
   withApiUrl,
 } from '../api/chat'
-import { createOrder } from '../api/shop'
+import { createOrder, publicConfig } from '../api/shop'
 import { calcPayable } from '../utils/price'
 import { Placeholder } from '../components/Placeholder'
 import { Pill } from '../components/Pill'
 import { Button } from '../components/Button'
 import DiyPlanCard from '../components/DiyPlanCard'
 import SmartImage from '../components/SmartImage'
+import Reveal from '../components/Reveal'
 import { planImage, shopImage } from '../assets/imageMap'
 import { IconSend, IconMenu, IconTrash } from '../components/icons'
 import { FloraBloom } from '../components/FloralDecor'
@@ -241,6 +242,14 @@ function ShopCard({ shops, onPick }) {
 
 // 订单卡片：展示 create_order 产出的订单摘要，附「去支付」跳转
 function OrderCard({ data, onPay }) {
+  // 配送费由后端运营配置下发（与 Pay/OrderConfirm 同源，红线2：单一数据源），
+  // 避免 Agent 卡片「应付合计」漏算运费、与支付页口径不一致。
+  const [shippingFee, setShippingFee] = useState(0)
+  useEffect(() => {
+    publicConfig()
+      .then((cfg) => { if (cfg.shipping_fee != null) setShippingFee(cfg.shipping_fee) })
+      .catch(() => {})
+  }, [])
   const items = Array.isArray(data?.items) ? data.items : []
   const total =
     data?.total_price ??
@@ -266,7 +275,7 @@ function OrderCard({ data, onPay }) {
       ))}
       <div className="mt-2 flex justify-between border-t border-line pt-2 text-[13px]">
         <span className="text-sub">应付合计</span>
-        <span className="font-medium text-ink">¥{calcPayable(total, discount).toFixed(2)}</span>
+        <span className="font-medium text-ink">¥{calcPayable(total, discount, shippingFee).toFixed(2)}</span>
       </div>
       <p className="mt-1 text-[10px] text-sub">
         含配送费，已减优惠券 ¥{Number(discount || 0).toFixed(2)}；以支付页为准
@@ -540,16 +549,16 @@ export default function Agent() {
   function renderMessage(m, idx) {
     if (m.role === 'user') {
       return (
-        <div key={idx} className="flex justify-end px-4 pb-3">
+        <Reveal key={idx} className="flex justify-end px-4 pb-3" delay={Math.min(idx, 8) * 100}>
           <div className="max-w-[220px] rounded-[2px] border border-line bg-sand px-3.5 py-2.5 text-right text-[12px] leading-relaxed text-ink">
             {m.content}
           </div>
-        </div>
+        </Reveal>
       )
     }
     const content = bubbleText(m)
     return (
-      <div key={idx} className="px-4 pb-3">
+      <Reveal key={idx} className="px-4 pb-3" delay={Math.min(idx, 8) * 100}>
         <div className="flex items-start gap-2">
           <img
             src="/images/brand/logo.jpg"
@@ -651,7 +660,7 @@ export default function Agent() {
             )}
           </div>
         </div>
-      </div>
+      </Reveal>
     )
   }
 
@@ -714,7 +723,7 @@ export default function Agent() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && send()}
+            onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && send()}
             placeholder="说说你的想法…"
             className="maison-field-inline w-full"
           />

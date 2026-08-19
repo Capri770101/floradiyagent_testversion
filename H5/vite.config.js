@@ -23,6 +23,9 @@ export default defineConfig({
   },
   server: {
     host: true,
+    // 临时放开 host 检查以支持 ngrok / localhost.run 等公网隧道演示；
+    // ⚠️ 上线前改为具体域名白名单（如 allowedHosts: ['.your-domain.com']），勿长期全开。
+    allowedHosts: true,
     port: 5173,
     proxy: {
       '/api': {

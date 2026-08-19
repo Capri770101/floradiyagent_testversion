@@ -1,5 +1,8 @@
 # 密钥与环境
 .env
+.env.local
+settings.yaml
+settings.local.yaml
 
 # Python 缓存
 __pycache__/
@@ -28,3 +31,7 @@ _legacy/
 
 # 浏览器自动化测试缓存（非源码）
 .playwright-mcp/
+
+# Playwright 快照/录制产物
+*.snapshot.yml
+profile-*.yml

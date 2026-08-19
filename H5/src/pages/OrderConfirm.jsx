@@ -7,6 +7,7 @@ import { calcPayable } from '../utils/price'
 import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
+import Reveal from '../components/Reveal'
 import { planImage } from '../assets/imageMap'
 
 function SectionTitle({ title }) {
@@ -105,7 +106,7 @@ export default function OrderConfirm() {
     )
   }
 
-  const total = calcPayable(order.total_price, order.discount)
+  const total = calcPayable(order.total_price, order.discount, shippingFee)
 
   const pickAddr = (a) => {
     setSelectedAddr(a.id)
@@ -130,8 +131,8 @@ export default function OrderConfirm() {
       <TopBar title="确认订单" />
       <div className="flex-1 overflow-y-auto px-4 pt-3">
         {order.items.map((it, i) => (
+          <Reveal key={i} delay={i * 140}>
           <div
-            key={i}
             className="flex items-center gap-3 rounded-card bg-white p-3 border border-line"
           >
             <SmartImage
@@ -145,14 +146,17 @@ export default function OrderConfirm() {
             </div>
             <span className="text-[11px] text-sub">×{it.qty}</span>
           </div>
+          </Reveal>
         ))}
 
+        <Reveal>
         <SectionTitle title="收货人" />
+        </Reveal>
         {addresses.length > 0 && (
           <div className="mb-2 space-y-2">
-            {addresses.map((a) => (
+            {addresses.map((a, i) => (
+              <Reveal key={a.id} delay={i * 140}>
               <button
-                key={a.id}
                 onClick={() => pickAddr(a)}
                 className={`w-full rounded-card p-3 text-left border border-line transition ${
                   selectedAddr === a.id ? 'border border-pink bg-pink/5' : 'bg-white'
@@ -169,12 +173,14 @@ export default function OrderConfirm() {
                 </div>
                 <p className="mt-1 text-[11px] text-ink">{a.address}</p>
               </button>
+              </Reveal>
             ))}
             <p className="text-[10px] text-sub">
               选中地址已自动填入下方，也可手动修改；去「我的地址」管理
             </p>
           </div>
         )}
+        <Reveal>
         <div className="space-y-2 rounded-card bg-white p-4 border border-line">
           <input
             value={recipient.name}
@@ -196,11 +202,15 @@ export default function OrderConfirm() {
             className="maison-field"
           />
         </div>
+        </Reveal>
 
+        <Reveal>
         <SectionTitle title="配送时间" />
+        </Reveal>
         {deliveryOptions.length === 0 ? (
           <p className="px-1 text-[11px] text-sub">配送时段加载中…</p>
         ) : (
+          <Reveal>
           <div className="flex flex-wrap gap-2">
             {deliveryOptions.map((opt) => (
               <button
@@ -216,9 +226,13 @@ export default function OrderConfirm() {
               </button>
             ))}
           </div>
+          </Reveal>
         )}
 
+        <Reveal>
         <SectionTitle title="订单备注" />
+        </Reveal>
+        <Reveal>
         <div className="field-shell rounded-card bg-white p-4 border border-line">
           <input
             value={note}
@@ -227,7 +241,9 @@ export default function OrderConfirm() {
             className="maison-field-inline w-full"
           />
         </div>
+        </Reveal>
 
+        <Reveal>
         <div className="mt-4 space-y-2 rounded-card bg-white p-4 text-[12px] border border-line">
           <Row label="商品金额" value={`¥${order.total_price}`} />
           <Row label="配送费" value={`¥${Number(shippingFee ?? 0).toFixed(2)}`} />
@@ -237,6 +253,7 @@ export default function OrderConfirm() {
             valueClass="text-pink"
           />
         </div>
+        </Reveal>
         <div className="h-4" />
       </div>
 

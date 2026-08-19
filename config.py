@@ -158,6 +158,7 @@ class Settings(BaseSettings):
     # ---- 接口限流（内存滑动窗口；防刷 LLM 账单 / 撞验证码）----
     rate_limit_enabled: bool = True  # False=整体关闭（仅限压测/联调）
     rate_limit_chat_per_minute: int = 30      # /chat 每 IP 每分钟（付费 LLM，重点保护）
+    rate_limit_image_per_minute: int = 10     # /image/generate 每 IP 每分钟（付费生图，重点保护）
     rate_limit_auth_per_minute: int = 120     # /auth/login|register|wx-login 每 IP 每分钟
     rate_limit_phone_per_minute: int = 3      # /auth/phone-code 每手机号每分钟（防短信轰炸）
     rate_limit_phone_login_per_minute: int = 10  # /auth/phone-login 每手机号每分钟（防撞 6 位码）

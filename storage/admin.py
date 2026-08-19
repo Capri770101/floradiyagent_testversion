@@ -308,6 +308,17 @@ def _update_aftersale(
                 "UPDATE payments SET status='refunded' WHERE order_id=? AND status='paid'",
                 (row["order_id"],),
             )
+    # 通知中心（模块一）：售后审核结果通知顾客
+    from storage import notify
+
+    labels = {"approved": "售后已通过", "rejected": "售后申请被驳回", "refunded": "退款已到账"}
+    a = get_aftersale(as_id)
+    if a and status in labels:
+        notify.try_create(
+            a["user_id"], notify.T_AFTERSALE, labels[status],
+            f"订单 {a['order_id']} 的售后单已更新：{note or labels[status]}",
+            ref_type="aftersale", ref_id=a["id"],
+        )
     return get_aftersale(as_id)
 
 

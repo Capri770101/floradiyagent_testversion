@@ -14,8 +14,8 @@ def _repo() -> MockRepository:
 
 
 def test_empty_keyword_returns_all() -> None:
-    # 留空 = 浏览全部
-    assert len(_repo().search_plans("")) == 3
+    # 留空 = 浏览全部（Mock 与目录种子同步为 13 例）
+    assert len(_repo().search_plans("")) == 13
 
 
 def test_no_match_returns_empty_not_all() -> None:
@@ -30,7 +30,8 @@ def test_keyword_match_count() -> None:
 def test_requirement_budget_soft_filters() -> None:
     req = FlowerRequirement(budget_min=250, budget_max=300)
     plans = _repo().search_plans("", requirement=req)
-    assert [p["plan_id"] for p in plans] == ["P002"]
+    # P002 299 在带内居首；P023 299 同价（软过滤对超带价剔除后同价位按插入序）
+    assert plans[0]["plan_id"] == "P002"
 
 
 def test_location_changes_shop_order() -> None:

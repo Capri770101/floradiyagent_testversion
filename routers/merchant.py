@@ -43,6 +43,36 @@ logger = logging.getLogger("api")
 # 上传图片扩展名白名单（防任意文件落地）
 _ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
+
+async def _assert_order_in_scope(order_id: str, scope: list[str]) -> None:
+    """校验订单属于商家绑定店铺范围，否则 403（防跨店越权 IDOR）。
+
+    orders.shop_id 存的是下单时的商家名快照（与 shops.id 不一致），
+    与 _shop_scope_sql 一致：按 shop_id 或订单明细里的店名匹配 scope。
+    """
+    if scope is None:  # admin 不受限
+        return
+    o = await asyncio.to_thread(commerce.get_order, order_id)
+    if not o:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    if not scope:
+        raise HTTPException(status_code=403, detail="无权访问该订单")
+
+    def _shop_names(ids: list[str]) -> set[str]:
+        if not ids:
+            return set()
+        ph = ",".join("?" * len(ids))
+        rows = get_conn().execute(
+            f"SELECT name FROM shops WHERE id IN ({ph})", ids
+        ).fetchall()
+        return {r["name"] for r in rows}
+
+    keys = set(scope) | await asyncio.to_thread(_shop_names, scope)
+    o_shop = o.get("shop_id") or ""
+    items_shop = {it.get("shop") for it in (o.get("items") or []) if it.get("shop")}
+    if o_shop not in keys and not (items_shop & keys):
+        raise HTTPException(status_code=403, detail="无权访问该订单")
+
 @router.get("/merchant/stats")
 async def merchant_stats_endpoint(request: Request, shop_id: str = "") -> dict[str, Any]:
     """店铺维度经营统计（订单 / GMV / 待发货 / 已完成 / 评价），按绑定店铺隔离。"""
@@ -91,7 +121,8 @@ async def merchant_order_detail_endpoint(order_id: str, request: Request) -> dic
     商家按单备货的唯一数据源：订单的 plan_id 关联 diy_plans，返回完整制作信息；
     非 DIY 方案（目录商品）不附带 plan 字段。
     """
-    await _require_merchant(request)
+    _, scope = await _merchant_scope(request)
+    await _assert_order_in_scope(order_id, scope)
     o = await asyncio.to_thread(commerce.get_order, order_id)
     if not o:
         raise HTTPException(status_code=404, detail="订单不存在")
@@ -106,7 +137,8 @@ async def merchant_order_detail_endpoint(order_id: str, request: Request) -> dic
 @router.post("/merchant/orders/{order_id}/ship")
 async def merchant_ship_endpoint(order_id: str, request: Request) -> dict[str, Any]:
     """商家代发货（不受订单归属限制）：paid -> shipped。"""
-    await _require_merchant(request)
+    _, scope = await _merchant_scope(request)
+    await _assert_order_in_scope(order_id, scope)
     try:
         o = await asyncio.to_thread(commerce.merchant_ship, order_id)
     except ValueError as exc:
@@ -127,7 +159,8 @@ async def merchant_add_logistics_endpoint(
     order_id: str, body: LogisticsWriteRequest, request: Request
 ) -> dict[str, Any]:
     """商家手动追加物流节点（仅配送中 shipped 状态可追加）。"""
-    await _require_merchant(request)
+    _, scope = await _merchant_scope(request)
+    await _assert_order_in_scope(order_id, scope)
     try:
         o = await asyncio.to_thread(commerce.add_logistics_event, order_id, body.text)
     except ValueError as exc:

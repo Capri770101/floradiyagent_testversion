@@ -261,6 +261,116 @@ _PLANS = [
         "style": "自然",
         "category_id": "cat_daily",
     },
+    {
+        "plan_id": "P017",
+        "name": "洋桔梗梦境花束",
+        "price": 189.0,
+        "desc": "粉紫洋桔梗配满天星，梦境般温柔，告白纪念日心意之选。",
+        "effect_image_url": "/generated/plan_P017.png",
+        "merchant_name": "兰庭花礼",
+        "tags": ["洋桔梗", "告白", "温柔"],
+        "style": "韩式",
+        "category_id": "cat_love",
+    },
+    {
+        "plan_id": "P018",
+        "name": "茉莉清香水培瓶",
+        "price": 99.0,
+        "desc": "白色茉莉水培玻璃瓶，满室清香，办公桌与床头治愈小景。",
+        "effect_image_url": "/generated/plan_P018.png",
+        "merchant_name": "巷陌花集",
+        "tags": ["茉莉", "水培", "清新"],
+        "style": "ins",
+        "category_id": "cat_green",
+    },
+    {
+        "plan_id": "P019",
+        "name": "帝王花鎏金礼盒",
+        "price": 459.0,
+        "desc": "南非帝王花配鎏金礼盒，霸气华贵，商务馈赠与乔迁之喜。",
+        "effect_image_url": "/generated/plan_P019.png",
+        "merchant_name": "都市花房",
+        "tags": ["帝王花", "礼盒", "高端"],
+        "style": "欧式",
+        "category_id": "cat_giftbox",
+    },
+    {
+        "plan_id": "P020",
+        "name": "马蹄莲极简花束",
+        "price": 149.0,
+        "desc": "白色马蹄莲单支竖线包装，极简高级，新居入伙与画廊风家居。",
+        "effect_image_url": "/generated/plan_P020.png",
+        "merchant_name": "花漾工坊",
+        "tags": ["马蹄莲", "极简", "高级"],
+        "style": "简约",
+        "category_id": "cat_daily",
+    },
+    {
+        "plan_id": "P021",
+        "name": "铃兰幸福花束",
+        "price": 129.0,
+        "desc": "白色铃兰配绿叶衬底，象征幸福归来，婚礼与新生祝福首选。",
+        "effect_image_url": "/generated/plan_P021.png",
+        "merchant_name": "拾野花铺",
+        "tags": ["铃兰", "婚礼", "祝福"],
+        "style": "自然",
+        "category_id": "cat_holiday",
+    },
+    {
+        "plan_id": "P022",
+        "name": "洋牡丹奶油花束",
+        "price": 259.0,
+        "desc": "奶油色洋牡丹层层叠叠，甜而不腻，闺蜜下午茶与生日之选。",
+        "effect_image_url": "/generated/plan_P022.png",
+        "merchant_name": "玫瑰花园",
+        "tags": ["洋牡丹", "奶油色", "生日"],
+        "style": "韩式",
+        "category_id": "cat_love",
+    },
+    {
+        "plan_id": "P023",
+        "name": "山茶花中式插花",
+        "price": 299.0,
+        "desc": "红山茶配青瓷瓶，中式留白意境，书房茶室雅致之选。",
+        "effect_image_url": "/generated/plan_P023.png",
+        "merchant_name": "半夏花房",
+        "tags": ["山茶花", "中式", "雅致"],
+        "style": "中式",
+        "category_id": "cat_giftbox",
+    },
+    {
+        "plan_id": "P024",
+        "name": "大丽花复古花束",
+        "price": 359.0,
+        "desc": "暗红大丽花配复古包装纸，浓郁油画质感，宴会婚礼皆宜。",
+        "effect_image_url": "/generated/plan_P024.png",
+        "merchant_name": "暮色花园",
+        "tags": ["大丽花", "复古", "油画"],
+        "style": "复古",
+        "category_id": "cat_love",
+    },
+    {
+        "plan_id": "P025",
+        "name": "多肉阳光组盆",
+        "price": 49.0,
+        "desc": "五款多肉组合陶盆，好养耐放，办公室与阳台的元气小景。",
+        "effect_image_url": "/generated/plan_P025.png",
+        "merchant_name": "绿野花艺",
+        "tags": ["多肉", "绿植", "平价"],
+        "style": "自然",
+        "category_id": "cat_green",
+    },
+    {
+        "plan_id": "P026",
+        "name": "风信子清新水培",
+        "price": 89.0,
+        "desc": "紫色风信子球根水培，花色清雅，初春气息扑面而来。",
+        "effect_image_url": "/generated/plan_P026.png",
+        "merchant_name": "南巷花事",
+        "tags": ["风信子", "水培", "春日"],
+        "style": "ins",
+        "category_id": "cat_green",
+    },
 ]
 
 _SHOPS = [
@@ -270,7 +380,7 @@ _SHOPS = [
         "distance_km": 1.2,
         "price_range": "100-300",
         "rating": 4.8,
-        "plan_ids": ["P001", "P002", "P010"],
+        "plan_ids": ["P001", "P002", "P010", "P020"],
         "lat": 22.560,
         "lng": 114.242,
         "intro": "专注鲜花定制与同城速递，包装精致、准时送达。",
@@ -281,7 +391,7 @@ _SHOPS = [
         "distance_km": 2.5,
         "price_range": "80-250",
         "rating": 4.6,
-        "plan_ids": ["P003", "P011"],
+        "plan_ids": ["P003", "P011", "P025"],
         "lat": 22.572,
         "lng": 114.230,
         "intro": "主打自然风花艺，绿植与鲜切花搭配清新。",
@@ -292,7 +402,7 @@ _SHOPS = [
         "distance_km": 3.8,
         "price_range": "150-400",
         "rating": 4.9,
-        "plan_ids": ["P001", "P002", "P003", "P009", "P012"],
+        "plan_ids": ["P001", "P002", "P003", "P009", "P012", "P019"],
         "lat": 22.548,
         "lng": 114.255,
         "intro": "高端花艺空间，节日礼盒与商务花艺俱佳。",
@@ -303,7 +413,7 @@ _SHOPS = [
         "distance_km": 0.8,
         "price_range": "50-150",
         "rating": 4.5,
-        "plan_ids": ["P004", "P008"],
+        "plan_ids": ["P004", "P008", "P018"],
         "lat": 22.565,
         "lng": 114.238,
         "intro": "街角平价花铺，日常随手一束，治愈每一天。",
@@ -325,7 +435,7 @@ _SHOPS = [
         "distance_km": 4.6,
         "price_range": "120-400",
         "rating": 4.7,
-        "plan_ids": ["P002", "P009"],
+        "plan_ids": ["P002", "P009", "P022"],
         "lat": 22.541,
         "lng": 114.055,
         "intro": "玫瑰主题花店，全品类玫瑰与法式礼盒。",
@@ -369,7 +479,7 @@ _SHOPS = [
         "distance_km": 2.8,
         "price_range": "150-450",
         "rating": 4.7,
-        "plan_ids": ["P014", "P007"],
+        "plan_ids": ["P014", "P007", "P023"],
         "lat": 22.549,
         "lng": 114.066,
         "intro": "日式禅意花房，极简留白，雅致礼盒与茶室插花。",
@@ -380,7 +490,7 @@ _SHOPS = [
         "distance_km": 4.2,
         "price_range": "250-800",
         "rating": 4.9,
-        "plan_ids": ["P015", "P009"],
+        "plan_ids": ["P015", "P009", "P024"],
         "lat": 22.535,
         "lng": 114.072,
         "intro": "复古法式花艺工作室，婚礼宴会布置与高端花礼。",
@@ -391,7 +501,7 @@ _SHOPS = [
         "distance_km": 1.9,
         "price_range": "50-160",
         "rating": 4.5,
-        "plan_ids": ["P016", "P004"],
+        "plan_ids": ["P016", "P004", "P021"],
         "lat": 22.555,
         "lng": 114.060,
         "intro": "街角野趣花铺，自然系小花束，治愈日常。",
@@ -424,7 +534,7 @@ _SHOPS = [
         "distance_km": 0.9,
         "price_range": "40-130",
         "rating": 4.4,
-        "plan_ids": ["P016", "P011"],
+        "plan_ids": ["P016", "P011", "P026"],
         "lat": 22.561,
         "lng": 114.050,
         "intro": "平价社区花店，日常陪伴与探病花束随手可得。",
@@ -443,7 +553,7 @@ _SHOPS = [
 ]
 
 # 生成占位效果图的方案（与 MockRepository 保持一致）
-_PLACEHOLDER_PLANS = ["P001", "P002", "P003", "P007", "P008", "P009", "P010", "P011", "P012", "P013", "P014", "P015", "P016"]
+_PLACEHOLDER_PLANS = ["P001", "P002", "P003", "P007", "P008", "P009", "P010", "P011", "P012", "P013", "P014", "P015", "P016", "P017", "P018", "P019", "P020", "P021", "P022", "P023", "P024", "P025", "P026"]
 
 # 商家智库档案（1:1 shops）。styles/scenes 的 style_id/scene_id 分别引用
 # knowledge/styles.json（S_*）与 knowledge/scenes.json（SC_*）的实体 id。
@@ -1266,6 +1376,12 @@ def update_shop(shop_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
     if "distance_km" in data:
         sets.append("distance_km=?")
         vals.append(float(data["distance_km"] or 0))
+    if "lat" in data:
+        sets.append("lat=?")
+        vals.append(float(data["lat"] or 0))
+    if "lng" in data:
+        sets.append("lng=?")
+        vals.append(float(data["lng"] or 0))
     if "price_range" in data:
         sets.append("price_range=?")
         vals.append(str(data["price_range"] or ""))

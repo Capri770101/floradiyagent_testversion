@@ -59,3 +59,12 @@ def test_auth_login_rate_limit(client, monkeypatch):
     assert r1.status_code in (200, 401)  # 第一次正常放行
     r2 = client.post("/auth/login", json={"username": "nobody", "password": "x"})
     assert r2.status_code == 429
+
+
+def test_image_generate_rate_limit(client, monkeypatch):
+    """付费生图接口每 IP 限额 0：首请求即 429（防刷单，限流先于任务创建）。"""
+    monkeypatch.setattr(settings, "rate_limit_enabled", True)
+    monkeypatch.setattr(settings, "rate_limit_image_per_minute", 0)
+    r = client.post("/image/generate", json={"prompt": "测试生图"})
+    assert r.status_code == 429
+    assert "频繁" in r.json()["message"]

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
 import { IconPlus } from '../components/icons'
+import Reveal from '../components/Reveal'
 import { toast } from '../utils/toast'
 import {
   listAddresses,
@@ -91,39 +92,42 @@ export default function Addresses() {
       <TopBar title="我的地址" right={editing ? null : undefined} />
       <div className="flex-1 overflow-y-auto px-4 pt-3 pb-6">
         {addresses.length === 0 && !editing && (
-          <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
-            还没有收货地址，添加后下单即可一键选择
-          </p>
+          <Reveal>
+            <p className="mt-6 rounded-card bg-white p-6 text-center text-[12px] text-sub border border-line">
+              还没有收货地址，添加后下单即可一键选择
+            </p>
+          </Reveal>
         )}
 
-        {addresses.map((a) => (
-          <div
-            key={a.id}
-            className="mb-3 rounded-card bg-white p-4 border border-line"
-          >
-            <div className="flex items-center gap-2">
-              <p className="text-[14px] font-medium text-dark">{a.name}</p>
-              <p className="text-[12px] text-sub">{a.phone}</p>
-              {a.is_default ? (
-                <span className="rounded-full bg-pink/10 px-2 py-0.5 text-[10px] text-pink">
-                  默认
-                </span>
-              ) : (
-                <button className="press text-[10px] text-sub" onClick={() => setDefault(a)}>
-                  设为默认
+        {addresses.map((a, i) => (
+          <Reveal key={a.id} delay={i * 140}>
+            <div
+              className="mb-3 rounded-card bg-white p-4 border border-line"
+            >
+              <div className="flex items-center gap-2">
+                <p className="text-[14px] font-medium text-dark">{a.name}</p>
+                <p className="text-[12px] text-sub">{a.phone}</p>
+                {a.is_default ? (
+                  <span className="rounded-full bg-pink/10 px-2 py-0.5 text-[10px] text-pink">
+                    默认
+                  </span>
+                ) : (
+                  <button className="press text-[10px] text-sub" onClick={() => setDefault(a)}>
+                    设为默认
+                  </button>
+                )}
+              </div>
+              <p className="mt-2 text-[12px] leading-relaxed text-ink">{a.address}</p>
+              <div className="mt-3 flex justify-end gap-3">
+                <button className="press text-[12px] text-sub" onClick={() => startEdit(a)}>
+                  编辑
                 </button>
-              )}
+                <button className="press text-[12px] text-pink" onClick={() => remove(a)}>
+                  删除
+                </button>
+              </div>
             </div>
-            <p className="mt-2 text-[12px] leading-relaxed text-ink">{a.address}</p>
-            <div className="mt-3 flex justify-end gap-3">
-              <button className="press text-[12px] text-sub" onClick={() => startEdit(a)}>
-                编辑
-              </button>
-              <button className="press text-[12px] text-pink" onClick={() => remove(a)}>
-                删除
-              </button>
-            </div>
-          </div>
+          </Reveal>
         ))}
 
         {editing !== null && (

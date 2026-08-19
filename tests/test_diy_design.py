@@ -74,3 +74,44 @@ def test_recipient_alias_expands() -> None:
     for text, expected in (("送男朋友生日花", "恋人"), ("送同事乔迁", "朋友"), ("送领导感谢", "长辈")):
         dims = tools._extract(text)
         assert dims.get("recipient") == expected
+
+
+def test_design_has_card_enrich_fields() -> None:
+    """模块二：规则引擎产出的方案必须带卡片扩充字段（难度/耗时/保鲜期/人群/禁忌/情绪）。"""
+    p = tools.design_diy_plan("送妈妈生日花束 预算200")
+    d = p["design"]
+    assert d["difficulty"] in ("入门", "进阶", "高手")
+    assert isinstance(d["est_time"], int) and d["est_time"] > 0
+    assert "天" in d["shelf_life"]
+    assert d["suitable_for"]  # 非空
+    assert "换水" in d["caution"]  # 养护类提醒兜底
+    assert d["mood_tags"]  # 非空
+
+
+def test_merge_keeps_llm_new_fields() -> None:
+    """模块二：LLM 输出的扩充字段经 _merge_plan 合入最终方案（不回退到规则兜底值）。"""
+    baseline = tools.design_diy_plan("送妈妈生日花束 预算200")
+    llm = {
+        "design": {
+            "main_flowers": baseline["design"]["main_flowers"],
+            "fillers": baseline["design"]["fillers"],
+            "foliage": baseline["design"]["foliage"],
+            "color_scheme": ["奶油白"],
+            "packaging": "礼盒",
+            "meaning": "母爱",
+            "difficulty": "高手",
+            "est_time": 60,
+            "shelf_life": "约 3-5 天",
+            "suitable_for": ["母亲"],
+            "caution": "花粉过敏者请谨慎接触",
+            "mood_tags": ["治愈", "感恩"],
+        }
+    }
+    merged = tools._merge_plan(baseline, llm)
+    d = merged["design"]
+    assert d["difficulty"] == "高手"
+    assert d["est_time"] == 60
+    assert d["shelf_life"] == "约 3-5 天"
+    assert d["suitable_for"] == ["母亲"]
+    assert d["caution"] == "花粉过敏者请谨慎接触"
+    assert d["mood_tags"] == ["治愈", "感恩"]

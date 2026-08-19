@@ -123,7 +123,7 @@ def list_messages(chat_id: str, reader: str) -> list[dict[str, Any]]:
     """
     conn = get_conn()
     rows = conn.execute(
-        "SELECT * FROM chat_messages WHERE chat_id=? ORDER BY id ASC LIMIT 500",
+        "SELECT * FROM chat_messages WHERE chat_id=? ORDER BY rowid ASC LIMIT 500",
         (chat_id,),
     ).fetchall()
     if reader == SENDER_USER:
@@ -168,7 +168,10 @@ def send_message(chat_id: str, sender: str, content: str) -> dict[str, Any]:
 
 
 def reply_review(review_id: str, reply: str) -> dict[str, Any] | None:
-    """商家回复评价：写入 reply/reply_at，返回更新后的评价（None=评价不存在）。"""
+    """商家回复评价：写入 reply/reply_at，返回更新后的评价（None=评价不存在）。
+
+    联动通知中心（模块一）：回复后给评价者落一条站内通知。
+    """
     conn = get_conn()
     row = conn.execute("SELECT * FROM reviews WHERE id=?", (review_id,)).fetchone()
     if not row:
@@ -180,4 +183,12 @@ def reply_review(review_id: str, reply: str) -> dict[str, Any] | None:
     )
     conn.commit()
     updated = conn.execute("SELECT * FROM reviews WHERE id=?", (review_id,)).fetchone()
+    if updated["user_id"]:
+        from storage import notify
+
+        notify.try_create(
+            updated["user_id"], notify.T_REVIEW, "商家回复了你的评价",
+            reply.strip()[:120],
+            ref_type="order", ref_id=updated["order_id"] or "",
+        )
     return dict(updated)

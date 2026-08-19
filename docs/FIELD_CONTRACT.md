@@ -79,8 +79,21 @@ id / name / price / desc / tags / style / image / label / sales ← `plans.*`（
 | color_scheme / flowers / packaging / meaning / diy_steps / care_tips / card_message / budget_breakdown / effect_image_url | `diy_plans.*`（JSON 反序列化） |
 | effect_prompt / design / main_flowers | 由行内花材/色系/包装合成（T1-3 评估后可选落列） |
 | status / order_count | `diy_plans.status / order_count` |
+| difficulty / est_time / shelf_life / suitable_for / caution / mood_tags | `diy_plans.*`（卡片扩充字段，T2-4：`tools._build_plan` 规则兜底 + LLM 生成；旧方案缺失时前端降级隐藏） |
 
 > 注意：DIY 方案**不走 `_plan_full`**（会丢弃 DIY 专属字段）；详情直链与「确认方案」入参结构一致（前端 `DiyDetail.normalizePlan` 直接消费）。
+
+### 1.7 个性化推荐（模块三，`storage/recommend.py` + `routers/recommend.py`）
+
+- `GET /recommend/plans?lat=&lng=&limit=&style=` → `{items: [_plan_card]}`：`score = w_distance*距离分 + w_pref*偏好分 + w_heat*热度分`；
+- `GET /recommend/signature?lat=&lng=&limit=` → `{items: [_plan_card + dist_km]}`：**当季臻选策展推荐**（首页 Signature Collection 位），`score = 0.4*角标气质(Premium .5/Limited .3/New .1) + 0.4*热度 + 0.2*距离`，不依赖用户画像；`dist_km` 为承载店铺到定位的 haversine 距离（无定位为 null）；
+- `GET /recommend/shops?lat=&lng=&limit=&shop_id=` → `{items: [_shop_card]}`：排除 `shop_id` 自身、同价位带加权 +0.15、历史购买店 +0.5、店内售风格命中 +0.5；
+- 权重存 `operations_config` 键 `recommend_weights`（默认 0.4/0.4/0.2，`storage/config.py`）；**管理端 `GET/PUT /admin/config` 支持 `recommend_weights` 字段（0~1 校验、部分更新合并），且并入公开 `GET /config` 回显**；
+- **风格词表分组**（`storage/recommend.py: STYLE_GROUPS`）：DIY 自由文本风格（如「北欧」）先归一化到分组（→简约）再与 catalog 词表匹配，`style` 参数/偏好画像/店铺店内风格命中三条路径均按分组匹配；
+- 偏好信号：`favorites`（方案收藏）+ `orders.items` JSON 内 plan_id（`order_items` 为遗留空表，勿用）+ `orders.shop_id`；
+- 无定位→距离分取中性 0.5；无偏好→偏好分 0；永不报错/空返回；`style` 为软加权（+0.3），其他风格仍可兜底。
+- 前端消费：`Home` 猜你喜欢（带定位、卡片收藏动线：心形按钮 → `/favorites` 增删 + 即时刷新推荐）、`Home` 当季臻选（`/recommend/signature`，卡片展示「距你 x.xkm」）、`DiyDetail` 同风格方案（style=）、`ShopDetail` 附近同类店铺（shop_id= 排除自身）；三处推荐位共用 `H5/src/hooks/useRecommend.js`（loading/ok/empty/error + 防竞态）。
+- 首页店铺（合作花店）：`GET /shops?lat=&lng=` 按定位 haversine 距离升序（无定位回退静态 `distance_km`），首店打「距你最近」标。
 
 ---
 
@@ -168,6 +181,9 @@ id / name / price / desc / tags / style / image / label / sales ← `plans.*`（
 | 商家中心 C 端跳转 | ✅ 已修（商家中心 T2-1/T2-2） | `Merchant.jsx` 已移除 `nav('/shop/`、`nav('/logistics/`；店铺/物流改商家内部预览（店铺设置 Tab / 物流 Tab 展开该单） |
 | 商家-顾客会话 | ✅ 已修（商家中心 T1-3/T1-4） | `shop_chats`/`chat_messages` 表 + 双侧端点 + 商家中心「会话」Tab（列表/未读/消息气泡/发送）已接入 |
 | 评价回复 | ✅ 已修（商家中心 T1-1/T1-3） | `reviews.reply/reply_at` 列 + `POST /merchant/reviews/{id}/reply` + 评价管理 Tab 回复 UI（发布/回显）已接入 |
+| 顾客端会话入口 | ✅ 已修（商家中心 T3-1~T3-4） | 新增 `H5/src/pages/Chat.jsx`（`/chat/:shopId`，取或建会话/气泡/发送/5s 轮询）+ ShopDetail「联系商家」+ 订单「联系商家」入口 + `App.jsx` 路由 |
+| 商家侧会话入口 | ✅ 已修（商家中心 T2-3/T2-4） | 工作台快捷入口「顾客会话」（未读提示）+ 订单卡「联系顾客」（`/merchant/chats/with-user` 直达）+ 会话详情 5s 轮询 |
+| 会话消息排序 | ✅ 已修 | `list_messages` 改 `ORDER BY rowid ASC`（原按随机 ID 字符串排序导致乱序） |
 
 ---
 

@@ -107,6 +107,7 @@ async def generate_image(req: ImageGenRequest, request: Request) -> dict[str, An
     避免阻塞事件循环；mock 模式则直接落本地占位图并立即 done。
     """
     await get_current_user(request)
+    _check_rate(f"image:{_client_ip(request)}", settings.rate_limit_image_per_minute)
     task_id = await asyncio.to_thread(tasks.create_image_task, req.prompt)
     return {"task_id": task_id, "status": "submitted", "poll": f"/tasks/{task_id}"}
 

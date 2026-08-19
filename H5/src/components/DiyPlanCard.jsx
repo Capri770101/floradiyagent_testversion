@@ -47,6 +47,12 @@ export function normalizePlan(plan) {
     careTips: plan.care_tips ?? d.care_tips,
     cardMessage: plan.card_message ?? d.card_message,
     budget: plan.budget_breakdown ?? d.budget_breakdown,
+    difficulty: d.difficulty ?? plan.difficulty ?? null,
+    estTime: d.est_time ?? plan.est_time ?? null,
+    shelfLife: d.shelf_life ?? plan.shelf_life ?? null,
+    suitableFor: toList(d.suitable_for ?? plan.suitable_for),
+    caution: d.caution ?? plan.caution ?? null,
+    moodTags: toList(d.mood_tags ?? plan.mood_tags),
     effectImageUrl: plan.effect_image_url ?? plan.result_url ?? null,
     flowers,
     merchant: plan.merchant,
@@ -155,8 +161,13 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-medium text-dark">{p.name}</p>
-          <p className="text-[11px] text-sub">
-            {p.style ? `${p.style} · ` : ''}
+          <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-sub">
+            {p.style && <span>{p.style}</span>}
+            {p.occasion && (
+              <span className="rounded-full border border-gold/40 bg-pink-2/70 px-1.5 py-px text-[10px] text-gold-dark">
+                {p.occasion}
+              </span>
+            )}
             {p.recipient ? `送给${p.recipient}` : 'DIY 花艺方案'}
           </p>
         </div>
@@ -249,6 +260,11 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
                     style={{ backgroundColor: c }}
                   />
                 ))}
+                {p.moodTags.length > 0 && (
+                  <span className="ml-1 text-[11px] text-gold-dark">
+                    情绪 · {p.moodTags.join(' / ')}
+                  </span>
+                )}
               </div>
             )}
           </Section>
@@ -262,6 +278,34 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
               <span>{p.packaging || '—'}</span>
             </Section>
           </div>
+
+          {/* 制作难度 + 预计耗时 + 保鲜期 三列并排（模块二） */}
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <Section title="制作难度">
+              <span>{p.difficulty || '—'}</span>
+            </Section>
+            <Section title="预计耗时">
+              <span>{p.estTime != null ? `约 ${p.estTime} 分钟` : '—'}</span>
+            </Section>
+            <Section title="保鲜期">
+              <span>{p.shelfLife || '—'}</span>
+            </Section>
+          </div>
+
+          {p.suitableFor.length > 0 && (
+            <Section title="适宜人群" className="mt-3">
+              <div className="flex flex-wrap gap-1.5">
+                {p.suitableFor.map((t, i) => (
+                  <span
+                    key={i}
+                    className="rounded-full border border-line bg-bg px-2 py-0.5 text-[11px] text-ink"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </Section>
+          )}
 
           <Section title="DIY 操作步骤">
             {steps.length ? (
@@ -297,6 +341,15 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
                 ))}
               </ul>
             </Section>
+          )}
+
+          {p.caution && (
+            <div className="mt-3 rounded-[2px] border-l-2 border-burgundy/70 bg-sand/40 py-1.5 pl-2.5 pr-2">
+              <p className="text-[12px] font-medium text-burgundy">禁忌提醒</p>
+              <p className="mt-0.5 text-[12px] leading-[22px] text-sub">
+                {p.caution}
+              </p>
+            </div>
           )}
 
           {p.cardMessage && (

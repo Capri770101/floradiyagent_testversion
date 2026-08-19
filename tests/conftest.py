@@ -49,3 +49,14 @@ def _live_requires_key(request: pytest.FixtureRequest) -> None:
     """
     if "live" in request.keywords and not settings.llm_enabled:
         pytest.skip("live 测试需要 LLM_API_KEY（运行: pytest -m live）")
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter(request: pytest.FixtureRequest) -> None:
+    """每测试前清空限流计数：整个进程共享一个 TestClient IP 与内存滑动窗口，
+    跨测试累积注册/登录会触发 429，污染无关用例（与 tests/test_rate_limit.py 同法）。"""
+    if "rate_limit" in request.keywords:
+        return  # 限流专项测试自管计数
+    import api
+
+    api._limiter._hits.clear()

@@ -134,9 +134,22 @@ def resolve_strict(request: Request) -> str:
     if not token:
         raise HTTPException(status_code=401, detail="需要登录")
     try:
-        return verify_token(token)
+        uid = verify_token(token)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=401, detail="令牌无效或已过期") from exc
+    if is_banned(uid):
+        raise HTTPException(status_code=403, detail="账号已被禁用")
+    return uid
+
+
+def is_banned(user_id: str) -> bool:
+    """判断用户是否被禁用（封禁即时生效，不等令牌过期）。"""
+    from storage.db import get_conn
+
+    row = get_conn().execute(
+        "SELECT status FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+    return bool(row and row["status"] == "banned")
 
 
 def get_user_role(user_id: str) -> str:

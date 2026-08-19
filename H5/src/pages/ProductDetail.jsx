@@ -11,6 +11,7 @@ import { isLoggedIn } from '../api/auth'
 import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
+import Reveal from '../components/Reveal'
 import { planImage } from '../assets/imageMap'
 
 // 04 商品详情
@@ -132,55 +133,72 @@ export default function ProductDetail() {
         }
       />
       <div className="flex-1 overflow-y-auto">
-        <SmartImage src={planImage(product)} color={imgColor(product.id)} className="h-[270px] w-full" />
-        <div className="px-5 pt-4">
-          <h1 className="text-[20px] font-medium text-dark">{product.name}</h1>
-          <p className="mt-1 text-[22px] font-medium text-ink">¥{product.price}</p>
-          <p className="mt-1 flex items-center gap-1 text-[11px] text-sub">
-            <IconStar width={11} height={11} className="text-cream" /> {product.rating} · 月售
-            {product.sold}
-          </p>
-        </div>
-        <div className="mt-4 px-5">
-          <div className="flex flex-wrap gap-2">
-            {(product.tags || []).map((t, i) => (
-              <Pill key={t} label={t} selected={i === 0} style={{ width: 68 }} />
-            ))}
+        <SmartImage
+          src={planImage(product)}
+          color={imgColor(product.id)}
+          className="animate-hero h-[270px] w-full"
+          style={{ animationDelay: '100ms' }}
+        />
+        <Reveal delay={80}>
+          <div className="px-5 pt-4">
+            <h1 className="text-[20px] font-medium text-dark">{product.name}</h1>
+            <p className="mt-1 text-[22px] font-medium text-ink">¥{product.price}</p>
+            <p className="mt-1 flex items-center gap-1 text-[11px] text-sub">
+              <IconStar width={11} height={11} className="text-cream" /> {product.rating} · 月售
+              {product.sold}
+            </p>
           </div>
-        </div>
-        <div className="mt-6 px-5">
-          <h2 className="text-[16px] font-medium text-dark">商品详情</h2>
-          <p className="mt-2 text-[11px] leading-relaxed text-sub" style={{ maxWidth: 330 }}>
-            {product.detail}
-          </p>
-        </div>
-        <div className="mt-6 px-5">
-          <h2 className="text-[16px] font-medium text-dark">AI 推荐理由</h2>
-          <div className="mt-2 rounded-[4px] bg-white p-4 border border-line">
-            <p className="text-[11px] leading-relaxed text-ink">{product.aiReason}</p>
+        </Reveal>
+        <Reveal delay={160}>
+          <div className="mt-4 px-5">
+            <div className="flex flex-wrap gap-2">
+              {(product.tags || []).map((t, i) => (
+                <Pill key={t} label={t} selected={i === 0} style={{ width: 68 }} />
+              ))}
+            </div>
           </div>
-        </div>
+        </Reveal>
+        <Reveal delay={240}>
+          <div className="mt-6 px-5">
+            <h2 className="text-[16px] font-medium text-dark">商品详情</h2>
+            <p className="mt-2 text-[11px] leading-relaxed text-sub" style={{ maxWidth: 330 }}>
+              {product.detail}
+            </p>
+          </div>
+        </Reveal>
+        <Reveal delay={320}>
+          <div className="mt-6 px-5">
+            <h2 className="text-[16px] font-medium text-dark">AI 推荐理由</h2>
+            <div className="mt-2 rounded-[4px] bg-white p-4 border border-line">
+              <p className="text-[11px] leading-relaxed text-ink">{product.aiReason}</p>
+            </div>
+          </div>
+        </Reveal>
         <div className="mt-6 px-5 pb-6">
-          <h2 className="text-[16px] font-medium text-dark">
-            用户评价
-            {reviews.length > 0 && <span className="ml-1 text-[11px] text-sub">（{reviews.length}）</span>}
-          </h2>
+          <Reveal delay={400}>
+            <h2 className="text-[16px] font-medium text-dark">
+              用户评价
+              {reviews.length > 0 && <span className="ml-1 text-[11px] text-sub">（{reviews.length}）</span>}
+            </h2>
+          </Reveal>
           {reviews.length === 0 ? (
             <p className="mt-2 text-[11px] text-sub">暂无评价，快下单成为第一个评价的人吧</p>
           ) : (
             <div className="mt-2 space-y-2">
-              {reviews.map((r) => (
-                <div key={r.id} className="rounded-[4px] bg-white p-4 border border-line">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[12px] font-medium text-dark">{r.nickname || '匿名用户'}</span>
-                    <span className="flex items-center gap-0.5 text-cream">
-                      {[1, 2, 3, 4, 5].map((s) => (
-                        <IconStar key={s} width={10} height={10} filled={s <= r.rating} />
-                      ))}
-                    </span>
+              {reviews.map((r, i) => (
+                <Reveal key={r.id} delay={480 + i * 140}>
+                  <div className="rounded-[4px] bg-white p-4 border border-line">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] font-medium text-dark">{r.nickname || '匿名用户'}</span>
+                      <span className="flex items-center gap-0.5 text-cream">
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <IconStar key={s} width={10} height={10} filled={s <= r.rating} />
+                        ))}
+                      </span>
+                    </div>
+                    {r.content && <p className="mt-2 text-[11px] leading-relaxed text-ink">{r.content}</p>}
                   </div>
-                  {r.content && <p className="mt-2 text-[11px] leading-relaxed text-ink">{r.content}</p>}
-                </div>
+                </Reveal>
               ))}
             </div>
           )}

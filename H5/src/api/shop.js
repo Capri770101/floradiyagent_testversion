@@ -378,6 +378,14 @@ export async function merchantSendChatMessage(chatId, content) {
   return data.message
 }
 
+export async function merchantChatWithUser(userId, shopId) {
+  const data = await api('/merchant/chats/with-user', {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId, shop_id: shopId }),
+  })
+  return data
+}
+
 export async function merchantReplyReview(reviewId, reply) {
   const data = await api(`/merchant/reviews/${encodeURIComponent(reviewId)}/reply`, {
     method: 'POST',
@@ -390,6 +398,12 @@ export async function merchantReplyReview(reviewId, reply) {
 export async function userChatWithShop(shopId) {
   const data = await api(`/chats/shop/${encodeURIComponent(shopId)}`)
   return data
+}
+
+// 顾客侧：与各商家的历史会话列表（消息中心展示用）
+export async function listUserChats() {
+  const data = await api('/chats')
+  return data.chats
 }
 
 // ---------------- 售后（M4，用户侧） ----------------

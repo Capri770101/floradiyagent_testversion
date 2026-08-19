@@ -183,21 +183,21 @@ class CartUpdateRequest(BaseModel):
 
 
 
-
 class OrderItem(BaseModel):
     plan_id: str
     name: str
     price: float = Field(ge=0)
-    qty: int = Field(1, ge=1)
+    qty: int = Field(1, ge=1, le=99, description="单商品数量上限 99，防超量下单")
     shop: str | None = None
     item_id: str | None = Field(None, description="来自购物车的项 id（下单后移除该项）")
 
 
 
 
+
 class OrderCreateRequest(BaseModel):
     user_id: str | None = Field(None, min_length=1, max_length=64, description="鉴权模式下可省略，由 JWT 解析")
-    items: list[OrderItem]
+    items: list[OrderItem] = Field(..., min_length=1, description="至少 1 件商品，拒绝空订单")
     recipient: dict[str, Any] | None = None
     delivery: str | None = None
     note: str | None = None

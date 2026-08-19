@@ -1,4 +1,4 @@
-// 运营配置（M7）：配送时段（动态增删）/ 配送费 / 优惠券规则，后端 operations_config 落库。
+// 运营配置（M7）：配送时段（动态增删）/ 配送费 / 优惠券规则 / 推荐权重，后端 operations_config 落库。
 import React, { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 
@@ -6,6 +6,7 @@ export function Config() {
   const [opts, setOpts] = useState([])
   const [shippingFee, setShippingFee] = useState('')
   const [couponRules, setCouponRules] = useState('')
+  const [weights, setWeights] = useState({ w_distance: 0.4, w_pref: 0.4, w_heat: 0.2 })
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
 
@@ -14,6 +15,10 @@ export function Config() {
     setOpts(d.delivery_options || [])
     setShippingFee(String(d.shipping_fee ?? ''))
     setCouponRules(JSON.stringify(d.coupon_rules || {}, null, 2))
+    setWeights((prev) => ({
+      ...prev,
+      ...(d.recommend_weights || {}),
+    }))
   }, [])
 
   useEffect(() => {
@@ -32,11 +37,22 @@ export function Config() {
       setBusy(false)
       return
     }
+    const w = {}
+    for (const k of ['w_distance', 'w_pref', 'w_heat']) {
+      const v = Number(weights[k])
+      if (Number.isNaN(v) || v < 0 || v > 1) {
+        setMsg('推荐权重必须是 0~1 的数字')
+        setBusy(false)
+        return
+      }
+      w[k] = v
+    }
     try {
       const body = {
         delivery_options: opts.filter((o) => o.trim()),
         shipping_fee: shippingFee === '' ? undefined : Number(shippingFee),
         coupon_rules: rules,
+        recommend_weights: w,
       }
       if (body.shipping_fee !== undefined && (Number.isNaN(body.shipping_fee) || body.shipping_fee < 0)) {
         throw new Error('配送费必须是非负数字')
@@ -50,6 +66,8 @@ export function Config() {
       setBusy(false)
     }
   }
+
+  const setWeight = (k, v) => setWeights((prev) => ({ ...prev, [k]: v }))
 
   const setOpt = (i, v) => setOpts((arr) => arr.map((x, idx) => (idx === i ? v : x)))
   const addOpt = () => setOpts((arr) => [...arr, ''])
@@ -107,6 +125,29 @@ export function Config() {
           className={`${fieldCls} mt-2 w-full resize-none font-mono`}
         />
         <p className="mt-1 text-[10px] text-sub/70">key=规则名，value=规则描述（sandbox 演示，正式对接券引擎时扩展）</p>
+
+        <p className="eyebrow mt-6">个性化推荐权重（0~1）</p>
+        <div className="mt-2 grid grid-cols-3 gap-3">
+          {[
+            ['w_distance', '距离'],
+            ['w_pref', '偏好'],
+            ['w_heat', '热度'],
+          ].map(([k, label]) => (
+            <label key={k} className="block">
+              <span className="mb-1 block text-[10px] text-sub">{label}权重</span>
+              <input
+                value={weights[k]}
+                onChange={(e) => setWeight(k, e.target.value.replace(/[^\d.]/g, ''))}
+                inputMode="decimal"
+                placeholder="0.4"
+                className={`${fieldCls} w-full`}
+              />
+            </label>
+          ))}
+        </div>
+        <p className="mt-1 text-[10px] text-sub/70">
+          融合分 = 距离×w_distance + 偏好×w_pref + 热度×w_heat，保存后 C 端推荐即时生效
+        </p>
 
         <button
           onClick={save}

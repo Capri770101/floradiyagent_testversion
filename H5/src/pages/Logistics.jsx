@@ -4,6 +4,7 @@ import { IconBack, IconPin, IconClock } from '../components/icons'
 import { getOrder } from '../api/shop'
 import { planImage } from '../assets/imageMap'
 import SmartImage from '../components/SmartImage'
+import Reveal from '../components/Reveal'
 import { toast } from '../utils/toast'
 import { statusMeta } from '../utils/status'
 
@@ -53,6 +54,7 @@ export default function Logistics() {
       ) : (
         <>
           {/* 订单概要 */}
+          <Reveal>
           <div className="mx-5 mt-4 rounded-card bg-white p-4 border border-line">
             <div className="flex items-center justify-between">
               <p className="truncate text-[11px] text-sub">{order.order_id}</p>
@@ -66,8 +68,10 @@ export default function Logistics() {
               <p className="text-[10px] tracking-[0.15em] text-sub">店铺：{order.shop_id || '—'}</p>
             </div>
           </div>
+          </Reveal>
 
           {/* 商品明细 */}
+          <Reveal delay={80}>
           <div className="mx-5 mt-3 rounded-card bg-white p-4 border border-line">
             <p className="eyebrow">商品明细</p>
             {items.map((it) => (
@@ -107,8 +111,10 @@ export default function Logistics() {
               </div>
             )}
           </div>
+          </Reveal>
 
           {/* 物流时间线 */}
+          <Reveal delay={160}>
           <div className="mx-5 mt-3 rounded-card bg-white p-4 border border-line">
             <p className="eyebrow">物流跟踪</p>
             {logistics.length === 0 ? (
@@ -132,6 +138,7 @@ export default function Logistics() {
               </div>
             )}
           </div>
+          </Reveal>
         </>
       )}
     </div>

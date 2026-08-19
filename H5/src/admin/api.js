@@ -1,7 +1,8 @@
 // 管理后台 API 封装：独立 axios 风格的 fetch 实例，Bearer + 401/403 统一跳登录。
-// 与 H5 共用同一后端 /api 与 localStorage token（同一 JWT 体系）。
+// 与 H5 共用同一后端 /api，但使用独立的 admin 令牌键（floradiy_admin_token）——
+// 与 C 端 floradiy_token 隔离：后台登录不干扰前端登录态，反之亦然。
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
-const TOKEN_KEY = 'floradiy_token'
+const TOKEN_KEY = 'floradiy_admin_token'
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY) || ''
@@ -59,7 +60,7 @@ export const api = {
 }
 
 export async function login(username, password) {
-  const data = await request('/auth/login', { method: 'POST', body: { username, password } })
+  const data = await request('/auth/admin-login', { method: 'POST', body: { username, password } })
   setToken(data.token)
   return data
 }

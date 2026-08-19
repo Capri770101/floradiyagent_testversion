@@ -5,6 +5,7 @@ import { FloraBloom } from '../components/FloralDecor'
 import ProductCard from '../components/ProductCard'
 import { listPlans, addCart } from '../api/shop'
 import { getUserId } from '../api/chat'
+import { matchPinyinFields } from '../utils/pinyin'
 import { toast } from '../utils/toast'
 
 // 分类页：搜索 + 精选花束（整屏宽产品卡）
@@ -21,7 +22,10 @@ export default function Category() {
     const q = query.trim().toLowerCase()
     if (!q) return plans
     return plans.filter((p) =>
-      (p.name + ' ' + (p.desc || '') + ' ' + (p.tags || []).join(' ')).toLowerCase().includes(q),
+      matchPinyinFields(
+        [p.name, p.desc || '', (p.tags || []).join(' ')],
+        q,
+      ),
     )
   }, [plans, query])
 

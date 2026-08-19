@@ -56,3 +56,29 @@ def test_order_rejects_unknown_plan(client):
         },
     )
     assert r.status_code == 400
+
+
+def test_order_rejects_empty_items(client):
+    """空订单（items=[]）→ 422，拒绝创建 0 元单并套用新人券。"""
+    token = _register(client, "price_c")
+    r = client.post(
+        "/orders",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"items": []},
+    )
+    assert r.status_code == 422
+
+
+def test_order_rejects_oversized_qty(client):
+    """超量下单（qty=999）→ 422，拒绝超量。"""
+    token = _register(client, "price_d")
+    r = client.post(
+        "/orders",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "items": [
+                {"plan_id": "P001", "name": "超量", "price": 199, "qty": 999},
+            ]
+        },
+    )
+    assert r.status_code == 422

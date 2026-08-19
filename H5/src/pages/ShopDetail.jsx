@@ -3,11 +3,15 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { IconStar, IconCart, IconArrow, IconClock, IconPin } from '../components/icons'
 import { getShop, getCart, addCart, updateCart, removeCart } from '../api/shop'
+import { recommendShops } from '../api/recommend'
+import { useRecommend } from '../hooks/useRecommend'
 import { getUserId } from '../api/chat'
+import { getLocation } from '../utils/location'
 import { toast } from '../utils/toast'
 import { PLACEHOLDER } from '../tokens'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
+import Reveal from '../components/Reveal'
 import { planImage, shopImage } from '../assets/imageMap'
 
 // 美团外卖式店铺详情页：
@@ -15,7 +19,7 @@ import { planImage, shopImage } from '../assets/imageMap'
 // + 左栏分类导航（滚动联动高亮）+ 右栏商品列表（加购步进器）
 // + 底部悬浮购物车条（合计/去结算）。
 
-function ShopHeader({ shop, noticeOpen, onToggleNotice }) {
+function ShopHeader({ shop, noticeOpen, onToggleNotice, onChat }) {
   return (
     <div className="shrink-0">
       {/* 封面（真实店铺图，文件未就位时回退砂色块） */}
@@ -75,7 +79,12 @@ function ShopHeader({ shop, noticeOpen, onToggleNotice }) {
         </button>
         {noticeOpen && (
           <p className="mt-1.5 rounded bg-bg px-2 py-2 text-[11px] leading-relaxed text-sub">
-            {shop.notice} 本店花材每日现采，支持同城速递，如需指定送达时间请在下单时备注。
+            {shop.notice ? (
+              <p>{shop.notice}</p>
+            ) : (
+              <p className="text-sub/70">商家暂未发布店铺公告</p>
+            )}
+            <p className="mt-1.5 text-sub/80">本店花材每日现采，支持同城速递，如需指定送达时间请在下单时备注。</p>
           </p>
         )}
         {/* 营业时间 / 地址 */}
@@ -89,6 +98,16 @@ function ShopHeader({ shop, noticeOpen, onToggleNotice }) {
             <span className="truncate">{shop.address}</span>
           </span>
         </div>
+        {/* 联系商家：进入顾客-商家会话（契约 4.1） */}
+        {onChat && (
+          <button
+            onClick={onChat}
+            className="press mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-[2px] border border-gold/50 bg-gold/5 py-2 text-[12px] tracking-[1px] text-gold"
+          >
+            联系商家
+            <IconArrow width={11} height={11} className="rotate-90" />
+          </button>
+        )}
       </div>
     </div>
   )
@@ -167,6 +186,15 @@ export default function ShopDetail() {
   const [noticeOpen, setNoticeOpen] = useState(false)
   const listRef = useRef(null)
   const sectionRefs = useRef({})
+
+  // 附近同类店铺（模块三）：排除本店 + 同价位带加权 + 定位距离
+  const { items: recShops, state: recState } = useRecommend(
+    () => {
+      const loc = getLocation()
+      return recommendShops({ lat: loc?.lat, lng: loc?.lng, limit: 4, shopId: id })
+    },
+    { deps: [id] },
+  )
 
   useEffect(() => {
     let alive = true
@@ -300,7 +328,14 @@ export default function ShopDetail() {
     <div className="flex h-full flex-col bg-bg">
       <TopBar title={shop.name} />
       {/* 店铺信息 */}
-      <ShopHeader shop={shop} noticeOpen={noticeOpen} onToggleNotice={() => setNoticeOpen(!noticeOpen)} />
+      <Reveal>
+        <ShopHeader
+          shop={shop}
+          noticeOpen={noticeOpen}
+          onToggleNotice={() => setNoticeOpen(!noticeOpen)}
+          onChat={() => nav(`/chat/${encodeURIComponent(id)}`)}
+        />
+      </Reveal>
 
       {/* 左栏分类 + 右栏商品 */}
       <div className="flex min-h-0 flex-1">
@@ -350,6 +385,59 @@ export default function ShopDetail() {
             </section>
           ))}
           <div className="h-4" />
+
+          {/* 附近同类店铺（模块三：数据来自 /recommend/shops，排除本店） */}
+          <div className="-mx-4 border-t border-line bg-bg px-4 pb-4 pt-4">
+            <Reveal>
+              <h3 className="font-serif-cn text-[17px] font-normal text-ink">附近同类店铺</h3>
+            </Reveal>
+            <Reveal delay={80}>
+              <p className="mt-0.5 text-[10px] text-sub">按偏好、热度与距离综合推荐</p>
+            </Reveal>
+            <div className="mt-3 space-y-2">
+              {recState === 'loading' &&
+                Array.from({ length: 2 }).map((_, i) => (
+                  <div key={i} className="h-[58px] animate-pulse rounded-[4px] bg-line" />
+                ))}
+              {recState === 'error' && (
+                <p className="py-4 text-center text-[11px] text-sub">推荐加载失败，请稍后重试</p>
+              )}
+              {recState === 'empty' && (
+                <p className="py-4 text-center text-[11px] text-sub">暂无同类店铺推荐</p>
+              )}
+              {recState === 'ok' &&
+                recShops.map((s, i) => (
+                  <Reveal key={s.id} delay={160 + i * 140}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => nav(`/shop/${s.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          nav(`/shop/${s.id}`)
+                        }
+                      }}
+                      className="press flex cursor-pointer items-center gap-3 rounded-[4px] border border-line bg-white p-3"
+                    >
+                      <SmartImage
+                        src={shopImage(s)}
+                        color={imgColor(s.id)}
+                        className="h-[52px] w-[52px] shrink-0 rounded-[2px]"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-serif-cn text-[15px] font-normal text-ink">{s.name}</p>
+                        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-sub">
+                          <IconStar width={10} height={10} className="text-cream" /> {s.rating} ·{' '}
+                          {s.eta} · 起送 ¥{s.min_delivery}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-[10px] text-sub">{s.dist}</span>
+                    </div>
+                  </Reveal>
+                ))}
+            </div>
+          </div>
         </div>
       </div>
 

@@ -3,9 +3,10 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
 import { IconCheckCircle } from '../components/icons'
-import { getOrder, payOrder } from '../api/shop'
-import { calcPayable, SHIPPING_FEE } from '../utils/price'
+import { getOrder, payOrder, publicConfig } from '../api/shop'
+import { calcPayable } from '../utils/price'
 import { toast } from '../utils/toast'
+import Reveal from '../components/Reveal'
 
 const PAY_METHODS = [
   { id: 'wechat', name: '微信支付', color: '#B5985A' },
@@ -22,6 +23,7 @@ export default function Pay() {
   const [sel, setSel] = useState(0)
   const [remain, setRemain] = useState(0)
   const [order, setOrder] = useState(null)
+  const [shippingFee, setShippingFee] = useState(0)
   const [paying, setPaying] = useState(false)
 
   useEffect(() => {
@@ -41,6 +43,13 @@ export default function Pay() {
     return () => clearInterval(t)
   }, [])
 
+  // 配送费由后端运营配置下发（与 OrderConfirm 同源，红线2：单一数据源）
+  useEffect(() => {
+    publicConfig()
+      .then((cfg) => { if (cfg.shipping_fee != null) setShippingFee(cfg.shipping_fee) })
+      .catch(() => {})
+  }, [])
+
   // 倒计时归零：订单已超时，跳回订单列表让后端懒过期生效
   useEffect(() => {
     if (order && remain === 0 && !paying && order.status !== 'canceled') {
@@ -54,7 +63,7 @@ export default function Pay() {
 
   const mm = String(Math.floor(remain / 60)).padStart(2, '0')
   const ss = String(remain % 60).padStart(2, '0')
-  const total = order ? calcPayable(order.total_price, order.discount) : 0
+  const total = order ? calcPayable(order.total_price, order.discount, shippingFee) : 0
   const earnedPoints = order ? Math.max(1, Math.round(Number(order.total_price) || 0)) : 0
   const first = order?.items?.[0]
   const recipient = order?.recipient
@@ -91,87 +100,101 @@ export default function Pay() {
     <div className="flex h-full flex-col bg-bg">
       <TopBar title="支付订单" />
       <div className="flex-1 overflow-y-auto px-4 pt-6">
-        <p className="text-center text-[30px] font-medium text-dark">¥{total.toFixed(2)}</p>
-        <p className="mt-3 text-center text-[10px] text-sub">
+        <p className="animate-hero text-center text-[30px] font-medium text-dark" style={{ animationDelay: '100ms' }}>
+          ¥{total.toFixed(2)}
+        </p>
+        <p className="animate-hero mt-3 text-center text-[10px] text-sub" style={{ animationDelay: '200ms' }}>
           {remain > 0 ? `订单将在 ${mm}:${ss} 后自动取消` : '订单已超时取消'}
         </p>
 
         {order && (
           <>
-            <div className="mx-auto mt-4 w-fit rounded-full bg-pink/10 px-4 py-1.5 text-[11px] text-pink">
+            <div className="animate-hero mx-auto mt-4 w-fit rounded-full bg-pink/10 px-4 py-1.5 text-[11px] text-pink" style={{ animationDelay: '300ms' }}>
               支付成功返 {earnedPoints} 积分
             </div>
 
-            <h2 className="mt-8 px-1 text-[15px] font-medium text-dark">金额明细</h2>
-            <div className="mt-2 rounded-card bg-white p-4 text-[12px] border border-line">
-              <div className="flex justify-between py-1 text-sub">
-                <span>商品金额</span>
-                <span className="text-ink">¥{Number(order.total_price || 0).toFixed(2)}</span>
+            <Reveal delay={80}>
+              <h2 className="mt-8 px-1 text-[15px] font-medium text-dark">金额明细</h2>
+            </Reveal>
+            <Reveal delay={160}>
+              <div className="mt-2 rounded-card bg-white p-4 text-[12px] border border-line">
+                <div className="flex justify-between py-1 text-sub">
+                  <span>商品金额</span>
+                  <span className="text-ink">¥{Number(order.total_price || 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between py-1 text-sub">
+                  <span>配送费</span>
+                  <span className="text-ink">¥{Number(shippingFee).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between py-1 text-sub">
+                  <span>优惠券</span>
+                  <span className="text-ink">-¥{Number(order.discount || 0).toFixed(2)}</span>
+                </div>
+                <div className="mt-1 flex justify-between border-t border-line pt-2 font-medium text-dark">
+                  <span>应付合计</span>
+                  <span>¥{total.toFixed(2)}</span>
+                </div>
               </div>
-              <div className="flex justify-between py-1 text-sub">
-                <span>配送费</span>
-                <span className="text-ink">¥{SHIPPING_FEE.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between py-1 text-sub">
-                <span>优惠券</span>
-                <span className="text-ink">-¥{Number(order.discount || 0).toFixed(2)}</span>
-              </div>
-              <div className="mt-1 flex justify-between border-t border-line pt-2 font-medium text-dark">
-                <span>应付合计</span>
-                <span>¥{total.toFixed(2)}</span>
-              </div>
-            </div>
+            </Reveal>
           </>
         )}
 
-        <h2 className="mt-7 px-1 text-[15px] font-medium text-dark">订单信息</h2>
-        <p className="mt-2 px-1 text-[12px] text-sub">
-          {first?.name || '花束'}
-          {first?.shop ? ` · ${first.shop}` : ''}
-        </p>
-        {recipient?.name && (
-          <p className="mt-1 px-1 text-[12px] text-sub">
-            {recipient.name}
-            {recipient.phone ? ` · ${recipient.phone}` : ''}
-            {recipient.address ? ` · ${recipient.address}` : ''}
+        <Reveal delay={120}>
+          <h2 className="mt-7 px-1 text-[15px] font-medium text-dark">订单信息</h2>
+        </Reveal>
+        <Reveal delay={200}>
+          <p className="mt-2 px-1 text-[12px] text-sub">
+            {first?.name || '花束'}
+            {first?.shop ? ` · ${first.shop}` : ''}
           </p>
-        )}
-        <p className="mt-1 flex items-center gap-1.5 px-1 text-[12px] text-sub">
-          <img
-            src="/images/brand/logo.jpg"
-            alt="跳舞兰"
-            className="h-4 w-4 rounded-full border border-line bg-white object-cover"
-          />
-          收款方 跳舞兰
-        </p>
+          {recipient?.name && (
+            <p className="mt-1 px-1 text-[12px] text-sub">
+              {recipient.name}
+              {recipient.phone ? ` · ${recipient.phone}` : ''}
+              {recipient.address ? ` · ${recipient.address}` : ''}
+            </p>
+          )}
+          <p className="mt-1 flex items-center gap-1.5 px-1 text-[12px] text-sub">
+            <img
+              src="/images/brand/logo.jpg"
+              alt="跳舞兰"
+              className="h-4 w-4 rounded-full border border-line bg-white object-cover"
+            />
+            收款方 跳舞兰
+          </p>
+        </Reveal>
 
-        <h2 className="mt-7 px-1 text-[15px] font-medium text-dark">支付方式</h2>
-        <div className="mt-2 overflow-hidden rounded-card bg-white border border-line">
-          {PAY_METHODS.map((m, i) => (
-            <button
-              key={m.id}
-              onClick={() => setSel(i)}
-              className={`flex w-full items-center justify-between px-4 py-3.5 ${
-                i < PAY_METHODS.length - 1 ? 'border-b border-line' : ''
-              }`}
-            >
-              <span className="flex items-center gap-2 text-[13px] text-ink">
-                <span
-                  className="h-2.5 w-2.5 rounded-full"
-                  style={{ background: i === 0 ? m.color : '#cfcfcf' }}
-                />
-                {m.name}
-              </span>
-              <span className={sel === i ? 'text-pink' : 'text-sub'}>
-                {sel === i ? (
-                  <IconCheckCircle width={18} height={18} />
-                ) : (
-                  <span className="block h-4 w-4 rounded-full border border-sub" />
-                )}
-              </span>
-            </button>
-          ))}
-        </div>
+        <Reveal delay={160}>
+          <h2 className="mt-7 px-1 text-[15px] font-medium text-dark">支付方式</h2>
+        </Reveal>
+        <Reveal delay={240}>
+          <div className="mt-2 overflow-hidden rounded-card bg-white border border-line">
+            {PAY_METHODS.map((m, i) => (
+              <button
+                key={m.id}
+                onClick={() => setSel(i)}
+                className={`flex w-full items-center justify-between px-4 py-3.5 ${
+                  i < PAY_METHODS.length - 1 ? 'border-b border-line' : ''
+                }`}
+              >
+                <span className="flex items-center gap-2 text-[13px] text-ink">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ background: i === 0 ? m.color : '#cfcfcf' }}
+                  />
+                  {m.name}
+                </span>
+                <span className={sel === i ? 'text-pink' : 'text-sub'}>
+                  {sel === i ? (
+                    <IconCheckCircle width={18} height={18} />
+                  ) : (
+                    <span className="block h-4 w-4 rounded-full border border-sub" />
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Reveal>
         <div className="h-4" />
       </div>
 

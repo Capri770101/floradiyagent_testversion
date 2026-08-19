@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
+import Reveal from '../components/Reveal'
 import { toast } from '../utils/toast'
 import { clearSession, isLoggedIn, wxBind, inWeChat } from '../api/auth'
 
@@ -47,17 +48,18 @@ export default function Settings() {
     <div className="flex h-full flex-col bg-bg">
       <TopBar title="设置" />
       <div className="flex-1 overflow-y-auto px-5 pt-4 pb-8">
-        <div className="overflow-hidden rounded-card bg-white border border-line">
+        <Reveal>
+          <div className="overflow-hidden rounded-card bg-white border border-line">
           <div className="flex items-center justify-between px-4 py-3.5">
             <span className="text-[12px] text-ink">账号状态</span>
             <span className="text-[12px] text-sub">{isLoggedIn() ? '已登录' : '未登录'}</span>
           </div>
           <div className="flex items-center justify-between border-t border-line px-4 py-3.5">
-            <span className="text-[12px] text-ink">新订单通知</span>
+            <span className="text-[12px] text-ink">接收消息推送</span>
             <button
               role="switch"
               aria-checked={notify}
-              aria-label="新订单通知"
+              aria-label="接收消息推送"
               onClick={toggleNotify}
               className={`relative h-[22px] w-[38px] rounded-full transition-colors ${
                 notify ? 'bg-pink' : 'bg-line'
@@ -70,17 +72,9 @@ export default function Settings() {
               />
             </button>
           </div>
-          <div className="flex items-center justify-between border-t border-line px-4 py-3.5">
-            <span className="text-[12px] text-ink">收货地址管理</span>
-            <span
-              role="button"
-              tabIndex={0}
-              className="cursor-pointer text-[12px] text-pink"
-              onClick={() => nav('/addresses')}
-            >
-              去管理
-            </span>
-          </div>
+          <p className="border-t border-line px-4 py-2 text-[10px] text-sub/60">
+            消息偏好仅作预留：本期所有消息统一在「消息通知」站内收件箱查看
+          </p>
           <div className="flex items-center justify-between border-t border-line px-4 py-3.5">
             <span className="text-[12px] text-ink">会员中心</span>
             <span
@@ -106,6 +100,8 @@ export default function Settings() {
             </div>
           )}
         </div>
+        </Reveal>
+        <Reveal delay={140}>
         <Button
           variant="secondary"
           className="mt-6 w-full"
@@ -114,6 +110,8 @@ export default function Settings() {
         >
           退出登录
         </Button>
+        </Reveal>
+        <Reveal delay={220}>
         <div className="mt-4 text-center">
           <img
             src="/images/brand/logo.jpg"
@@ -122,6 +120,7 @@ export default function Settings() {
           />
           <p className="mt-2 text-[10px] text-sub/60">跳舞兰 v1.0</p>
         </div>
+        </Reveal>
       </div>
     </div>
   )

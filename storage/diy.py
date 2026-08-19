@@ -102,8 +102,9 @@ def save_diy_plan(plan: dict, user_id: str) -> dict[str, Any]:
             "INSERT INTO diy_plans("
             "id, user_id, fingerprint, name, requirement, recipient, occasion, style, budget,"
             "color_scheme, flowers, packaging, meaning, diy_steps, care_tips, card_message,"
-            "budget_breakdown, effect_image_url, status, order_count, created_at, confirmed_at"
-            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "budget_breakdown, effect_image_url, difficulty, est_time, shelf_life,"
+            "suitable_for, caution, mood_tags, status, order_count, created_at, confirmed_at"
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 plan_id,
                 user_id,
@@ -123,6 +124,12 @@ def save_diy_plan(plan: dict, user_id: str) -> dict[str, Any]:
                 str(plan.get("card_message") or ""),
                 json.dumps(plan.get("budget_breakdown") or {}, ensure_ascii=False),
                 _plan_image(plan),
+                str(d.get("difficulty") or ""),
+                d.get("est_time"),
+                str(d.get("shelf_life") or ""),
+                json.dumps(d.get("suitable_for") or [], ensure_ascii=False),
+                str(d.get("caution") or ""),
+                json.dumps(d.get("mood_tags") or [], ensure_ascii=False),
                 "confirmed",
                 0,
                 now,
@@ -164,6 +171,12 @@ def _row_to_plan(row: Any) -> dict[str, Any]:
         "color_scheme": _j(row["color_scheme"], []),
         "packaging": row["packaging"],
         "meaning": row["meaning"],
+        "difficulty": row["difficulty"],
+        "est_time": row["est_time"],
+        "shelf_life": row["shelf_life"],
+        "suitable_for": _j(row["suitable_for"], []),
+        "caution": row["caution"],
+        "mood_tags": _j(row["mood_tags"], []),
     }
     budget = row["budget"]
     style_label = row["style"] or "定制"

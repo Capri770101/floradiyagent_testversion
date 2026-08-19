@@ -34,6 +34,19 @@ def _own_chat_or_403(chat: dict[str, Any] | None, uid: str | None) -> None:
         raise HTTPException(status_code=403, detail="无权访问该会话")
 
 
+@router.get("/chats")
+async def user_chat_list(request: Request) -> dict[str, Any]:
+    """顾客侧会话列表（个人中心消息中心展示用）。
+
+    返回当前用户与各商家的历史会话，附店铺名、最后消息摘要、最后时间与顾客侧未读数。
+    """
+    uid = await resolve_uid(request)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    chats = await asyncio.to_thread(chat_store.list_user_chats, uid)
+    return {"chats": chats}
+
+
 @router.get("/chats/shop/{shop_id}")
 async def user_chat_with_shop(shop_id: str, request: Request) -> dict[str, Any]:
     """顾客与某店铺的会话（不存在则创建）。返回会话 + 最近消息 + 店铺名。"""

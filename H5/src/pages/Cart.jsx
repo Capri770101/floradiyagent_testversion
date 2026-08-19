@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { IconCheck } from '../components/icons'
 import { TopBar } from '../components/TopBar'
@@ -7,6 +7,7 @@ import { getUserId } from '../api/chat'
 import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
+import Reveal from '../components/Reveal'
 import { planImage } from '../assets/imageMap'
 
 // 购物车（Maison 风格：细描边卡片 + 衬线品名 + 墨黑吸底结算栏）
@@ -15,6 +16,8 @@ export default function Cart() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  // 逐商品请求防抖/串行：同一商品并发改数量会导致互相覆盖（服务端旧值回写）
+  const inFlight = useRef(new Set())
 
   const load = () => {
     return getCart(getUserId())
@@ -28,19 +31,43 @@ export default function Cart() {
   }, [])
 
   const toggle = async (it) => {
-    const updated = await updateCart(it.item_id, { selected: !it.selected })
-    setItems((list) => list.map((x) => (x.item_id === it.item_id ? updated : x)))
+    if (inFlight.current.has(it.item_id)) return
+    inFlight.current.add(it.item_id)
+    try {
+      const updated = await updateCart(it.item_id, { selected: !it.selected })
+      setItems((list) => list.map((x) => (x.item_id === it.item_id ? updated : x)))
+    } catch (e) {
+      toast(e.message || '操作失败', 'error')
+    } finally {
+      inFlight.current.delete(it.item_id)
+    }
   }
 
   const changeQty = async (it, delta) => {
-    const qty = Math.max(1, it.qty + delta)
-    const updated = await updateCart(it.item_id, { qty })
-    setItems((list) => list.map((x) => (x.item_id === it.item_id ? updated : x)))
+    if (inFlight.current.has(it.item_id)) return
+    inFlight.current.add(it.item_id)
+    try {
+      const qty = Math.max(1, it.qty + delta)
+      const updated = await updateCart(it.item_id, { qty })
+      setItems((list) => list.map((x) => (x.item_id === it.item_id ? updated : x)))
+    } catch (e) {
+      toast(e.message || '操作失败', 'error')
+    } finally {
+      inFlight.current.delete(it.item_id)
+    }
   }
 
   const onRemove = async (it) => {
-    await removeCart(it.item_id)
-    setItems((list) => list.filter((x) => x.item_id !== it.item_id))
+    if (inFlight.current.has(it.item_id)) return
+    inFlight.current.add(it.item_id)
+    try {
+      await removeCart(it.item_id)
+      setItems((list) => list.filter((x) => x.item_id !== it.item_id))
+    } catch (e) {
+      toast(e.message || '移除失败', 'error')
+    } finally {
+      inFlight.current.delete(it.item_id)
+    }
   }
 
   const total = items
@@ -83,11 +110,11 @@ export default function Cart() {
       />
       <div className="flex-1 overflow-y-auto">
         <div className="space-y-3 p-4">
-          {items.map((it) => (
-            <div
-              key={it.item_id}
-              className="flex items-center gap-3 rounded-[4px] border border-line bg-white p-3"
-            >
+          {items.map((it, i) => (
+            <Reveal key={it.item_id} delay={i * 140}>
+              <div
+                className="flex items-center gap-3 rounded-[4px] border border-line bg-white p-3"
+              >
               <button
                 onClick={() => toggle(it)}
                 className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[2px] ${
@@ -133,18 +160,21 @@ export default function Cart() {
                 </button>
               </div>
             </div>
+            </Reveal>
           ))}
           {!loading && items.length === 0 && (
-            <div className="py-14 text-center">
-              <p className="font-serif-cn text-[20px] font-normal text-ink">购物袋还是空的</p>
-              <p className="mt-2 text-[11px] text-stone">去首页挑选一束心仪的花吧</p>
-              <button
-                onClick={() => nav('/')}
-                className="press mt-5 rounded-[2px] bg-dark px-8 py-2.5 text-[12px] font-medium tracking-[1px] text-[#FAF8F5]"
-              >
-                去逛逛
-              </button>
-            </div>
+            <Reveal>
+              <div className="py-14 text-center">
+                <p className="font-serif-cn text-[20px] font-normal text-ink">购物袋还是空的</p>
+                <p className="mt-2 text-[11px] text-stone">去首页挑选一束心仪的花吧</p>
+                <button
+                  onClick={() => nav('/')}
+                  className="press mt-5 rounded-[2px] bg-dark px-8 py-2.5 text-[12px] font-medium tracking-[1px] text-[#FAF8F5]"
+                >
+                  去逛逛
+                </button>
+              </div>
+            </Reveal>
           )}
         </div>
         <div className="h-4" />

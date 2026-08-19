@@ -106,6 +106,45 @@ def test_knowledge_proven_domain():
     assert any(e["id"] == r["plan_id"] for e in out["results"])
 
 
+def test_new_card_fields_roundtrip():
+    """模块二：卡片扩充字段（难度/耗时/保鲜期/适宜人群/禁忌/情绪标签）落库并完整还原。"""
+    uid = "u_diy_card_fields"
+    plan = _make_plan()
+    plan["design"].update(
+        {
+            "difficulty": "进阶",
+            "est_time": 45,
+            "shelf_life": "约 5-7 天",
+            "suitable_for": ["母亲", "长辈", "感恩"],
+            "caution": "康乃馨花萼易散，请轻拿轻放",
+            "mood_tags": ["温馨", "感恩"],
+        }
+    )
+    r = diy.save_diy_plan(plan, uid)
+    assert r["saved"] is True
+    p = diy.get_diy_plan(r["plan_id"])
+    d = p["design"]
+    assert d["difficulty"] == "进阶"
+    assert d["est_time"] == 45
+    assert d["shelf_life"] == "约 5-7 天"
+    assert d["suitable_for"] == ["母亲", "长辈", "感恩"]
+    assert d["caution"] == "康乃馨花萼易散，请轻拿轻放"
+    assert d["mood_tags"] == ["温馨", "感恩"]
+
+
+def test_old_plan_roundtrip_empty_new_fields():
+    """旧方案（无扩充字段）落库→还原，新字段为空但不报错（前端显示 —）。"""
+    uid = "u_diy_card_fields_old"
+    r = diy.save_diy_plan(_make_plan(), uid)
+    p = diy.get_diy_plan(r["plan_id"])
+    d = p["design"]
+    assert d["difficulty"] in (None, "")
+    assert d["est_time"] is None
+    assert d["shelf_life"] in (None, "")
+    assert d["suitable_for"] == []
+    assert d["mood_tags"] == []
+
+
 def test_design_context_includes_proven():
     """设计链路 RAG 上下文包含历史实战方案（闭环：AI 越用越懂你）。"""
     from tools import _retrieve_for_design

@@ -425,6 +425,7 @@ class OperationsWriteRequest(BaseModel):
     delivery_options: list[str] | None = None
     shipping_fee: float | None = Field(None, ge=0)
     coupon_rules: dict[str, Any] | None = None
+    recommend_weights: dict[str, float] | None = None
 
 
 @router.get("/admin/config")

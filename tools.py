@@ -800,6 +800,54 @@ def _build_budget_breakdown(
     }
 
 
+def _suitable_for(recipient: str, occasion: str) -> list[str]:
+    """规则兜底：由收礼人/场合推导适宜人群标签（模块二卡片字段）。"""
+    tags: list[str] = []
+    r = recipient or ""
+    if any(k in r for k in ("恋人", "老公", "老婆", "女友", "男友")):
+        tags += ["恋人", "表白"]
+    elif any(k in r for k in ("妈妈", "母亲", "奶奶", "外婆", "爸爸", "父亲", "长辈")):
+        tags += ["长辈", "感恩"]
+    elif any(k in r for k in ("同事", "领导", "客户")):
+        tags += ["同事", "职场"]
+    elif any(k in r for k in ("朋友", "闺蜜", "兄弟", "同学")):
+        tags += ["朋友"]
+    if not tags:
+        tags = ["通用"]
+    if occasion == "生日":
+        tags.append("生日")
+    return list(dict.fromkeys(tags))
+
+
+def _build_caution(main: list[dict]) -> str:
+    """规则兜底：禁忌/提醒文案（模块二卡片字段）。"""
+    out: list[str] = []
+    names = [f.get("name") or "" for f in main]
+    if any("百合" in n or "郁金香" in n for n in names):
+        out.append("百合/郁金香花粉较易致敏，过敏体质请谨慎接触")
+    if any("满天星" in n or "小雏菊" in n for n in names):
+        out.append("花材较为娇嫩，拆包装时请轻拿轻放")
+    out.append("鲜花忌暴晒与空调直吹，收到后斜剪花枝根部并每日换水，花期更持久")
+    return "；".join(out)
+
+
+def _mood_tags(color_scheme: list[str], tone: str) -> list[str]:
+    """规则兜底：由色板与场景基调推导情绪标签（模块二卡片字段，文字版）。"""
+    tags: list[str] = []
+    for c in color_scheme or []:
+        if any(w in c for w in ("红", "橙", "玫")) and "热烈" not in tags:
+            tags.append("热烈")
+        if any(w in c for w in ("蓝", "绿", "青", "白")) and "宁静" not in tags:
+            tags.append("宁静")
+        if any(w in c for w in ("粉", "香槟", "奶", "米")) and "温柔" not in tags:
+            tags.append("温柔")
+    if not tags:
+        tags = ["温柔"]
+    if tone and tone not in tags:
+        tags.append(tone)
+    return tags[:3]
+
+
 def _build_plan(
     dims: dict[str, str],
     version: int = 1,
@@ -893,6 +941,20 @@ def _build_plan(
     if exclude_flowers:
         notes.append(f"已按反馈移除：{ '、'.join(sorted(exclude_flowers)) }")
 
+    # ── 卡片内容扩充（模块二）：难度/耗时/保鲜期/适宜人群/禁忌/情绪标签（规则兜底）──
+    # 保鲜期取主花 freshness（高≈7-10 天 / 中≈5-7 天 / 低≈3-5 天）中最保守档位；
+    # 难度与耗时随预算档/重要场景上浮；情绪标签由色板与场景基调推导。
+    freshness_days = {"高": "约 7-10 天", "中": "约 5-7 天", "低": "约 3-5 天"}
+    fvals = [f.get("freshness") for f in main if f.get("freshness")]
+    worst = min(fvals, key=lambda v: {"高": 0, "中": 1, "低": 2}.get(v, 1)) if fvals else "中"
+    shelf_life = freshness_days.get(worst, "约 5-7 天")
+    hard = important or "高档" in tier["label"]
+    difficulty = "高手" if hard and len(main) >= 3 else ("进阶" if hard else "入门")
+    est_time = 45 if hard else 30
+    suitable_for = _suitable_for(dims.get("recipient", ""), occ_label)
+    caution = _build_caution(main)
+    mood_tags = _mood_tags(color_scheme, tone)
+
     plan = {
         "plan_id": "DIY_" + uuid.uuid4().hex[:6],
         "version": version,
@@ -917,6 +979,12 @@ def _build_plan(
             "packaging": packaging["name"] if packaging else "花束",
             "meaning": meaning,
             "notes": notes,
+            "difficulty": difficulty,
+            "est_time": est_time,
+            "shelf_life": shelf_life,
+            "suitable_for": suitable_for,
+            "caution": caution,
+            "mood_tags": mood_tags,
         },
         "estimated_price": est,
         "effect_prompt": effect_prompt,
@@ -1036,6 +1104,8 @@ def _merge_plan(baseline: dict, llm_plan: dict) -> dict:
             "main_flowers", "fillers", "foliage", "color_scheme", "packaging",
             "meaning", "notes", "diy_steps", "care_tips", "card_message",
             "budget_breakdown",
+            "difficulty", "est_time", "shelf_life", "suitable_for", "caution",
+            "mood_tags",
         ):
             if ld.get(key) not in (None, "", []):
                 bd[key] = ld[key]
@@ -1088,7 +1158,11 @@ def design_with_llm(requirements: str) -> dict:
             '"fillers":[{"name":花名,"role":"填充"}],'
             '"foliage":[{"name":叶材名,"role":"叶材"}],'
             '"color_scheme":[颜色],"packaging":包装名,"meaning":寓意文案,'
-            '"diy_steps":DIY 步骤,"care_tips":养护贴士,"card_message":贺卡文案}}。'
+            '"diy_steps":DIY 步骤,"care_tips":养护贴士,"card_message":贺卡文案,'
+            '"difficulty":制作难度(仅限 入门/进阶/高手),"est_time":预计耗时分钟数(整数),'
+            '"shelf_life":保鲜期(收到后可养几天,如"约 5-7 天"),'
+            '"suitable_for":[适宜人群标签],"caution":禁忌或提醒(如花粉过敏慎选),'
+            '"mood_tags":[情绪标签(如 治愈/热烈/宁静)]}}。'
             "要求：花材必须从【候选花材】中选取真实名称；配色与风格须与知识库一致；"
             "若用户未指定某维度，按花语与场景合理默认，不要留空。"
         )
@@ -1147,7 +1221,11 @@ def revise_with_llm(plan: str, feedback: str) -> dict:
             '"fillers":[{"name":花名,"role":"填充"}],'
             '"foliage":[{"name":叶材名,"role":"叶材"}],'
             '"color_scheme":[颜色],"packaging":包装名,"meaning":寓意文案,'
-            '"diy_steps":DIY 步骤,"care_tips":养护贴士,"card_message":贺卡文案}}。'
+            '"diy_steps":DIY 步骤,"care_tips":养护贴士,"card_message":贺卡文案,'
+            '"difficulty":制作难度(仅限 入门/进阶/高手),"est_time":预计耗时分钟数(整数),'
+            '"shelf_life":保鲜期(收到后可养几天,如"约 5-7 天"),'
+            '"suitable_for":[适宜人群标签],"caution":禁忌或提醒(如花粉过敏慎选),'
+            '"mood_tags":[情绪标签(如 治愈/热烈/宁静)]}}。'
             "要求：反馈明确要改的维度必须落实；花材从知识库真实名称选；"
             "未提及的维度保持原方案，不要随意改动。"
         )

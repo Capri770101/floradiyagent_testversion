@@ -27,8 +27,9 @@ def _register(client, username, role="user"):
         json={"username": username, "password": "secret123", "nickname": username},
     )
     if r.status_code == 409:
-        # 用户名已存在（临时 DB 残留）：直接登录复用
-        r = client.post("/auth/login", json={"username": username, "password": "secret123"})
+        # 用户名已存在（临时 DB 残留）：按目标角色走对应登录（admin → admin-login）
+        path = "/auth/admin-login" if role == "admin" else "/auth/login"
+        r = client.post(path, json={"username": username, "password": "secret123"})
         assert r.status_code == 200, r.text
         token = r.json()["token"]
         uid = r.json()["user_id"]
@@ -102,6 +103,23 @@ def test_admin_users_list_and_ban(client):
     assert r.status_code == 200
     r = client.post("/auth/login", json={"username": "adm_c", "password": "secret123"})
     assert r.status_code == 200
+
+
+def test_banned_merchant_token_invalidated_immediately(client):
+    """封禁即时生效：已发令牌在 merchant 端点被 403（不等 7 天过期）。"""
+    admin_t = _admin_token(client)
+    token, uid = _register(client, "adm_ban_m", role="merchant")
+    assert catalog.merchant_bind(uid, "S001")
+    # 封禁前：商家端点可访问
+    r = client.get("/merchant/shops", headers=_h(token))
+    assert r.status_code == 200
+    # 封禁：现有令牌立即失效
+    r = client.post(f"/admin/users/{uid}/ban", headers=_h(admin_t))
+    assert r.status_code == 200
+    r = client.get("/merchant/shops", headers=_h(token))
+    assert r.status_code == 403
+    r = client.get("/merchant/stats", headers=_h(token))
+    assert r.status_code == 403
 
 
 # ---------- M3 全局订单 ----------
@@ -356,3 +374,48 @@ def test_admin_categories_crud(client):
     r = client.delete(f"/admin/categories/{cid}", headers=_h(admin_t))
     assert r.status_code == 200
     assert client.get("/admin/categories", headers=_h(admin_t)).status_code == 200
+
+
+def test_admin_shops_crud_and_location(client):
+    """店铺管理（合作花店）：admin 可增删改，且能改 lat/lng/rating 影响首页排序。"""
+    admin_t = _admin_token(client)
+    r = client.post(
+        "/admin/shops",
+        json={
+            "name": "后台测试花店",
+            "rating": 4.2,
+            "lat": 22.60,
+            "lng": 114.30,
+            "status": "营业中",
+        },
+        headers=_h(admin_t),
+    )
+    assert r.status_code == 200, r.text
+    shop = r.json()["shop"]
+    sid = shop["shop_id"]
+    assert shop["name"] == "后台测试花店"
+    assert shop["lat"] == 22.60
+
+    # 更新：改 lat/lng/rating/地址（首页按距离+评分排序）
+    r = client.put(
+        f"/admin/shops/{sid}",
+        json={"lat": 22.45, "lng": 114.10, "rating": 4.9, "address": "深圳市福田区测试路 1 号"},
+        headers=_h(admin_t),
+    )
+    assert r.status_code == 200, r.text
+    upd = r.json()["shop"]
+    assert upd["lat"] == 22.45
+    assert upd["lng"] == 114.10
+    assert upd["rating"] == 4.9
+    assert upd["address"] == "深圳市福田区测试路 1 号"
+
+    # 普通用户访问 /admin/shops → 403；未登录 401
+    u_tok, _ = _register(client, "adm_shop_u")
+    assert client.get("/admin/shops", headers=_h(u_tok)).status_code == 403
+    assert client.get("/admin/shops").status_code == 401
+
+    # 删除
+    r = client.delete(f"/admin/shops/{sid}", headers=_h(admin_t))
+    assert r.status_code == 200
+    assert client.get("/admin/shops", headers=_h(admin_t)).status_code == 200
+

@@ -81,8 +81,13 @@ async def merge_cart_endpoint(req: CartMergeRequest, request: Request) -> dict[s
 
 
 @router.put("/cart/{item_id}")
-async def put_cart(item_id: str, req: CartUpdateRequest) -> dict[str, Any]:
-    item = await asyncio.to_thread(commerce.update_cart_item, item_id, req.qty, req.selected)
+async def put_cart(item_id: str, req: CartUpdateRequest, request: Request) -> dict[str, Any]:
+    # 鉴权 + 归属校验：防止任意登录用户越权改他人购物车项（IDOR）。
+    # 与 get_cart/post_cart 同款 resolve_uid，生产环境从 JWT 取真实 uid。
+    uid = await resolve_uid(request, None)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    item = await asyncio.to_thread(commerce.update_cart_item, item_id, req.qty, req.selected, uid)
     if not item:
         raise HTTPException(status_code=404, detail="购物车项不存在")
     return {"item": item}
@@ -90,9 +95,15 @@ async def put_cart(item_id: str, req: CartUpdateRequest) -> dict[str, Any]:
 
 
 @router.delete("/cart/{item_id}")
-async def del_cart(item_id: str) -> dict[str, Any]:
-    ok = await asyncio.to_thread(commerce.remove_cart_item, item_id)
-    return {"ok": ok}
+async def del_cart(item_id: str, request: Request) -> dict[str, Any]:
+    # 鉴权 + 归属校验：防止越权删他人购物车项（IDOR）。
+    uid = await resolve_uid(request, None)
+    if not uid:
+        raise HTTPException(status_code=401, detail="缺少用户身份")
+    ok = await asyncio.to_thread(commerce.remove_cart_item, item_id, uid)
+    if not ok:
+        raise HTTPException(status_code=404, detail="购物车项不存在")
+    return {"ok": True}
 
 
 

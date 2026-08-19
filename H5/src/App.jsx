@@ -22,8 +22,11 @@ import CouponCenter from './pages/CouponCenter'
 import Merchant from './pages/Merchant'
 import Logistics from './pages/Logistics'
 import Orders from './pages/Orders'
+import Chat from './pages/Chat'
 import MerchantApply from './pages/MerchantApply'
 import MyAftersales from './pages/MyAftersales'
+import Notifications from './pages/Notifications'
+import NotificationDetail from './pages/NotificationDetail'
 
 // 404 兜底页：路由未命中时给出明确反馈与返回入口（review 点名缺失）
 function NotFound() {
@@ -153,6 +156,14 @@ export default function App() {
           }
         />
         <Route
+          path="/chat/:shopId"
+          element={
+            <RequireAuth>
+              <Chat />
+            </RequireAuth>
+          }
+        />
+        <Route
           path="/addresses"
           element={
             <RequireAuth>
@@ -177,6 +188,22 @@ export default function App() {
           }
         />
         <Route path="/diy/:id" element={<DiyDetail />} />
+        <Route
+          path="/notifications"
+          element={
+            <RequireAuth>
+              <Notifications />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/notifications/:id"
+          element={
+            <RequireAuth>
+              <NotificationDetail />
+            </RequireAuth>
+          }
+        />
         <Route path="/profile" element={<Profile />} />
         <Route path="/service" element={<Service />} />
         <Route path="/about" element={<About />} />

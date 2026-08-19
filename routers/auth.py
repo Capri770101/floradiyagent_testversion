@@ -32,6 +32,12 @@ from security import get_current_user, wx_code2session
 router = APIRouter(tags=["auth"])
 logger = logging.getLogger("api")
 
+
+def _reject_admin(uid: str) -> None:
+    """C 端登录接口拒绝管理员角色：管理员只能走管理后台 /auth/admin-login。"""
+    if security.get_user_role(uid) == "admin":
+        raise HTTPException(status_code=403, detail="管理员账号请使用管理后台登录")
+
 @router.post("/auth/wx-login")
 async def wx_login(req: WxLoginRequest, request: Request) -> dict[str, Any]:
     """微信小程序登录：用临时 code 换取 openid 并签发 JWT。"""
@@ -55,6 +61,7 @@ async def wx_login(req: WxLoginRequest, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="微信未返回 openid")
     # 自动建档：openid 无对应 users 行时创建（id=openid），保证 /auth/me 与业务表可用
     uid, token, is_new = security.wx_login_user(openid, info.get("nickname"))
+    _reject_admin(uid)
     profile = security.get_user_profile(uid) or {}
     return {
         "token": token,
@@ -99,6 +106,7 @@ async def phone_login(req: PhoneLoginRequest) -> dict[str, Any]:
         uid, token, is_new = security.phone_login_user(req.phone)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _reject_admin(uid)
     profile = security.get_user_profile(uid) or {}
     return {
         "token": token,
@@ -170,12 +178,38 @@ async def register(req: RegisterRequest, request: Request) -> dict[str, Any]:
 
 @router.post("/auth/login")
 async def login(req: LoginRequest, request: Request) -> dict[str, Any]:
-    """账号登录：校验凭据并签发 JWT；失败返回 401。"""
+    """C 端账号登录：校验凭据并签发 JWT；失败返回 401。
+
+    管理员角色拒绝登录 C 端（403）——管理员请走管理后台 /auth/admin-login。
+    """
     _check_rate(f"auth:{_client_ip(request)}", settings.rate_limit_auth_per_minute)
     token = security.login_user(req.username, req.password)
     if not token:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     uid = security.verify_token(token)
+    _reject_admin(uid)
+    profile = security.get_user_profile(uid) or {}
+    return {
+        "token": token,
+        "user_id": uid,
+        "openid": uid,
+        "nickname": profile.get("nickname", req.username),
+        "expires_in": settings.jwt_expire_minutes * 60,
+        "token_type": "Bearer",
+    }
+
+
+
+@router.post("/auth/admin-login")
+async def admin_login(req: LoginRequest, request: Request) -> dict[str, Any]:
+    """管理后台登录：校验凭据并要求 role=admin，否则 403（C 端用户无法登录后台）。"""
+    _check_rate(f"auth:{_client_ip(request)}", settings.rate_limit_auth_per_minute)
+    token = security.login_user(req.username, req.password)
+    if not token:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    uid = security.verify_token(token)
+    if security.get_user_role(uid) != "admin":
+        raise HTTPException(status_code=403, detail="该账号不是管理员，无法进入后台")
     profile = security.get_user_profile(uid) or {}
     return {
         "token": token,

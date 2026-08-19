@@ -26,7 +26,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import settings, setup_logging
-from routers import admin, auth, catalog, chat, chats, commerce, merchant
+from routers import admin, auth, catalog, chat, chats, commerce, merchant, notify, recommend
 from routers.common import METRICS, _limiter, agent, repo  # noqa: F401  # api._limiter 供测试引用
 from security import wx_code2session  # noqa: F401  # 测试 mock 点（api.wx_code2session）
 from storage.db import init_db
@@ -139,6 +139,8 @@ app.include_router(catalog.router)
 app.include_router(commerce.router)
 app.include_router(merchant.router)
 app.include_router(admin.router)
+app.include_router(notify.router)
+app.include_router(recommend.router)
 
 # 商家上传图片静态托管（/uploads/m*.jpg → data/uploads/）
 Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)

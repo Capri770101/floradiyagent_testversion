@@ -140,6 +140,36 @@ def test_merchant_scope_isolation(client):
     assert r.status_code == 403
 
 
+def test_merchant_cannot_access_other_shop_order_detail(client):
+    """IDOR 防护：绑定 S001 的商家查看/代发货/加物流他人(S002)订单 → 403。"""
+    # 商家 A 绑 S001，下 S001 的单（合法可访问）
+    token_a = _register(client, "mer_scope_a", bind="S001")
+    oid_own = _create_and_pay(client, token_a, shop="S001")
+    # 商家 B 绑 S002，下 S002 的单
+    token_b = _register(client, "mer_scope_b", bind="S002")
+    oid_other = _create_and_pay(client, token_b, shop="S002")
+
+    h = _merchant_headers(token_a)
+    # A 访问自己的单 → 200
+    r = client.get(f"/merchant/orders/{oid_own}", headers=h)
+    assert r.status_code == 200, r.text
+    # A 访问 B 的单 → 403（跨店越权）
+    r = client.get(f"/merchant/orders/{oid_other}", headers=h)
+    assert r.status_code == 403
+    # A 代发货 B 的单 → 403
+    r = client.post(f"/merchant/orders/{oid_other}/ship", headers=h)
+    assert r.status_code == 403
+    # A 给 B 的单加物流 → 403
+    r = client.post(
+        f"/merchant/orders/{oid_other}/logistics",
+        json={"text": "测试节点"},
+        headers=h,
+    )
+    assert r.status_code == 403
+    # 不存在的订单 → 404
+    assert client.get("/merchant/orders/O_NO_SUCH", headers=h).status_code == 404
+
+
 def test_merchant_shops_endpoint(client):
     token = _register(client, "mer_g", bind="S001")
     r = client.get("/merchant/shops", headers=_merchant_headers(token))

@@ -93,7 +93,10 @@ def test_pay_order_sandbox_records_payment_and_marks_paid() -> None:
     order = commerce.get_order(order_id)
     assert order["paid"] is True
     assert order["status"] == "paid"
-    # payments 行已落库且为 paid
+    # 应付金额 = 总额 - 优惠券抵扣（P001×2=398，自动满99减10 → 388）
+    assert float(order["total_price"]) == 398.0
+    assert float(order["discount"]) == 10.0
+    # payments 行已落库且为 paid，金额 = 实付（已扣券）
     from storage.db import get_conn
 
     pay_row = get_conn().execute(
@@ -102,7 +105,7 @@ def test_pay_order_sandbox_records_payment_and_marks_paid() -> None:
     assert pay_row is not None
     assert pay_row["status"] == "paid"
     assert pay_row["method"] == "wechat"
-    assert float(pay_row["amount"]) == 398.0
+    assert float(pay_row["amount"]) == 388.0
 
 
 def test_pay_order_unknown_order_returns_none() -> None:
@@ -148,3 +151,31 @@ def test_get_payment_status_polling() -> None:
     assert commerce.get_payment_status(order_id)["paid"] is True
     # 不存在的订单返回 None
     assert commerce.get_payment_status("O_not_exist") is None
+
+
+def test_mark_order_paid_idempotent_no_double_points() -> None:
+    """重复支付回调不重复发放积分 / 不重复插支付行（幂等）。"""
+    from storage.db import get_conn
+
+    order_id = _make_order()
+    conn = get_conn()
+    conn.execute(
+        "UPDATE orders SET paid=0, status='pending_payment' WHERE order_id=?", (order_id,)
+    )
+    conn.execute(
+        "UPDATE payments SET status='pending', paid_at=NULL WHERE order_id=?", (order_id,)
+    )
+    conn.commit()
+
+    def _rec_count():
+        return conn.execute(
+            "SELECT COUNT(*) FROM point_records WHERE order_id=?", (order_id,)
+        ).fetchone()[0]
+
+    assert _rec_count() == 0
+    assert commerce.mark_order_paid(order_id, "TXN_1") is True
+    assert _rec_count() == 1
+    # 第二次回调：幂等跳过，不再发积分
+    assert commerce.mark_order_paid(order_id, "TXN_2") is True
+    assert _rec_count() == 1
+    assert commerce.get_order(order_id)["paid"] is True

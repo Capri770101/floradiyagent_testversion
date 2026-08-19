@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from security import register_user  # noqa: E402
-from storage import chats, commerce  # noqa: E402
+from storage import chats, commerce, notify  # noqa: E402
 from storage.db import get_conn, init_db  # noqa: E402
 
 DEMO_USER = "capri_demo"
@@ -169,6 +169,63 @@ def seed() -> None:
             review = commerce.create_review(uid, done_order["order_id"], 5, "花很新鲜，包装精致，配送也准时，下次还来！")
         chats.reply_review(review["id"], "感谢您的认可！小店会继续用心做好每一束花，期待再次为您服务～")
         print(f"  + 评价回复已灌入（{review['id']}）")
+
+    # 演示通知（模块一：站内消息通知中心有可见数据，覆盖任务书 §2.5 要求的五种类型）。
+    # 先清空本账号全部通知（含订单创建钩子刚落的），再灌入精选集合，保证重灌幂等。
+    conn.execute("DELETE FROM notifications WHERE user_id=?", (uid,))
+    demo_notifications = [
+        ("order_status", "订单已支付", "订单已支付，商家备货中，请留意物流更新", "order"),
+        ("logistics", "物流更新", "包裹已揽收，正在发往深圳转运中心", "order"),
+        ("review_reply", "商家回复了你的评价", "感谢您的认可！小店会继续用心做好每一束花", "order"),
+        ("aftersale", "退款已到账", "您的售后申请已通过，退款原路返回", "aftersale"),
+        ("announcement", "平台公告", "跳舞兰夏季花材上新，欢迎选购", ""),
+    ]
+    for i, (ntype, title, body, ref) in enumerate(demo_notifications):
+        n = notify.create_notification(
+            uid, ntype, title, body,
+            ref_type=ref,
+            ref_id=done_order["order_id"] if done_order and ref else "",
+        )
+        if n and i >= 2:
+            notify.mark_read(uid, [n["id"]])
+    print(f"  + 演示通知 {len(demo_notifications)} 条（前 2 条未读）")
+
+    # 演示 DIY 方案（模块二：卡片内容扩充字段有可见示例值，前端展示非空）
+    from storage.diy import save_diy_plan  # noqa: E402
+
+    demo_diy = {
+        "name": "北欧 · 生日花束",
+        "recipient": "朋友",
+        "occasion": "生日",
+        "style": "北欧",
+        "budget_num": 299,
+        "design": {
+            "main_flowers": [{"name": "洋桔梗", "role": "主花", "flower_language": ["美好"]}],
+            "fillers": [{"name": "满天星", "role": "填充"}],
+            "foliage": [{"name": "尤加利", "role": "叶材"}],
+            "color_scheme": ["雾蓝", "奶白"],
+            "packaging": "礼盒",
+            "meaning": "祝生日快乐，愿你如花般从容绽放",
+            "difficulty": "进阶",
+            "est_time": 45,
+            "shelf_life": "约 5-7 天",
+            "suitable_for": ["朋友", "同事", "生日"],
+            "caution": "洋桔梗花茎较脆，拆包装时请轻拿轻放；满天星娇嫩，忌暴晒",
+            "mood_tags": ["温柔", "宁静"],
+        },
+        "diy_steps": ["斜剪花枝根部并醒花 2 小时", "按雾蓝→奶白间隔插入花泥", "插入洋桔梗作为主花定位", "点缀满天星与尤加利", "系上缎带，放入礼盒"],
+        "care_tips": "收到后斜剪根部、每日换水，雾蓝洋桔梗可养一周左右",
+        "card_message": "岁岁常欢愉，年年皆胜意",
+        "budget_breakdown": {"花材": 168, "包装": 68, "手工费": 63},
+    }
+    diy_res = save_diy_plan(demo_diy, uid)
+    if diy_res["saved"]:
+        print(f"  + 演示 DIY 方案 {diy_res['plan_id']}（卡片扩充字段已灌入）")
+
+    # 演示收藏（模块三：个性化推荐「猜你喜欢」偏好信号有真实数据）
+    if not commerce.is_favorite(uid, "P001"):
+        commerce.add_favorite(uid, "P001")
+        print("  + 演示收藏 P001（韩式风格偏好信号）")
 
     print("演示数据灌入完成")
 
