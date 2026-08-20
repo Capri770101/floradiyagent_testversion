@@ -29,9 +29,11 @@ export function itemImagePath(domain, id) {
   return `${IMAGE_BASE}/${domain}/${encodeURIComponent(id)}.jpg`
 }
 
-// 商家上传的实拍图（/uploads/...）优先；否则回退到占位图体系
+// 商品/店铺图：后端数据字段优先（effect_image_url / cover / logo / image），
+// 保证各端展示与数据库真实数据一致（/uploads/、/generated/ 均指后端托管文件）。
+// 仅当字段为空/缺失时才回退到本地占位图体系（/images/...）。
 function uploadedOrFallback(url, fallback) {
-  if (url && url.startsWith('/uploads/')) return url
+  if (url) return url
   return fallback
 }
 

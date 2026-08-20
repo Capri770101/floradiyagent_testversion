@@ -175,6 +175,10 @@ app.include_router(recommend.router)
 Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
+# 生成图静态托管（/generated/plan_*.png → data/generated/）
+Path(settings.generated_dir).mkdir(parents=True, exist_ok=True)
+app.mount("/generated", StaticFiles(directory=settings.generated_dir), name="generated")
+
 
 if __name__ == "__main__":
     import uvicorn

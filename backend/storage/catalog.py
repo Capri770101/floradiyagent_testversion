@@ -553,7 +553,7 @@ _SHOPS = [
 ]
 
 # 生成占位效果图的方案（与 MockRepository 保持一致）
-_PLACEHOLDER_PLANS = ["P001", "P002", "P003", "P007", "P008", "P009", "P010", "P011", "P012", "P013", "P014", "P015", "P016", "P017", "P018", "P019", "P020", "P021", "P022", "P023", "P024", "P025", "P026"]
+_PLACEHOLDER_PLANS = ["P001", "P002", "P003", "P004", "P005", "P006", "P007", "P008", "P009", "P010", "P011", "P012", "P013", "P014", "P015", "P016", "P017", "P018", "P019", "P020", "P021", "P022", "P023", "P024", "P025", "P026"]
 
 # 商家智库档案（1:1 shops）。styles/scenes 的 style_id/scene_id 分别引用
 # knowledge/styles.json（S_*）与 knowledge/scenes.json（SC_*）的实体 id。
