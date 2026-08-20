@@ -18,6 +18,8 @@ export default defineConfig({
         main: 'index.html',
         // 独立管理后台入口（与移动端 H5 同仓但独立产物/路由，admin 逻辑不进移动端 bundle）
         admin: 'admin.html',
+        // 独立商家工作台入口（三端独立域名架构：商家端独立产物与令牌 floradiy_merchant_token）
+        merchant: 'merchant.html',
       },
     },
   },

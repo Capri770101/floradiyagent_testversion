@@ -7,12 +7,11 @@
 - M4：用户发起售后 → admin 列表 → 审核通过/拒绝/退款（payments 联动）
 - M5：提交入驻 → admin 列表 → 通过（提权+建店）/拒绝
 """
+import backend.api as api
 import pytest
+from backend.security import set_user_role
+from backend.storage import catalog
 from fastapi.testclient import TestClient
-
-import api
-from security import set_user_role
-from storage import catalog
 
 
 @pytest.fixture()
@@ -189,7 +188,7 @@ def test_aftersale_refund_links_payment(client):
     assert r.status_code == 200
     assert r.json()["aftersale"]["status"] == "refunded"
     # payments 联动
-    from storage.db import get_conn
+    from backend.storage.db import get_conn
 
     row = get_conn().execute(
         "SELECT status FROM payments WHERE order_id=?", (oid,)
@@ -227,7 +226,7 @@ def test_merchant_apply_flow(client):
     r = client.post(f"/admin/merchant-applications/{app_id}/approve", headers=_h(admin_t))
     assert r.status_code == 200
     assert r.json()["application"]["status"] == "approved"
-    from security import get_user_role
+    from backend.security import get_user_role
 
     assert get_user_role(uid) == "merchant"
     assert catalog.merchant_shops(uid)

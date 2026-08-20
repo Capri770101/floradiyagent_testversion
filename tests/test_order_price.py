@@ -3,10 +3,9 @@
 - 客户端传低价 → 服务端按目录价计总额（P001=199，传 0.01 也按 199）
 - 方案不存在 → 400（拒绝下单而非信任客户端）
 """
+import backend.api as api
 import pytest
 from fastapi.testclient import TestClient
-
-import api
 
 
 @pytest.fixture()

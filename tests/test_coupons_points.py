@@ -3,10 +3,9 @@
 覆盖「优惠券/积分」后端链路：GET /coupons 新用户自动发券、下单自动抵扣最优券
 （金额落订单 discount + 券标记 used）、支付成功按金额返积分（GET /points）。
 """
+import backend.api as api
 import pytest
 from fastapi.testclient import TestClient
-
-import api
 
 
 @pytest.fixture()

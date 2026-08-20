@@ -6,11 +6,10 @@
 - 有效令牌 → 200 且身份以令牌为准（body user_id 不可冒用）
 - admin / merchant 端点同样受 JWT 约束
 """
+import backend.api as api
+import backend.security as security
 import pytest
 from fastapi.testclient import TestClient
-
-import api
-import security
 
 
 @pytest.fixture()

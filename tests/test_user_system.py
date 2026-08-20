@@ -4,11 +4,10 @@
 注意：password_hash 用 pbkdf2 存储，断言库中不存在明文密码。
 """
 
+import backend.api as api
+import backend.security as security
 import pytest
 from fastapi.testclient import TestClient
-
-import api
-import security
 
 
 @pytest.fixture
@@ -63,7 +62,7 @@ def test_login_success_and_me(client: TestClient) -> None:
 
 def test_password_not_stored_plaintext(client: TestClient) -> None:
     _register(client, "erin", "secret123")
-    from storage.db import get_conn
+    from backend.storage.db import get_conn
 
     row = get_conn().execute(
         "SELECT password_hash FROM users WHERE username=?", ("erin",)

@@ -454,3 +454,9 @@ export async function userSendChatMessage(chatId, content) {
   })
   return data.message
 }
+
+
+// 内容举报（阶段5）：商品/店铺/评价共用
+export async function submitReport(payload) {
+  return api('/reports', { method: 'POST', body: JSON.stringify(payload) })
+}

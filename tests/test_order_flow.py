@@ -3,10 +3,9 @@
 覆盖「订单状态机」后端链路：发货 / 签收 / 取消的动作端点（POST /orders/{id}/action）
 必须：owner 校验、非法流转 400、物流事件按 seq 追加并随详情返回。
 """
+import backend.api as api
 import pytest
 from fastapi.testclient import TestClient
-
-import api
 
 
 @pytest.fixture()

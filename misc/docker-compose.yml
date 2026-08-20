@@ -1,0 +1,28 @@
+services:
+  flora-agent:
+    build:
+      context: ..
+      dockerfile: misc/Dockerfile
+    # 真实密钥从宿主机 misc/.env 读取，不进镜像
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    # 数据持久化（SQLite + 生图落盘），避免容器重建丢数据
+    volumes:
+      - ../data:/app/data
+    restart: unless-stopped
+
+  # 三端独立域名（阶段6）：一容器三端口 = 三入口（index/admin/merchant），
+  # /api、/uploads 反代到 flora-agent。开发期 localhost:5173/5174/5175 即等价三域名。
+  flora-frontends:
+    build:
+      context: ..
+      dockerfile: misc/Dockerfile.frontend
+    ports:
+      - "5173:5173"   # C 端（顾客端）
+      - "5174:5174"   # 管理端
+      - "5175:5175"   # 商家端
+    depends_on:
+      - flora-agent
+    restart: unless-stopped

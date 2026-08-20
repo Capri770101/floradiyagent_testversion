@@ -12,9 +12,8 @@ from __future__ import annotations
 import socket
 
 import pytest
-
-from config import settings
-from storage import tasks
+from backend.config import settings
+from backend.storage import tasks
 
 
 def test_official_host_allowed_offline() -> None:

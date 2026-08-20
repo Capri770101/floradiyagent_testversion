@@ -12,6 +12,7 @@ import { PLACEHOLDER } from '../tokens'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
 import Reveal from '../components/Reveal'
+import ReportDialog from '../components/ReportDialog'
 import { planImage, shopImage } from '../assets/imageMap'
 
 // 美团外卖式店铺详情页：
@@ -184,6 +185,7 @@ export default function ShopDetail() {
   const [loading, setLoading] = useState(true)
   const [activeCat, setActiveCat] = useState(0)
   const [noticeOpen, setNoticeOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
   const listRef = useRef(null)
   const sectionRefs = useRef({})
 
@@ -326,7 +328,25 @@ export default function ShopDetail() {
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      <TopBar title={shop.name} />
+      <TopBar
+        title={shop.name}
+        right={
+          <button
+            className="text-[11px] tracking-[1px] text-sub"
+            aria-label="举报"
+            onClick={() => setReportOpen(true)}
+          >
+            举报
+          </button>
+        }
+      />
+      <ReportDialog
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        targetType="shop"
+        targetId={id}
+        targetTitle={`店铺「${shop.name}」`}
+      />
       {/* 店铺信息 */}
       <Reveal>
         <ShopHeader

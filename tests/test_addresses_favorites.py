@@ -4,10 +4,9 @@
 删默认自动顺延）、下单传 address_id 自动落收货人；收藏幂等、取消、列表带方案信息、
 商品详情状态查询。
 """
+import backend.api as api
 import pytest
 from fastapi.testclient import TestClient
-
-import api
 
 
 @pytest.fixture()

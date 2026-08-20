@@ -1,0 +1,14 @@
+# 前端镜像：multi-stage —— node 构建三端产物 → nginx 托管 + 反代后端
+# 三个入口（index/admin/merchant）同属一个 dist；nginx 用三个端口分别映射，
+# 开发期 localhost:5173/5174/5175 即等价三域名；上线时改 listen 80 + server_name 域名即可。
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY H5/package*.json ./
+RUN npm ci --no-audit --no-fund
+COPY H5/ ./
+RUN npm run build
+
+FROM nginx:alpine
+COPY misc/nginx/frontends.conf /etc/nginx/conf.d/frontends.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 5173 5174 5175

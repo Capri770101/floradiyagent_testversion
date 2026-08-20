@@ -6,12 +6,11 @@
 权限与隔离：未登录 401、普通用户 403、merchant 角色放行、
 未绑定店铺商家数据为空、越权访问未绑定店铺 403、admin 不受绑定限制。
 """
+import backend.api as api
 import pytest
+from backend.security import set_user_role
+from backend.storage import catalog
 from fastapi.testclient import TestClient
-
-import api
-from security import set_user_role
-from storage import catalog
 
 
 @pytest.fixture()

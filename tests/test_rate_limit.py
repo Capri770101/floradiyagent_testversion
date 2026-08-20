@@ -3,11 +3,10 @@
 用 monkeypatch 把限额调低，避免真实请求；/chat 限流检查在 handler 之前执行，
 限额=0 时首请求即 429，不触发 LLM 调用（离线零成本）。
 """
+import backend.api as api
 import pytest
+from backend.config import settings
 from fastapi.testclient import TestClient
-
-import api
-from config import settings
 
 
 @pytest.fixture()

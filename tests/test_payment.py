@@ -12,10 +12,9 @@
 from __future__ import annotations
 
 import pytest
-
-from storage import commerce
-from storage.db import init_db
-from storage.payment import (
+from backend.storage import commerce
+from backend.storage.db import init_db
+from backend.storage.payment import (
     AlipayProvider,
     PaymentConfigError,
     SandboxProvider,
@@ -97,7 +96,7 @@ def test_pay_order_sandbox_records_payment_and_marks_paid() -> None:
     assert float(order["total_price"]) == 398.0
     assert float(order["discount"]) == 10.0
     # payments 行已落库且为 paid，金额 = 实付（已扣券）
-    from storage.db import get_conn
+    from backend.storage.db import get_conn
 
     pay_row = get_conn().execute(
         "SELECT * FROM payments WHERE order_id=?", (order_id,)
@@ -116,7 +115,7 @@ def test_mark_order_paid_updates_order_and_payments() -> None:
     order_id = _make_order()
     # 先以沙箱下单（已 paid），这里测试 mark_order_paid 的幂等/回填逻辑：
     # 模拟一笔 pending 支付，再回调标记
-    from storage.db import get_conn
+    from backend.storage.db import get_conn
 
     conn = get_conn()
     conn.execute(
@@ -155,7 +154,7 @@ def test_get_payment_status_polling() -> None:
 
 def test_mark_order_paid_idempotent_no_double_points() -> None:
     """重复支付回调不重复发放积分 / 不重复插支付行（幂等）。"""
-    from storage.db import get_conn
+    from backend.storage.db import get_conn
 
     order_id = _make_order()
     conn = get_conn()

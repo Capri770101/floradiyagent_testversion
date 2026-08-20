@@ -7,10 +7,9 @@
 - 积分兑换：积分不足 400；成功扣积分、发券、记流水
 - 库存扣减（限 200 张的 offer 领一次后剩余 199）
 """
+import backend.api as api
 import pytest
 from fastapi.testclient import TestClient
-
-import api
 
 
 @pytest.fixture()

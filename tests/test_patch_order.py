@@ -2,10 +2,9 @@
 
 直接走 TestClient（不调 LLM），覆盖 review 点名的「收货人假交互」后端链路。
 """
+import backend.api as api
 import pytest
 from fastapi.testclient import TestClient
-
-import api
 
 
 @pytest.fixture()

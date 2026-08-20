@@ -31,14 +31,18 @@ os.environ["IMAGE_PROVIDER"] = "mock"  # 生图统一占位，不烧额度
 if not _LIVE:
     os.environ["LLM_API_KEY"] = ""  # 默认纯逻辑模式，隔离真实密钥
 
-# 项目根目录加入 path，保证 import agent / api / tools 等可用
+# 项目根目录加入 path，保证 import backend / agent 等可用（本文件位于 tests/）
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-import pytest  # noqa: E402
+# pythonpath=[".."] 注入后，pytest 可能在 conftest 之前就 import 了 backend 全家，
+# 导致 settings 已按真实 DB_PATH 缓存。这里按上面设置的 env 强制重载。
+for _name in [m for m in sys.modules if m == "backend" or m.startswith("backend.")]:
+    del sys.modules[_name]
 
-from config import settings  # noqa: E402
+import pytest  # noqa: E402
+from backend.config import settings  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -57,6 +61,6 @@ def _reset_rate_limiter(request: pytest.FixtureRequest) -> None:
     跨测试累积注册/登录会触发 429，污染无关用例（与 tests/test_rate_limit.py 同法）。"""
     if "rate_limit" in request.keywords:
         return  # 限流专项测试自管计数
-    import api
+    import backend.api as api
 
     api._limiter._hits.clear()

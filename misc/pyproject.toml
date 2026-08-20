@@ -1,0 +1,27 @@
+[project]
+name = "flora-diy-agent"
+version = "0.1.0"
+description = "鲜花导购 Agent 后端（FastAPI + ReAct + 状态机），微信小程序对接"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+# 本文件位于 misc/，配置均相对项目根（上两级）解析；用 `pytest -c misc/pyproject.toml` 加载
+testpaths = ["../tests", "../agent/tests"]
+# 备份、环境、第三方目录不递归
+norecursedirs = ["_legacy", "data", ".venv", "node_modules", ".pytest_cache", ".ruff_cache"]
+# 项目根加入 sys.path，保证 `import backend.api / agent / tools` 解析到根目录
+pythonpath = [".."]
+addopts = "-ra -q"
+markers = [
+    "live: 真实 DeepSeek 端到端抽测（需 LLM_API_KEY，运行 pytest -m live）",
+    "smoke: 代表性对话流子集（与 live 组合：pytest -m \"live and smoke\"）",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = [".."]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+ignore = ["E501"]

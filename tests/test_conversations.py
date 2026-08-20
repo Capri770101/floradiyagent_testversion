@@ -8,8 +8,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from storage import memory as mem  # noqa: E402
-from storage.db import init_db  # noqa: E402
+from backend.storage import memory as mem  # noqa: E402
+from backend.storage.db import init_db  # noqa: E402
 
 # 确保测试库表结构就绪（conftest 已把 DB_PATH 指向临时文件）
 init_db()

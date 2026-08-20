@@ -12,6 +12,7 @@ import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
 import Reveal from '../components/Reveal'
+import ReportDialog from '../components/ReportDialog'
 import { planImage } from '../assets/imageMap'
 
 // 04 商品详情
@@ -23,6 +24,7 @@ export default function ProductDetail() {
   const [busy, setBusy] = useState(false)
   const [fav, setFav] = useState(false)
   const [reviews, setReviews] = useState([])
+  const [reportOpen, setReportOpen] = useState(false)
 
   const requireLogin = (action) => {
     if (!isLoggedIn()) {
@@ -122,15 +124,31 @@ export default function ProductDetail() {
       <TopBar
         title="商品详情"
         right={
-          <button className="text-dark" aria-label="收藏" onClick={toggleFav}>
-            <IconHeart
-              width={20}
-              height={20}
-              filled={fav}
-              className={fav ? 'text-pink' : 'text-dark'}
-            />
-          </button>
+          <div className="flex items-center gap-3">
+            <button className="text-dark" aria-label="收藏" onClick={toggleFav}>
+              <IconHeart
+                width={20}
+                height={20}
+                filled={fav}
+                className={fav ? 'text-pink' : 'text-dark'}
+              />
+            </button>
+            <button
+              className="text-[11px] tracking-[1px] text-sub"
+              aria-label="举报"
+              onClick={() => setReportOpen(true)}
+            >
+              举报
+            </button>
+          </div>
         }
+      />
+      <ReportDialog
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        targetType="plan"
+        targetId={product.id}
+        targetTitle={`商品「${product.name}」`}
       />
       <div className="flex-1 overflow-y-auto">
         <SmartImage

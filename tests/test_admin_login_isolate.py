@@ -7,11 +7,10 @@
 - 普通用户 /auth/login → 200（C 端正常）
 - C 端 /auth/me 对 admin 令牌按未登录处理（getProfile 前端侧清会话）
 """
+import backend.api as api
 import pytest
+from backend.security import set_user_role
 from fastapi.testclient import TestClient
-
-import api
-from security import set_user_role
 
 
 @pytest.fixture()

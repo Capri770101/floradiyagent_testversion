@@ -8,9 +8,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from requirements import FlowerRequirement  # noqa: E402
-from storage import catalog  # noqa: E402
-from storage.db import init_db  # noqa: E402
+from agent.requirements import FlowerRequirement  # noqa: E402
+from backend.storage import catalog  # noqa: E402
+from backend.storage.db import init_db  # noqa: E402
 
 
 def setup_module(module):

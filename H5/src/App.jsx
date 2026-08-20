@@ -19,7 +19,6 @@ import Cart from './pages/Cart'
 import Addresses from './pages/Addresses'
 import Favorites from './pages/Favorites'
 import CouponCenter from './pages/CouponCenter'
-import Merchant from './pages/Merchant'
 import Logistics from './pages/Logistics'
 import Orders from './pages/Orders'
 import Chat from './pages/Chat'
@@ -131,14 +130,6 @@ export default function App() {
           }
         />
         <Route path="/coupons" element={<CouponCenter />} />
-        <Route
-          path="/merchant"
-          element={
-            <RequireAuth>
-              <Merchant />
-            </RequireAuth>
-          }
-        />
         <Route
           path="/logistics/:orderId"
           element={

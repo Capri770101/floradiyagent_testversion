@@ -8,12 +8,11 @@
 
 from __future__ import annotations
 
+import backend.api as api
+import backend.security as security
 import pytest
+from backend.config import settings
 from fastapi.testclient import TestClient
-
-import api
-import security
-from config import settings
 
 
 @pytest.fixture

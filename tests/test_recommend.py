@@ -1,11 +1,10 @@
 """个性化推荐（模块三）测试：偏好提取、融合排序、空偏好/空定位降级、端点契约。"""
 
+import backend.api as api
 import pytest
+from backend.storage import catalog, recommend
+from backend.storage.db import init_db
 from fastapi.testclient import TestClient
-
-import api
-from storage import catalog, recommend
-from storage.db import init_db
 
 pytestmark = pytest.mark.usefixtures("_reset_rate_limiter")
 
@@ -26,7 +25,7 @@ def _uid(n):
 
 def _neutralize_heat():
     """seed_catalog 的热度演示值由进程级随机 hash() 生成 → 先归一化，让排序断言确定性成立。"""
-    from storage.db import get_conn
+    from backend.storage.db import get_conn
 
     conn = get_conn()
     conn.execute("UPDATE plans SET rating=4.5, sold=100")
@@ -37,7 +36,7 @@ def _neutralize_heat():
 def test_extract_preferences_from_favorites_and_orders(client):
     uid = _uid(1)
     # 收藏韩式方案 P001（tags 含温馨）+ 下一单韩式 P001
-    from storage import commerce
+    from backend.storage import commerce
 
     catalog.merchant_bind(uid, "S001")
     commerce.add_favorite(uid, "P001")
@@ -60,7 +59,7 @@ def test_extract_preferences_from_favorites_and_orders(client):
 def test_fusion_ordering_favors_preferred_style(client):
     """收藏/购买韩式后，「猜你喜欢」韩式方案排名应高于同热度异风格方案。"""
     uid = _uid(2)
-    from storage import commerce
+    from backend.storage import commerce
 
     _neutralize_heat()
     commerce.add_favorite(uid, "P001")  # 韩式
@@ -138,7 +137,7 @@ def test_recommend_style_param_boosts_same_style():
 
 def test_style_groups_normalize_alias_styles():
     """style 词表分组：DIY 自由文本风格（北欧）能命中 catalog 词表（简约/ins）及其分组。"""
-    from storage.recommend import _style_group
+    from backend.storage.recommend import _style_group
 
     assert _style_group("北欧") == _style_group("简约") == _style_group("ins")
     assert _style_group("韩式") != _style_group("简约")
@@ -151,7 +150,7 @@ def test_style_groups_normalize_alias_styles():
 
 def test_recommend_weights_operations_config():
     """运营可在 /admin/config 调整推荐权重（0~1 校验、合并、回显）。"""
-    from storage import config as config_store
+    from backend.storage import config as config_store
 
     base = config_store.public_config()
     assert set(base["recommend_weights"]) == {"w_distance", "w_pref", "w_heat"}
@@ -176,7 +175,7 @@ def test_recommend_signature_prefers_premium_without_location():
     assert items[0]["dist_km"] is None  # 无定位 → None（前端不展示）
     # 与个性化推荐解耦：签名与用户偏好无关
     uid = _uid(9)
-    from storage import commerce
+    from backend.storage import commerce
 
     commerce.add_favorite(uid, "P001")
     assert [p["plan_id"] for p in recommend.recommend_signature(limit=6)] == [

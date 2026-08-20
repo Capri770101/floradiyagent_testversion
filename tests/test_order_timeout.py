@@ -6,12 +6,11 @@
 - 过期订单不可支付（400 状态机保护）
 - 过期自动取消时返还已占用优惠券
 """
+import backend.api as api
 import pytest
+from backend.config import settings
+from backend.storage import commerce
 from fastapi.testclient import TestClient
-
-import api
-from config import settings
-from storage import commerce
 
 
 @pytest.fixture()
