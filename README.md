@@ -24,6 +24,85 @@
 
 ---
 
+## 🤖 智能体模块（agent/）
+
+系统的心脏是自研的**花卉导购智能体**，不依赖外部 Agent 框架，纯 Python 实现（ReAct + 技能编排 + 领域知识库 RAG）。
+
+### 分层架构
+
+```
+agent/
+├─ agent.py            # 智能体主类：ReAct 主循环 + 会话状态机驱动
+├─ tools.py            # 工具注册表 TOOL_REGISTRY + 内建工具（装饰器自动注册）
+├─ requirements.py     # 意图解析 / 需求维度抽取 / 搜索诚实化
+├─ cli.py              # 本地调试 CLI（typer）：design / revise / knowledge / chat / tools
+├─ engine/
+│  ├─ llm.py           #   LLM 封装（OpenAI 兼容，function calling，live-only）
+│  ├─ state.py         #   会话焦点枚举（仅 UI 高亮，不参与流程闸门）
+│  └─ ui_protocol.py   #   前端渲染契约（ChatResponse / UIType / ToolCallRecord）
+├─ skills/
+│  └─ skill_order.py   #   下单技能：组装订单 → 写库 → 返回 pay_jump（自注册）
+├─ knowledge/          #   领域知识库：flowers / styles / pairings / budget / packaging / scenes
+│  └─ store.py         #   向量混合检索（TF-IDF + n-gram + 余弦；关键词命中保底 ∪ 语义召回）
+├─ mcp_servers/
+│  └─ vision_server.py #   本地 MCP server：智谱 GLM-4V 读图 → 文字描述（stdio）
+└─ tests/              #   13 个专项测试文件（设计引擎 / 知识库 / 生图 / 记忆 / 意图解析…）
+```
+
+### ReAct 主循环
+
+1. 载入**短期记忆**（历史消息）+ **长期记忆**（用户偏好），拼成 system prompt；
+2. 进入「思考 → 行动 → 观察」循环：`call_llm` → 解析工具调用 → 执行工具 → 回填结果 → 再思考，直到模型给出最终回复或达到 `max_iterations`；
+3. 根据本轮工具产出推导 UI 焦点并输出结构化 UI（`plan_card` / `shop_card` / `pay_jump` …）。
+
+> 流程**不再由状态机硬锁**：自「skill 编排」重构后，用户可随时调用任一技能（设计 / 改设计 / 生图 / 看店 / 下单），工具产物依赖自然驱动流程。
+
+### 工具注册表
+
+- 每个工具用 `@register_tool` 装饰，自动写入 `TOOL_REGISTRY`（名称 / 中文描述 / 参数 JSON Schema / 实现）；
+- agent 从注册表自动生成**工具说明书**注入 system prompt，并生成 OpenAI function-calling 定义；
+- **新增工具只需写一个带装饰器的函数**，agent 与提示词零改动；
+- 需要用户上下文的工具加 `inject_context=True`，执行时自动注入 `user_id` 等。
+
+内建工具包括：`search_plans`（搜现有方案）、`get_plan_detail`、`retrieve_knowledge`（知识库检索）、`generate_diy_plan`（DIY 设计）、`revise_diy_plan`（按反馈改方案）、`generate_effect_image`（AI 生图）、`search_shops`（同城店铺推荐）、`create_order`（下单技能）、`save_memory`（记忆沉淀）。
+
+### 知识库 RAG
+
+- 六类领域 JSON 域（花材 / 风格 / 搭配 / 预算 / 包装 / 场景）+ **商家智库域**（数据来自 DB 的 `shop_profiles`，支持「韩式花店」「能做婚礼布置的店」等自然语言召回）；
+- 检索升级为「向量空间模型（TF-IDF + 字符 n-gram 切词）+ 余弦相似度」的语义检索，采用**关键词命中保底 ∪ 向量语义召回**的混合策略——精确查询零退化，长自然语句提升召回；
+- 对外接口 `query_knowledge(domain, query)` 签名稳定，上层零改动。
+
+### UI 渲染契约
+
+所有 `/chat` 响应统一包成 `ChatResponse`，`ui` 字段决定前端如何渲染 `data`：
+
+| UIType | 渲染 | 示例 |
+|---|---|---|
+| `text` | 纯文本（已清洗 markdown 噪声） | 寒暄 / 说明 |
+| `dialog_options` | 二选一/多选弹层 | 「现有方案 or DIY」 |
+| `plan_card` | 花艺方案卡（花材/配比/包装/预算） | DIY 设计结果 |
+| `shop_card` | 推荐店铺卡（评分/距离/起送） | 同城花店 |
+| `order_card` / `pay_jump` | 订单卡 / 支付跳转 | 下单成功 |
+| `image_task` | 生图结果（同步给 URL / 异步轮询） | 效果图 |
+
+### 会话记忆
+
+- **短期**：本会话历史消息，每次载入最近 `history_limit` 条；
+- **长期**：用户偏好沉淀（`save_memory` 工具），跨会话复用；
+- **DIY 资产库**：确认方案指纹去重入库 → 成交升级（ordered + order_count）→ 个人复用 + 平台学习。
+
+### 本地调试
+
+```bash
+python agent/cli.py design "母亲节给妈妈买束花，预算两三百"
+python agent/cli.py knowledge -d pairing -q "看望生病住院的朋友"
+python agent/cli.py revise -p plan.json -f "便宜点"
+python agent/cli.py chat --message "帮我设计一束送妈妈的生日花"
+python agent/cli.py tools
+```
+
+---
+
 ## 🏗 三端独立架构
 
 三套前端**同仓多 entry**，共享同一后端与数据库，令牌互不干扰：
