@@ -1,8 +1,7 @@
 // 数据看板（M8）：GMV/订单/用户 统计卡 + 热销方案/店铺 + 订单趋势（自绘，无第三方图表库）。
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
-
-const fmtMoney = (v) => `¥${Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`
+import { fmtMoneyGrouped as fmtMoney } from '../../utils/price'
 
 export function Dashboard() {
   const [d, setD] = useState(null)
@@ -43,7 +42,6 @@ export function Dashboard() {
         </select>
       </div>
 
-      {/* 统计卡 */}
       <div className="mt-4 grid grid-cols-4 gap-3">
         {cards.map((c) => (
           <div key={c.label} className="rounded-card border border-line bg-white p-4 shadow-card">
@@ -56,7 +54,6 @@ export function Dashboard() {
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-4">
-        {/* 热销方案 */}
         <div className="rounded-card border border-line bg-white p-4 shadow-card">
           <p className="eyebrow">热销方案 TOP5</p>
           <div className="mt-3 space-y-2.5">
@@ -78,7 +75,6 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* 热门店铺 */}
         <div className="rounded-card border border-line bg-white p-4 shadow-card">
           <p className="eyebrow">热门店铺 TOP5</p>
           <div className="mt-3 space-y-2.5">
@@ -101,7 +97,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* 订单趋势 */}
       <div className="mt-4 rounded-card border border-line bg-white p-4 shadow-card">
         <p className="eyebrow">订单趋势（近 {days} 天）</p>
         {(d.order_trend || []).length === 0 ? (

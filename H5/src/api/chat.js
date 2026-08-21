@@ -4,10 +4,10 @@
 
 import { getUserId, authHeaders, handleAuthFailure } from './auth'
 import { getLocation } from '../utils/location'
-
-const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+import { API_BASE, withApiUrl } from './client'
 
 export { getUserId }
+export { withApiUrl }
 
 export async function sendChat({ message, sessionId, userId }) {
   const loc = getLocation()
@@ -29,8 +29,6 @@ export async function sendChat({ message, sessionId, userId }) {
   }
   return res.json()
 }
-
-// 以下为「类 ChatGPT」多会话管理接口（详见后端 /conversations 系列端点）。
 
 export async function listConversations(userId) {
   const res = await fetch(
@@ -110,9 +108,4 @@ export async function getImageTask(taskId) {
     throw new Error(`查询生图任务失败 ${res.status}`)
   }
   return res.json()
-}
-
-// 后端图片 URL（/generated/xxx）需经 Vite 代理补 /api 前缀，否则打到 5173 端口 404
-export function withApiUrl(u) {
-  return u && !u.startsWith('/api') ? `/api${u}` : u
 }

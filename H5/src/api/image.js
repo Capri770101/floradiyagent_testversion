@@ -3,11 +3,10 @@
 // 后端已对下载地址做 SSRF 白名单 + 私网 IP 校验，前端只负责提交 prompt 与轮询结果。
 
 import { authHeaders, handleAuthFailure } from './auth'
+import { API_BASE } from './client'
 
-export const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+export { API_BASE }
 
-// 提交生图任务，立即返回 task_id；随后轮询 GET /tasks/{task_id} 取结果。
-// prompt 通常来自 DIY 方案的 effect_prompt（与花材/色彩/包装一致）。
 export async function generateEffectImage(prompt) {
   const res = await fetch(`${API_BASE}/image/generate`, {
     method: 'POST',
@@ -22,8 +21,6 @@ export async function generateEffectImage(prompt) {
   return res.json() // { task_id, status, poll }
 }
 
-// 轮询生图任务直到 done（返回带 result_url）或 failed，或超时（默认 60s）。
-// 后端 result_url 形如 /generated/xxx.png，需拼接 API_BASE 经代理访问。
 export async function pollImageTask(taskId, { timeoutMs = 60000, intervalMs = 2000 } = {}) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
