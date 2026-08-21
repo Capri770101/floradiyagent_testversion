@@ -142,7 +142,7 @@ export default function OrderConfirm() {
             />
             <div className="flex-1">
               <p className="text-[13px] font-medium text-ink">{it.name}</p>
-              <p className="mt-2 text-[12px] font-medium text-ink">¥{it.price}</p>
+              <p className="mt-2 text-[12px] font-medium text-ink">¥{Number(it.price).toFixed(2)}</p>
             </div>
             <span className="text-[11px] text-sub">×{it.qty}</span>
           </div>
@@ -245,11 +245,11 @@ export default function OrderConfirm() {
 
         <Reveal>
         <div className="mt-4 space-y-2 rounded-card bg-white p-4 text-[12px] border border-line">
-          <Row label="商品金额" value={`¥${order.total_price}`} />
+          <Row label="商品金额" value={`¥${Number(order.total_price).toFixed(2)}`} />
           <Row label="配送费" value={`¥${Number(shippingFee ?? 0).toFixed(2)}`} />
           <Row
             label="优惠券"
-            value={`-¥${Number(order.discount || 0)}`}
+            value={`-¥${Number(order.discount || 0).toFixed(2)}`}
             valueClass="text-pink"
           />
         </div>
@@ -260,7 +260,7 @@ export default function OrderConfirm() {
       <div className="flex shrink-0 items-center justify-between border-t border-line bg-bg px-5 py-4">
         <div>
           <span className="text-[13px] text-ink">合计</span>
-          <span className="ml-2 text-[20px] font-medium text-ink">¥{total}</span>
+          <span className="ml-2 text-[20px] font-medium text-ink">¥{Number(total).toFixed(2)}</span>
         </div>
         <Button style={{ width: 119 }} onClick={onPay} disabled={saving}>
           {saving ? '保存中…' : '去支付'}
