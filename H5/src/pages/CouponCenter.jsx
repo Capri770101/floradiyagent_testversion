@@ -102,7 +102,7 @@ export default function CouponCenter() {
                         {o.points_cost > 0 ? ` · ${o.points_cost} 积分` : ' · 免费领取'}
                         {o.stock > 0 ? ` · 剩 ${o.stock}` : o.stock === 0 ? ' · 已抢光' : ''}
                       </p>
-                      <p className="mt-0.5 text-[16px] font-medium text-ink">¥{o.discount}</p>
+                      <p className="mt-0.5 text-[16px] font-medium text-ink">¥{Number(o.discount).toFixed(2)}</p>
                     </div>
                     <Button
                       className="!h-[30px] !rounded-pill !px-4 !text-[12px]"
@@ -133,7 +133,7 @@ export default function CouponCenter() {
                       {c.min_spend > 0 ? `满 ¥${c.min_spend} 可用` : '无门槛'}
                       {c.order_id ? ` · 订单 ${c.order_id}` : ''}
                     </p>
-                    <p className="mt-0.5 text-[14px] font-medium text-ink">¥{c.discount}</p>
+                    <p className="mt-0.5 text-[14px] font-medium text-ink">¥{Number(c.discount).toFixed(2)}</p>
                   </div>
                   <span
                     className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] ${
