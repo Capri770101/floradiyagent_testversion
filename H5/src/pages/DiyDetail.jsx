@@ -198,6 +198,16 @@ export default function DiyDetail() {
                   <span className="text-[12px] text-ink">
                     {f.role ? `${f.role}：` : ''}
                     {f.name}
+                    {f.qty ? (
+                      <span className="ml-1 rounded-[2px] bg-sand px-1.5 py-px text-[10px] text-gold-dark">
+                        {f.qty} 支
+                      </span>
+                    ) : null}
+                    {f.unit_price ? (
+                      <span className="ml-1 text-[11px] text-sub">
+                        ¥{Number(f.unit_price).toFixed(2)}/支
+                      </span>
+                    ) : null}
                     {f.flower_language && f.flower_language.length > 0 && (
                       <span className="text-sub">
                         （{f.flower_language.join('、')}）
@@ -219,6 +229,38 @@ export default function DiyDetail() {
           <p className="mt-2 text-[12px] text-sub">{p.packaging || '—'}</p>
         </div>
         </Reveal>
+
+        {(p.fees || (p.budget?.items?.length && p.budget?.fees)) && (
+          <Reveal>
+          <div className="px-6 pt-7">
+            <h2 className="text-[16px] font-medium text-dark">费用明细</h2>
+            {p.budget?.items?.length ? (
+              <div className="mt-2 space-y-1.5">
+                {p.budget.items.map((it, i) => (
+                  <div key={i} className="flex items-start justify-between gap-2 text-[12px]">
+                    <span className="min-w-0 flex-1 text-ink">
+                      {it.item}
+                      {it.detail ? <span className="ml-1 text-sub">{it.detail}</span> : null}
+                    </span>
+                    <span className="shrink-0 text-ink">¥{Number(it.amount).toFixed(2)}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between border-t border-line pt-1.5 text-[13px] font-medium">
+                  <span className="text-ink">合计</span>
+                  <span className="text-ink">¥{Number(p.budget.total_estimate).toFixed(2)}</span>
+                </div>
+              </div>
+            ) : null}
+            {p.fees && (
+              <div className="mt-2 rounded-[4px] bg-sand/50 p-2.5 text-[11px] leading-[18px] text-sub">
+                <p>· {p.fees.labor_standard || `人工费 ${p.fees.labor_fee ?? ''} 元/束`}</p>
+                <p>· {p.fees.decor_standard || `装饰费 ${p.fees.decor_fee ?? ''} 元/束`}</p>
+                {p.fees.note && <p className="mt-1 text-[10px]">（{p.fees.note}）</p>}
+              </div>
+            )}
+          </div>
+          </Reveal>
+        )}
 
         {p.diySteps && (
           <Reveal>
@@ -292,7 +334,7 @@ export default function DiyDetail() {
                     <p className="mt-0.5 line-clamp-1 text-[11px] text-sub">{r.desc}</p>
                     <p className="mt-1 flex items-center gap-1.5 text-[11px] text-ink">
                       <span className="text-[9px] text-stone">¥</span>
-                      {r.price}
+                      {Number(r.price).toFixed(2)}
                       {r.style && (
                         <span className="ml-1 rounded-[2px] bg-sand px-1.5 py-px text-[9px] text-gold-dark">
                           {r.style}
@@ -311,7 +353,7 @@ export default function DiyDetail() {
         <div className="flex items-center justify-between">
           <div>
             <span className="text-[12px] text-ink">合计预算：</span>
-            <span className="text-[18px] font-medium text-ink">¥{p.price}</span>
+            <span className="text-[18px] font-medium text-ink">¥{Number(p.price).toFixed(2)}</span>
           </div>
           <Button style={{ width: 122 }} onClick={onConfirm} disabled={busy}>
             确认方案
