@@ -160,7 +160,7 @@ export default function ProductDetail() {
         <Reveal delay={80}>
           <div className="px-5 pt-4">
             <h1 className="text-[20px] font-medium text-dark">{product.name}</h1>
-            <p className="mt-1 text-[22px] font-medium text-ink">¥{product.price}</p>
+            <p className="mt-1 text-[22px] font-medium text-ink">¥{Number(product.price).toFixed(2)}</p>
             <p className="mt-1 flex items-center gap-1 text-[11px] text-sub">
               <IconStar width={11} height={11} className="text-cream" /> {product.rating} · 月售
               {product.sold}
