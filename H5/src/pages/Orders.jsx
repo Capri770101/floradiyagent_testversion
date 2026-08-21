@@ -8,6 +8,8 @@ import { IconStar } from '../components/icons'
 import { planImage } from '../assets/imageMap'
 import { listOrders, orderAction, orderAftersale, postReview } from '../api/shop'
 import { toast } from '../utils/toast'
+import { statusMeta } from '../utils/status'
+import { fmtMoney } from '../utils/price'
 
 // 状态筛选 tab（键与后端 order.status 对齐）
 const STATUS_TABS = [
@@ -18,10 +20,6 @@ const STATUS_TABS = [
   { key: 'done', label: '已完成' },
   { key: 'canceled', label: '已取消' },
 ]
-
-import { statusMeta } from '../utils/status'
-
-const fmtMoney = (v) => `¥${Number(v || 0).toFixed(2)}`
 
 // 我的订单：状态筛选 + 订单卡片列表；点击进入物流追踪（含订单概要 + 时间线）
 export default function Orders() {
@@ -188,7 +186,7 @@ export default function Orders() {
               const items = o.items || []
               const total = o.total_price != null
                 ? o.total_price
-                : items.reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0)
+                : Math.round(items.reduce((s, it) => s + (it.price || 0) * (it.qty || 1), 0) * 100) / 100
               const count = items.reduce((s, it) => s + (it.qty || 1), 0)
               return (
                 <Reveal key={o.order_id} delay={i * 140}>
@@ -211,7 +209,7 @@ export default function Orders() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[13px] text-dark">{it.name}</p>
                         <p className="text-[11px] text-sub">
-                          ¥{it.price} × {it.qty}
+                          ¥{Number(it.price).toFixed(2)} × {it.qty}
                           {it.shop ? ` · ${it.shop}` : ''}
                         </p>
                       </div>
