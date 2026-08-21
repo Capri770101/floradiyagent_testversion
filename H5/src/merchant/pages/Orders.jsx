@@ -7,8 +7,7 @@ import {
   merchantShip,
   merchantStats,
 } from '../api'
-
-const fmtMoney = (v) => `¥${Number(v || 0).toFixed(2)}`
+import { fmtMoney } from '../../utils/price'
 
 const STATUS_TABS = [
   { key: '', label: '全部' },

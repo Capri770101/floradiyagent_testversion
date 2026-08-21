@@ -1,8 +1,7 @@
 // 数据看板（M8）：GMV/订单/用户 统计卡 + 热销方案/店铺 + 订单趋势（自绘，无第三方图表库）。
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
-
-const fmtMoney = (v) => `¥${Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`
+import { fmtMoneyGrouped as fmtMoney } from '../../utils/price'
 
 export function Dashboard() {
   const [d, setD] = useState(null)

@@ -2,35 +2,7 @@
 // 契约见 api.py 的 /plans /shops /cart /orders /pay 端点。
 // 所有请求自动携带 Bearer 令牌（来自 auth.js），后端据此解析用户身份并隔离数据。
 
-import { authHeaders, handleAuthFailure } from './auth'
-
-const API_BASE = import.meta.env.VITE_API_BASE || '/api'
-
-async function api(path, options = {}) {
-  const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData
-  const headers = {
-    ...(isForm ? {} : { 'Content-Type': 'application/json' }),
-    ...authHeaders(),
-    ...(options.headers || {}),
-  }
-  // 统一超时（10s），避免弱网下请求挂死无反馈
-  const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), 10000)
-  try {
-    const res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: ctrl.signal })
-    if (!res.ok) {
-      handleAuthFailure(res)
-      const text = await res.text().catch(() => '')
-      throw new Error(`后端 ${res.status}: ${text.slice(0, 200)}`)
-    }
-    return res.json()
-  } catch (e) {
-    if (e.name === 'AbortError') throw new Error('请求超时，请稍后重试')
-    throw e
-  } finally {
-    clearTimeout(timer)
-  }
-}
+import { api } from './client'
 
 // ---------------- 方案 / 店铺 ----------------
 

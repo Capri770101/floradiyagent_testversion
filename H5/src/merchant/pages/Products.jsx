@@ -14,8 +14,7 @@ import {
   merchantUpdatePlan,
   merchantUpload,
 } from '../api'
-
-const fmtMoney = (v) => `¥${Number(v || 0).toFixed(2)}`
+import { fmtMoney } from '../../utils/price'
 
 const EMPTY_FORM = { name: '', price: '', desc: '', style: '', tags: '', effect_image_url: '', category_id: '' }
 

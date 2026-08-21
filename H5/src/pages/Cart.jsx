@@ -70,9 +70,9 @@ export default function Cart() {
     }
   }
 
-  const total = items
-    .filter((it) => it.selected)
-    .reduce((s, it) => s + it.price * it.qty, 0)
+  const total = Math.round(
+    items.filter((it) => it.selected).reduce((s, it) => s + it.price * it.qty, 0) * 100
+  ) / 100
   const count = items.filter((it) => it.selected).reduce((s, it) => s + it.qty, 0)
 
   const onCheckout = async () => {
@@ -134,7 +134,7 @@ export default function Cart() {
                 <p className="mt-0.5 truncate font-serif-cn text-[17px] font-normal text-ink">{it.name}</p>
                 <p className="mt-1 text-[13px] text-ink">
                   <span className="mr-0.5 text-[10px] text-stone">¥</span>
-                  {it.price}
+                  {Number(it.price).toFixed(2)}
                 </p>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-2">
@@ -185,7 +185,7 @@ export default function Cart() {
           <p className="text-[10px] tracking-[1px] text-[#FAF8F5]/70">已选 {count} 件</p>
           <p className="mt-0.5 text-[15px] text-[#FAF8F5]">
             <span className="mr-0.5 text-[10px]">¥</span>
-            {total}
+            {Number(total).toFixed(2)}
           </p>
         </div>
         <button

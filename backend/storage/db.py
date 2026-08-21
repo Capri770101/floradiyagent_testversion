@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS diy_plans (
     mood_tags        TEXT,                       -- JSON 数组：情绪标签（文字版）
     status           TEXT NOT NULL DEFAULT 'confirmed',
     order_count      INTEGER NOT NULL DEFAULT 0,
+    source_user_id   TEXT,                          -- 模板来源用户（成功下单后沉淀为全局模板）
     created_at       TEXT NOT NULL,
     confirmed_at     TEXT,
     UNIQUE (user_id, fingerprint)
@@ -561,6 +562,7 @@ _ALTERS = [
     ("diy_plans", "suitable_for", "ALTER TABLE diy_plans ADD COLUMN suitable_for TEXT"),
     ("diy_plans", "caution", "ALTER TABLE diy_plans ADD COLUMN caution TEXT"),
     ("diy_plans", "mood_tags", "ALTER TABLE diy_plans ADD COLUMN mood_tags TEXT"),
+    ("diy_plans", "source_user_id", "ALTER TABLE diy_plans ADD COLUMN source_user_id TEXT"),
 ]
 
 
@@ -614,11 +616,14 @@ def init_db() -> None:
             "WHERE phone IS NOT NULL AND phone != ''"
         )
     conn.commit()
-    # 目录种子数据：首次启动（plans 为空）灌入示例方案/店铺，DB 成为唯一来源
+    # 目录种子数据：仅首次启动（plans 为空）灌入示例方案/店铺，DB 成为唯一来源；
+    # 已有业务数据（如 reset_and_seed 注入的自定义目录）时不覆盖
     try:
         from backend.storage import catalog
 
-        catalog.seed_catalog()
+        plans_n = conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0]
+        if plans_n == 0:
+            catalog.seed_catalog()
     except Exception:  # pragma: no cover
         logger.warning("目录种子数据灌入失败（不影响记忆/交易表）", exc_info=True)
     logger.info("长期记忆数据库就绪: %s", settings.db_path)

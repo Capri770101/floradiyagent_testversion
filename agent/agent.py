@@ -39,6 +39,13 @@ _CHITCHAT_WORDS = (
     "再见", "拜拜", "哈哈", "辛苦了", "赞", "呵呵",
 )
 
+#: 兜底用的强购买意图信号词（仅在 LLM 未上报 intent 时才用）——只留确定性强的动作词，
+#: 去掉「看看/要/推荐」这类在咨询句里也常见的弱词，避免把「我想看看你的介绍」误判成购买。
+_BUY_INTENT = (
+    "买", "送", "下单", "购买", "付款", "支付", "选一束", "挑一束",
+    "想要", "需要", "来一束", "订一束",
+)
+
 
 def _clean_reply(text: str) -> str:
     """清理智能体回复里的 markdown 噪声，让前端纯文本渲染更整洁。
@@ -294,7 +301,9 @@ class ReActAgent:
             # respond_to_user 里编造残缺订单数据（items/total_price/discount 缺失或为 0），
             # 前端 OrderCard 会显示「花束 ¥0 / 应付 ¥0」误导用户。真实产出含完整
             # 明细（items/total_price/discount/pay_jump）→ 强制覆盖。
-            if inferred_ui == UIType.PAY_JUMP and inferred_data.get("pay_jump"):
+            # 注：_derive_ui 对 create_order 返回 ORDER_CARD，LLM 常填 PAY_JUMP——
+            # 两种 ui 只要对应真实工具产出存在（有 pay_jump / items）就强制以工具为准。
+            if inferred_ui in (UIType.ORDER_CARD, UIType.PAY_JUMP) and inferred_data.get("pay_jump"):
                 ui = UIType.PAY_JUMP
                 data = inferred_data
             # 生图结果兜底：本轮若 generate_effect_image 真实成功（工具已返回 task_id），
@@ -370,6 +379,12 @@ class ReActAgent:
                     new_stage = SessionStage.SHOP_RECOMMEND if "search_shops" in ordered else incoming
             ui, data = self._derive_ui(tool_log, new_stage, final_reply)
 
+        # 用户意图（LLM 结构化上报，优于关键词匹配）：respond_to_user 携带 intent 字段。
+        # 无上报时回退最保守关键词（仅强购买/强闲聊信号），避免「看看/要」等弱词误判。
+        llm_intent = ""
+        if respond_args is not None:
+            llm_intent = str(respond_args.get("intent", "") or "")
+
         # 生图确认关卡（两条路径）：
         # 1) 阶段推进到 IMAGE_GEN（工具成功产出效果图任务 / stage 迁移）——进入即置位；
         # 2) 用户消息直接表达生图意图（含「效果图 / 生图 / 生成」）——即使本轮
@@ -426,9 +441,10 @@ class ReActAgent:
         # 「先推现有方案」兜底（live 关键）：需求基本明确后，本轮应把配送范围内符合
         # 条件的现有花束以卡片推给用户（用户可直接选购，或转 DIY）。live 下 LLM 常只回
         # 文字不调 search_plans（尤其需求刚交代完的第一轮），导致现有方案永远推不出来。
-        # 判定：需求已明确（送谁/场合/预算至少一项）+ 本轮无任何卡片产出 + 非闲聊 +
-        # 非生图/店铺/下单/DIY 意图轮次 + 尚未自动推过（防每轮重复刷卡，用户后续说
-        # 「再/换/别的/预算」时先清标记，允许按新需求重推）。
+        # 判定：
+        #   ① 消息有明确购买意图（买/送/想要/推荐…），不含则纯咨询，不推卡片；
+        #   ② 需求维度≥2（送谁+场合、送谁+预算、场合+预算…），单维度信号太弱不推；
+        #   ③ 本轮无卡片产出 + 非闲聊 + 非生图/店铺/下单/DIY 意图 + 尚未自动推过。
         _had_card = ui in (
             UIType.PLAN_CARD, UIType.SHOP_CARD, UIType.ORDER_CARD, UIType.PAY_JUMP
         ) or (ui == UIType.TEXT and bool(data.get("task_id")))
@@ -436,16 +452,24 @@ class ReActAgent:
         if any(w in message for w in ("再", "换", "别的", "预算", "有没有", "其他", "看看")):
             mem_store.clear_session_flags(user_id, sid, prefix="plan_")
             _plan_pushed = False
-        _req_clear = bool(
-            req.recipient or req.occasion or req.budget_num is not None
-            or req.budget_anchor or req.scene or req.style or req.colors
+        # 需求维度计数：≥2 才认为"需求基本明确"，避免单提及"朋友"或"生日"就强推
+        _req_dims = sum(bool(x) for x in (
+            req.recipient, req.occasion, req.budget_num is not None,
+            req.style, req.scene, bool(req.colors),
+        ))
+        # 购买意图判定：优先信 LLM 结构化上报的 intent==buying/design；
+        # 未上报时用保守关键词兜底（仅强购买动作词），避免「看看/要」等弱词误判。
+        _buying = (
+            llm_intent in ("buying", "design")
+            or (not llm_intent and any(w in message for w in _BUY_INTENT))
         )
         if (
             not _had_card
             and not _img_intent
             and not _is_chitchat(message)
             and not _plan_pushed
-            and _req_clear
+            and _buying
+            and _req_dims >= 2
             and new_stage not in (SessionStage.DONE, SessionStage.ORDER_CONFIRM)
             and not any(w in message for w in (
                 "店铺", "下单", "购买", "支付", "付款", "确认方案", "diy", "diy 定制",
@@ -475,13 +499,16 @@ class ReActAgent:
                 logger.exception("[agent] 现有方案兜底推送失败")
         # 花卉知识问答轮次降级（live 兜底）：用户问的是知识/闲聊，LLM 却擅自调用
         # search_plans 把全量方案推给用户（已复现：问「百合花什么季节开花」被推 16 个
-        # 方案卡）。识别：消息含疑问/知识词且无购买/设计意图 → 本轮若只产出了方案卡
-        # （无 DIY 设计、无生图、无店铺、无订单），降级为纯文本，只保留知识回答。
-        _qa_intent = bool(
-            re.search(r"什么|怎么|为什么|多久|花期|养护|寓意|百科|介绍|季节", message)
-        ) and not any(w in message for w in (
-            "买", "送", "预算", "下单", "diy", "方案", "推荐", "想要", "需要", "束",
-        ))
+        # 方案卡）。优先信 LLM 结构化上报 intent==qa；未上报时用疑问/知识词兜底判定。
+        # 本轮若只产出了方案卡（无 DIY 设计、无生图、无店铺、无订单），降级为纯文本。
+        if llm_intent:
+            _qa_intent = llm_intent == "qa"
+        else:
+            _qa_intent = bool(
+                re.search(r"什么|怎么|为什么|多久|花期|养护|寓意|百科|介绍|季节", message)
+            ) and not any(w in message for w in (
+                "买", "送", "预算", "下单", "diy", "方案", "推荐", "想要", "需要", "束",
+            ))
         if _qa_intent and ui == UIType.PLAN_CARD and not any(
             tc.name in (
                 "generate_diy_plan", "revise_diy_plan", "generate_effect_image",
@@ -563,6 +590,12 @@ class ReActAgent:
         # 追加一条「展示用」助手消息（携带 ui/data），供前端会话回放直接渲染结构化卡片
         # 回复文本统一清理 markdown 噪声（去除 ** / #，折叠空行），保证纯文本渲染整洁。
         final_reply = _clean_reply(final_reply)
+        # 订单/支付卡：文案中去掉具体金额（如"共 104 元"），因为卡片已展示
+        # 商品合计 + 配送费 + 应付合计，文案再说金额容易与卡片数字不一致（如不含配送费）。
+        if ui in (UIType.ORDER_CARD, UIType.PAY_JUMP):
+            final_reply = re.sub(r"[，,]?共\s*\d+[\d.]*\s*元", "", final_reply)
+            final_reply = re.sub(r"[，,]?\d+[\d.]*\s*元[。.?]", "", final_reply)
+            final_reply = final_reply.strip() or "订单已生成，请确认信息后去支付～"
         # 卡片类回复（plan_card/shop_card/order_card/pay_jump/image_task/dialog_options）
         # 不落通用占位文本：前端气泡对每种 ui 有专属兜底文案（REPLY_FALLBACK），
         # 历史回放按 ui 显示即可——否则多条空回复回合会堆叠重复的「收到你的想法啦～」
@@ -606,21 +639,38 @@ class ReActAgent:
             "- generate_diy_plan：根据需求设计一版花艺方案（花材/配比/色彩/寓意/包装/预算）。",
             "- revise_diy_plan：在已有方案基础上修改（换花材、调预算、改风格等）。",
             "- generate_effect_image：基于已设计方案生成效果图（需先有方案）。",
+            "- search_diy_plans：检索全局 DIY 方案模板库（历史成功方案），按送礼对象/场合/风格/预算匹配。命中时可推荐复用。",
             "- search_plans：检索配送范围内符合条件的现有花束方案（卡片推送，用户可直接选购）。",
             "- search_shops：检索能做指定方案（现有方案或 DIY 方案）的店铺。",
+            "- match_shop_items：根据 DIY 方案的花材需求，匹配店铺库存中的单品（单支花束），计算覆盖度和费用。",
             "- create_order：选定店铺与方案后生成订单与支付跳转。",
-            "- respond_to_user：当无需再调工具、直接回复用户时调用，并给出 ui/data（卡片/按钮）。",
+            "- respond_to_user：当无需再调工具、直接回复用户时调用，并给出 ui/data（卡片/按钮）与 intent（用户本轮意图）。",
             "## 主流程（按需走，不强推，用户可随时打断）",
-            "1. 先聊：用户闲聊或问花卉/花艺知识（花期、养护、寓意、搭配等），直接亲切回答即可，不要调用任何工具，也不要推荐方案或店铺。",
-            "2. 需求基本明确后（送谁/场合/预算至少一项已交代）：默认先调 search_plans，把配送范围内符合需求的现有花束以卡片推给用户；用户可直接挑一款购买，也可说「我要 DIY 定制」来设计专属方案。",
-            "3. 用户明确表达 DIY 意图（如「定制 / 专属 / 自己设计 / 独一无二 / 特别一点」，或主动交代 ≥2 个偏好维度：对象/场合/预算/色系/风格/花材禁忌）时：跳过 search_plans，直接调 generate_diy_plan 设计专属方案。",
-            "4. search_plans 返回为空或结果与需求明显不符（预算/色系/花材/对象均不命中）时：不要硬推无关方案，直接转 generate_diy_plan 按需求设计专属方案。",
-            "5. DIY 方案设计后（花材/寓意/包装/预算/DIY 步骤/养护），可按需生成效果图；用户确认方案后，调 search_shops 推荐能做该方案的店铺。",
-            "6. 用户选定店铺后：调 create_order 下单并给支付跳转。",
+            "1. 用户问花卉/花艺知识（花期、养护、寓意、搭配、送什么花好等咨询问题）：",
+            "   → 直接亲切回答，不要调用任何工具，也不要推荐方案或店铺。",
+            "   → 区分「咨询」和「要买」：「送给朋友什么花好」是咨询（回答+可选问「需要推荐吗？」）；",
+            "     「给朋友买束花」是要买（有购买动作意图）。「想给妈妈买」中的「想」= 意图，按要买处理。",
+            "   → 回答后如果话题与买花相关，可以加一句「需要我推荐附近的花店吗？」，等用户确认再推。",
+            "2. 用户表达购买意图（明确说「买/送/想要/推荐/看看」等购买词 + 有送礼对象或场合）：",
+            "   → 先回答用户的问题或确认需求，然后调 search_plans 推荐方案。",
+            "   → 送礼对象或场合不明确时，先问清楚再推，不要盲推。",
+            "3. 用户明确表达 DIY 意图（如「定制 / 专属 / 自己设计 / 独一无二 / 特别一点」，或主动交代 ≥2 个偏好维度）：",
+            "   a) 先调 search_diy_plans 检索全局模板库（用用户提供的 recipient/occasion/style/budget 匹配）。",
+            "   b) 如果命中高匹配模板（order_count≥1），推荐给用户：「找到一份相似的历史方案「XX」（已验证可落地），你想直接用这份还是全新设计？」",
+            "   c) 用户选复用 → 直接使用该模板方案，跳到 match_shop_items。",
+            "   d) 用户选全新设计 / 无匹配模板 → 调 generate_diy_plan 设计专属方案。",
+            "   e) 设计完成后 → 调 match_shop_items 匹配能提供所需花材的店铺单品。",
+            "4. search_plans 返回为空或结果与需求明显不符时：不要硬推无关方案，直接转 DIY 流程（步骤 3）。",
+            "5. DIY 方案设计后：可按需生成效果图；用户确认方案后，调 match_shop_items 匹配店铺单品，再调 search_shops 推荐店铺。",
+            "6. 用户选定店铺后：调 create_order 下单并给支付跳转。下单成功后方案自动沉淀为全局模板，供后续用户复用。",
             "## 原则",
             "1. 用户随时可打断、改需求、回退；不要强推固定流程。",
             "2. 生图前必须已有方案；无方案时先引导用户设计。",
             "3. 下单前必须已推荐店铺且用户已选定。",
+            "4. 咨询 ≠ 要买：用户问「什么花适合送妈妈」「百合花花语」时只回答问题，",
+            "   不调工具、不推方案卡片。只有用户明确表达购买/挑选意图（含购买词+送礼对象）才推。",
+            "5. 模板复用是可选项，不是强制；用户有权选择全新设计。预算差异超过 30% 时不推荐复用。",
+            "6. 回答完知识问题后，最多问一句「需要推荐吗？」，不主动推方案/店铺。",
         ]
         if long_term:
             mem = "；".join(f"{k}={v}" for k, v in long_term.items())
@@ -633,7 +683,11 @@ class ReActAgent:
             "- 设计完方案后：一句『方案已设计好，点击卡片可查看详情』即可，花材寓意等交给卡片。\n"
             "- 生成效果图后：一句『效果图已生成，展开方案卡片即可查看』即可，不要描述画面细节。\n"
             "- 不要使用 ** 这种 markdown 加粗符号，也不要用 # 标题符。\n"
-            "- 术语准确、语气亲切，像一位专业花艺师在简短讲解，而不是罗列参数。"
+            "- 术语准确、语气亲切，像一位专业花艺师在简短讲解，而不是罗列参数。\n"
+            "- 每次调用 respond_to_user 时务必填对 intent：判断的是用户『想干什么』（buying=要买/挑选、"
+            "qa=问知识/咨询、chitchat=闲聊、design=要DIY定制、other=其他），"
+            "而不是你本轮做了什么。例如『百合花什么季节开花』→ qa；『想给妈妈买束花』→ buying；"
+            "『帮我定制一束专属的』→ design；『哈哈谢谢』→ chitchat。"
         )
         parts.append("## 工具说明书\n" + generate_tool_manual())
         return "\n\n".join(parts)
@@ -723,7 +777,7 @@ class ReActAgent:
                     **({"result_url": r["result_url"]} if r.get("result_url") else {}),
                 },
             ),
-            "create_order": lambda r: (UIType.PAY_JUMP, r),
+            "create_order": lambda r: (UIType.ORDER_CARD, r),
         }
         for tc in reversed(tool_log):
             if tc.status != "ok":

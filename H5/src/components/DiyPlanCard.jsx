@@ -55,6 +55,7 @@ export function normalizePlan(plan) {
     moodTags: toList(d.mood_tags ?? plan.mood_tags),
     effectImageUrl: plan.effect_image_url ?? plan.result_url ?? null,
     flowers,
+    fees: d.fees ?? plan.fees ?? null,
     merchant: plan.merchant,
     effectPrompt: plan.effect_prompt ?? d.effect_prompt,
   }
@@ -176,7 +177,7 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
             {priceNum ? (
               <>
                 <p className="text-[15px] font-medium leading-tight text-ink">
-                  ¥{priceNum}
+                  ¥{Number(priceNum).toFixed(2)}
                 </p>
                 {priceTier && (
                   <p className="mt-0.5 text-[10px] leading-tight text-sub">
@@ -185,7 +186,7 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
                 )}
               </>
             ) : (
-              <p className="text-[12px] leading-tight text-sub">{p.price}</p>
+              <p className="text-[12px] leading-tight text-sub">{Number(p.price).toFixed(2)}</p>
             )}
           </div>
         )}
@@ -240,6 +241,9 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
                       {f.role || '花材'}：
                     </span>
                     <span className="text-ink">{f.name}</span>
+                    {f.qty ? (
+                      <span className="ml-1 text-[11px] text-sub">{f.qty} 支</span>
+                    ) : null}
                     {f.flower_language && f.flower_language.length > 0 && (
                       <span className="ml-1 text-[11px] text-sub">
                         （{f.flower_language.join('、')}）
@@ -328,18 +332,32 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
             <span className="whitespace-pre-line">{p.careTips || '—'}</span>
           </Section>
 
-          {p.budget && p.budget.length > 0 && (
-            <Section title="预算明细">
-              <ul className="space-y-0.5">
-                {p.budget.map((b, i) => (
-                  <li key={i} className="flex justify-between text-[11px]">
-                    <span className="text-sub">
-                      {b.item}：{b.detail}
-                    </span>
-                    <span className="text-ink">¥{b.amount}</span>
-                  </li>
-                ))}
-              </ul>
+          {(p.budget?.items?.length || p.fees) && (
+            <Section title="费用明细">
+              {p.budget?.items?.length ? (
+                <ul className="space-y-0.5">
+                  {p.budget.items.map((b, i) => (
+                    <li key={i} className="flex justify-between text-[11px]">
+                      <span className="text-sub">
+                        {b.item}：{b.detail}
+                      </span>
+                      <span className="text-ink">¥{Number(b.amount).toFixed(2)}</span>
+                    </li>
+                  ))}
+                  {p.budget.total_estimate != null && (
+                    <li className="flex justify-between border-t border-line pt-1 text-[12px] font-medium">
+                      <span className="text-ink">合计</span>
+                      <span className="text-ink">¥{Number(p.budget.total_estimate).toFixed(2)}</span>
+                    </li>
+                  )}
+                </ul>
+              ) : null}
+              {p.fees && (
+                <div className="mt-1.5 space-y-0.5 text-[11px] text-sub">
+                  <p>· {p.fees.labor_standard || `人工费 ${p.fees.labor_fee ?? ''} 元/束`}</p>
+                  <p>· {p.fees.decor_standard || `装饰费 ${p.fees.decor_fee ?? ''} 元/束`}</p>
+                </div>
+              )}
             </Section>
           )}
 
@@ -420,7 +438,7 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
                 <input
                   value={budget}
                   onChange={(e) => setBudget(e.target.value.replace(/\D/g, ''))}
-                  placeholder={p.price != null ? `当前 ¥${p.price}` : '输入预算'}
+                  placeholder={p.price != null ? `当前 ¥${Number(p.price).toFixed(2)}` : '输入预算'}
                   inputMode="numeric"
                   className="maison-field maison-field-sm w-24"
                 />

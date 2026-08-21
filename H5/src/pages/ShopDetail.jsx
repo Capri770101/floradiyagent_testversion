@@ -61,8 +61,8 @@ function ShopHeader({ shop, noticeOpen, onToggleNotice, onChat }) {
         </div>
         {/* 起送 / 配送费 / 配送时长 */}
         <div className="mt-2.5 flex items-center gap-2 text-[11px] text-sub">
-          <span className="rounded bg-bg px-1.5 py-0.5">起送 ¥{shop.min_delivery}</span>
-          <span className="rounded bg-bg px-1.5 py-0.5">配送 ¥{shop.delivery_fee}</span>
+          <span className="rounded bg-bg px-1.5 py-0.5">起送 ¥{Number(shop.min_delivery).toFixed(2)}</span>
+          <span className="rounded bg-bg px-1.5 py-0.5">配送 ¥{Number(shop.delivery_fee).toFixed(2)}</span>
           <span className="rounded bg-bg px-1.5 py-0.5">{shop.delivery_time}</span>
         </div>
         {/* 公告（可展开） */}
@@ -142,7 +142,7 @@ function ProductRow({ item, qty, onAdd, onDec, onInc }) {
             <p className="text-[10px] text-stone">月售 {item.sales}</p>
             <p className="text-[15px] text-ink">
               <span className="mr-0.5 text-[10px] text-stone">¥</span>
-              {item.price}
+              {Number(item.price).toFixed(2)}
             </p>
           </div>
           {qty > 0 ? (
@@ -241,7 +241,7 @@ export default function ShopDetail() {
         if (item) t += item.price * v.qty
       }
     })
-    return { count: c, total: t }
+    return { count: c, total: Math.round(t * 100) / 100 }
   }, [cart, planIds, shop])
 
   const setQty = (pid, entry) => {
@@ -449,7 +449,7 @@ export default function ShopDetail() {
                         <p className="truncate font-serif-cn text-[15px] font-normal text-ink">{s.name}</p>
                         <p className="mt-0.5 flex items-center gap-1 text-[10px] text-sub">
                           <IconStar width={10} height={10} className="text-cream" /> {s.rating} ·{' '}
-                          {s.eta} · 起送 ¥{s.min_delivery}
+                          {s.eta} · 起送 ¥{Number(s.min_delivery).toFixed(2)}
                         </p>
                       </div>
                       <span className="shrink-0 text-[10px] text-sub">{s.dist}</span>
@@ -480,14 +480,14 @@ export default function ShopDetail() {
                 {total > 0 ? (
                   <>
                     <span className="text-[11px]">¥</span>
-                    {total}
+                    {Number(total).toFixed(2)}
                   </>
                 ) : (
                   <span className="text-white/70">未选购商品</span>
                 )}
               </p>
               {total > 0 && (
-                <p className="text-[10px] text-white/60">另需配送费 ¥{shop.delivery_fee}</p>
+                <p className="text-[10px] text-white/60">另需配送费 ¥{Number(shop.delivery_fee).toFixed(2)}</p>
               )}
             </div>
           </div>

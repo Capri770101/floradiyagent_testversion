@@ -4,10 +4,10 @@
 
 import { getUserId, authHeaders, handleAuthFailure } from './auth'
 import { getLocation } from '../utils/location'
-
-const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+import { API_BASE, withApiUrl } from './client'
 
 export { getUserId }
+export { withApiUrl }
 
 export async function sendChat({ message, sessionId, userId }) {
   const loc = getLocation()
@@ -110,9 +110,4 @@ export async function getImageTask(taskId) {
     throw new Error(`查询生图任务失败 ${res.status}`)
   }
   return res.json()
-}
-
-// 后端图片 URL（/generated/xxx）需经 Vite 代理补 /api 前缀，否则打到 5173 端口 404
-export function withApiUrl(u) {
-  return u && !u.startsWith('/api') ? `/api${u}` : u
 }

@@ -87,7 +87,7 @@ function ChatPlanCard({ plan, onConfirm, onAdjust, onDiy }) {
       {plan.price != null && (
         <p className="mt-3 text-[17px] text-ink">
           <span className="mr-0.5 text-[10px] text-stone">¥</span>
-          {plan.price}
+          {Number(plan.price).toFixed(2)}
         </p>
       )}
       <div className="mt-3 flex gap-3">
@@ -187,99 +187,169 @@ function ImageTaskCard({ data }) {
 // 卡片主体 → 进店（店铺详情页）；「去这家下单」→ 向智能体发出选店确认，由 create_order 产出订单。
 function ShopCard({ shops, onPick }) {
   const nav = useNavigate()
+  const [expanded, setExpanded] = useState({})
+  const toggle = (id) => setExpanded((p) => ({ ...p, [id]: !p[id] }))
   return (
     <div className="mt-2 space-y-2">
-      {shops.map((s) => (
-        <div
-          key={s.shop_id || s.id}
-          className="press block w-full rounded-[4px] border border-line bg-white p-3 text-left"
-        >
-          <button
-            onClick={() => nav(`/shop/${s.shop_id || s.id}`)}
-            className="block w-full text-left"
+      {shops.map((s) => {
+        const sid = s.shop_id || s.id
+        const isOpen = expanded[sid]
+        const menu = s.menu || []
+        return (
+          <div
+            key={sid}
+            className="rounded-[4px] border border-line bg-white text-left"
           >
-            <div className="flex items-center gap-3">
-              <SmartImage
-                src={shopImage(s)}
-                imgKey="shop_logo"
-                className="h-[52px] w-[52px] shrink-0 rounded-[2px]"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-serif-cn text-[16px] font-normal text-ink">
-                  {s.name}
-                </p>
-                <p className="mt-0.5 text-[11px] text-sub">
-                  {s.rating != null && (
-                    <span className="mr-1">评分 {s.rating}</span>
-                  )}
-                  {s.dist && (
-                    <span className="mr-1">{s.dist}</span>
-                  )}
-                  {s.price_range && <span>¥{s.price_range}</span>}
-                </p>
-                {s.intro && (
-                  <p className="mt-0.5 truncate text-[11px] text-sub">
-                    {s.intro}
-                  </p>
-                )}
-              </div>
-            </div>
-          </button>
-          <div className="mt-2 flex items-center justify-between border-t border-line pt-2">
-            <span className="text-[10px] text-stone">起送 ¥{s.min_delivery ?? '—'} · 配送 ¥{s.delivery_fee ?? '—'}</span>
             <button
-              onClick={() => onPick(s)}
-              className="text-[12px] font-medium text-gold"
+              onClick={() => toggle(sid)}
+              className="block w-full p-3 text-left"
             >
-              去这家下单 →
+              <div className="flex items-center gap-3">
+                <SmartImage
+                  src={shopImage(s)}
+                  imgKey="shop_logo"
+                  className="h-[52px] w-[52px] shrink-0 rounded-[2px]"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-serif-cn text-[16px] font-normal text-ink">
+                    {s.name}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-sub">
+                    {s.rating != null && (
+                      <span className="mr-1">评分 {s.rating}</span>
+                    )}
+                    {s.dist && (
+                      <span className="mr-1">{s.dist}</span>
+                    )}
+                    {s.price_range && <span>¥{s.price_range}</span>}
+                  </p>
+                </div>
+                <span className="shrink-0 text-[10px] text-stone">
+                  {isOpen ? '收起' : '展开'}
+                </span>
+              </div>
             </button>
+            {isOpen && (
+              <div className="border-t border-line px-3 pb-3 pt-2">
+                {s.intro && (
+                  <p className="mb-2 text-[11px] text-sub">{s.intro}</p>
+                )}
+                {menu.length > 0 && (
+                  <div className="mb-2">
+                    <p className="mb-1 text-[10px] text-stone">在售商品</p>
+                    {menu.map((cat) =>
+                      (cat.items || []).map((item) => (
+                        <div key={item.id} className="flex items-center justify-between py-0.5 text-[11px]">
+                          <span className="truncate text-ink">{item.name}</span>
+                          <span className="shrink-0 text-pink">¥{Number(item.price).toFixed(2)}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+                <div className="flex items-center justify-between border-t border-line pt-2">
+                  <span className="text-[10px] text-stone">
+                    起送 ¥{s.min_delivery != null ? Number(s.min_delivery).toFixed(2) : '—'} · 配送 ¥{s.delivery_fee != null ? Number(s.delivery_fee).toFixed(2) : '—'}
+                  </span>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => nav(`/shop/${sid}`)}
+                      className="text-[11px] text-sub"
+                    >
+                      进店看看
+                    </button>
+                    <button
+                      onClick={() => onPick(s)}
+                      className="text-[12px] font-medium text-gold"
+                    >
+                      去这家下单 →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {!isOpen && (
+              <div className="flex items-center justify-between border-t border-line px-3 py-2">
+                <span className="text-[10px] text-stone">
+                  起送 ¥{s.min_delivery != null ? Number(s.min_delivery).toFixed(2) : '—'} · 配送 ¥{s.delivery_fee != null ? Number(s.delivery_fee).toFixed(2) : '—'}
+                </span>
+                <button
+                  onClick={() => onPick(s)}
+                  className="text-[12px] font-medium text-gold"
+                >
+                  去这家下单 →
+                </button>
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
 
 // 订单卡片：展示 create_order 产出的订单摘要，附「去支付」跳转
 function OrderCard({ data, onPay }) {
-  // 配送费由后端运营配置下发（与 Pay/OrderConfirm 同源，红线2：单一数据源），
-  // 避免 Agent 卡片「应付合计」漏算运费、与支付页口径不一致。
   const [shippingFee, setShippingFee] = useState(0)
   useEffect(() => {
     publicConfig()
       .then((cfg) => { if (cfg.shipping_fee != null) setShippingFee(cfg.shipping_fee) })
       .catch(() => {})
   }, [])
-  const items = Array.isArray(data?.items) ? data.items : []
+  const rawItems = Array.isArray(data?.items) ? data.items : []
+  const planName = data?.plan_name || ''
+  // 过滤掉价格为 0 的缺货花材，只展示有价格的明细
+  const items = rawItems.filter((it) => Number(it.unit_price || it.price || 0) > 0)
   const total =
     data?.total_price ??
-    items.reduce((a, b) => a + Number(b.price || b.amount || 0), 0)
+    Math.round(items.reduce((a, b) => a + Number(b.price || b.unit_price || b.amount || 0), 0) * 100) / 100
   const discount =
     data?.pay_jump?.params?.discount ?? data?.discount ?? 0
   const oid = data?.pay_jump?.params?.order_id || data?.order_id
+  // 效果图：优先取订单数据带的 URL；否则从会话历史方案回填
+  const effectImg = data?.effect_image_url || data?.result_url || ''
+
   return (
     <div className="mt-2 rounded-card-lg bg-white p-4 border border-line">
       <p className="text-[12px] text-sub">订单已创建，确认信息后去支付</p>
-      {items.map((it, i) => (
-        <div
-          key={i}
-          className="mt-2 flex items-center justify-between text-[13px]"
-        >
-          <span className="min-w-0 truncate text-ink">
-            {it.name || it.plan_name}
-          </span>
-          <span className="shrink-0 text-pink">
-            ¥{it.price ?? it.amount}
+      {planName && <p className="mt-1 text-[11px] font-medium text-gold-dark">{planName}</p>}
+      {effectImg && (
+        <SmartImage
+          src={withApiUrl(effectImg)}
+          alt={planName || '效果图'}
+          className="mt-2 w-full rounded-lg object-cover"
+        />
+      )}
+      {items.length > 0 ? items.map((it, i) => (
+        <div key={i} className="flex items-center justify-between text-[12px] py-0.5">
+          <span className="min-w-0 truncate text-ink">{it.name}</span>
+          <span className="shrink-0 text-sub">
+            ¥{Number(it.unit_price || it.price || 0).toFixed(2)}
+            {it.qty > 1 ? ` × ${it.qty}` : ''}
           </span>
         </div>
-      ))}
+      )) : (
+        <p className="text-[12px] text-sub mt-1">定制花束，以实际制作为准</p>
+      )}
       <div className="mt-2 flex justify-between border-t border-line pt-2 text-[13px]">
-        <span className="text-sub">应付合计</span>
-        <span className="font-medium text-ink">¥{calcPayable(total, discount, shippingFee).toFixed(2)}</span>
+        <span className="text-sub">商品合计</span>
+        <span className="text-ink">¥{Number(total).toFixed(2)}</span>
       </div>
-      <p className="mt-1 text-[10px] text-sub">
-        含配送费，已减优惠券 ¥{Number(discount || 0).toFixed(2)}；以支付页为准
-      </p>
+      <div className="mt-1 flex justify-between text-[13px]">
+        <span className="text-sub">配送费</span>
+        <span className="text-ink">¥{Number(shippingFee).toFixed(2)}</span>
+      </div>
+      {discount > 0 && (
+        <div className="mt-1 flex justify-between text-[13px]">
+          <span className="text-sub">优惠券</span>
+          <span className="text-pink">-¥{Number(discount).toFixed(2)}</span>
+        </div>
+      )}
+      <div className="mt-1 flex justify-between border-t border-line pt-2 text-[14px] font-medium">
+        <span className="text-ink">应付合计</span>
+        <span className="text-ink">¥{calcPayable(total, discount, shippingFee).toFixed(2)}</span>
+      </div>
+      <p className="mt-1 text-[10px] text-sub">以支付页为准</p>
       {oid && <p className="mt-1 text-[11px] text-sub">订单号：{oid}</p>}
       {onPay && (
         <Button className="mt-3 w-full" onClick={onPay}>
@@ -641,16 +711,7 @@ export default function Agent() {
               })}
             {m.ui === 'pay_jump' && (
               <OrderCard
-                data={{
-                  order_id: m.data?.order_id,
-                  items: [
-                    {
-                      name: m.data?.plan_name || '花束',
-                      price: m.data?.total_price ?? 0,
-                    },
-                  ],
-                  total_price: m.data?.total_price ?? 0,
-                }}
+                data={m.data}
                 onPay={() => {
                   const oid =
                     m.data?.pay_jump?.params?.order_id || m.data?.order_id

@@ -189,6 +189,8 @@ def search_plans(keyword: str, _context: dict | None = None) -> str:
 
     需求不明确时不返回方案（返回引导文案），防止闲聊/知识问答被硬塞卡片；
     命中结果按相关性排序并截断到 3 款（预算/色系/对象命中者优先）。
+    首条结果同步写入 selected_plan，保证后续 search_shops / create_order
+    的 latest 占位符解析到用户看到的方案（而非数据库随机首条）。
     """
     req = _requirement_from_context(_context)
     if not _req_clear(req):
@@ -203,6 +205,7 @@ def search_plans(keyword: str, _context: dict | None = None) -> str:
     # 个人已验证 DIY 方案融合：同一需求的已确认方案优先于商家预设（用户信任自己的设计，
     # 也可通过「重新做上次那束花」类需求被再次召回）。按 user_id 隔离，跨用户不可见。
     uid = (_context or {}).get("user_id", "")
+    sid = (_context or {}).get("session_id", "")
     diy_hits: list[dict] = []
     if uid:
         try:
@@ -213,8 +216,14 @@ def search_plans(keyword: str, _context: dict | None = None) -> str:
             logger.exception("[tools] 个人 DIY 方案检索失败")
     if diy_hits:
         combined = _rank_plans(diy_hits, req) + _rank_plans(plans, req)
-        return json.dumps(combined[:3], ensure_ascii=False)
-    return json.dumps(_rank_plans(plans, req), ensure_ascii=False)
+        result = combined[:3]
+    else:
+        result = _rank_plans(plans, req)
+    # 首条结果写入 selected_plan：用户看到方案卡片后说「确认 / 就这个」，
+    # search_shops / create_order 用 plan="latest" 能解析到同一方案。
+    if result and sid:
+        memory.set_session_json(uid, sid, "selected_plan", result[0])
+    return json.dumps(result, ensure_ascii=False)
 
 
 @register_tool(
@@ -717,27 +726,155 @@ def _resolve_flowers(
 _PRICE_UNIT = {"低": 12, "中": 28, "高": 60}
 #: 各预算档主花支数基准（与 budget.json 的 main_count 对齐）
 _TIER_MAIN_STEMS = {"T1": 6, "T2": 10, "T3": 16}
+#: 人工费 / 装饰费收取标准（按预算档），元
+_LABOR_FEE = {"T1": 15, "T2": 25, "T3": 40}
+_DECOR_FEE = {"T1": 10, "T2": 18, "T3": 30}
+
+
+def _known_flower(name: str) -> dict:
+    """按花名查知识库花卉（含别名匹配），查不到返回空 dict。"""
+    if not name:
+        return {}
+    all_fl = query_knowledge("flower", "")["results"]
+    for f in all_fl:
+        if f["name"] == name or name in f.get("aliases", []):
+            return f
+    return {}
+
+
+def _price_tier_of(name: str) -> str:
+    """花材价格档（低/中/高），知识库无记录时按「中」兜底。"""
+    return _known_flower(name).get("price_tier", "中") or "中"
+
+
+def _enrich_plan_fees(plan: dict) -> dict:
+    """给最终方案补齐花材支数 + 人工费/装饰费（按预算档标准）。
+
+    LLM 语义路径下 design 内层花材会被 LLM 输出覆盖，这里在合并后统一重算：
+    - 每种花材挂 qty / unit_price；
+    - design.fees 费用结构（含收取标准）；
+    - budget_breakdown.items 的「主花/配材/叶材」明细与 fees 对齐。
+    返回新 dict（深拷贝，不改入参）。
+    """
+    plan = copy.deepcopy(plan)
+    d = plan.get("design") or {}
+    main = [m for m in (d.get("main_flowers") or []) if isinstance(m, dict)]
+    fillers = [f for f in (d.get("fillers") or []) if isinstance(f, dict)]
+    foliage = [g for g in (d.get("foliage") or []) if isinstance(g, dict)]
+    if not main:
+        return plan
+    tier = _get_tier(plan.get("budget_num"), None)
+    stems = _alloc_stems(tier, main, fillers, foliage, plan.get("budget_num"))
+    tkey = tier.get("tier", "T2")
+    labor_fee = _LABOR_FEE.get(tkey, 25)
+    decor_fee = _DECOR_FEE.get(tkey, 18)
+    # 1) 每种花材挂支数与单价
+    for fl in main + fillers + foliage:
+        fl["qty"] = stems.get(fl["name"], 1)
+        fl["unit_price"] = _PRICE_UNIT.get(_price_tier_of(fl["name"]), 28)
+    # 1.5) 统一 DIY 步骤里的花材数量：LLM 步骤文案可能写了自己编的支数（如「玫瑰×6」），
+    # 与权威分配 qty 打架。这里把步骤中「花名×数字」的表达式统一替换为权威 qty。
+    _steps = plan.get("diy_steps") or []
+    if isinstance(_steps, list):
+        _new_steps: list[str] = []
+        for _s in _steps:
+            _t = str(_s)
+            for _name, _q in stems.items():
+                _t = re.sub(
+                    rf"{re.escape(_name)}\s*[×xX*]\s*\d+",
+                    f"{_name}×{_q}",
+                    _t,
+                )
+            _new_steps.append(_t)
+        plan["diy_steps"] = _new_steps
+    # 2) design.fees 费用结构
+    d["fees"] = {
+        "labor_fee": labor_fee,
+        "labor_standard": f"人工费 {labor_fee} 元/束（含修剪、去刺、扎制、定型，按预算档标准收取）",
+        "decor_fee": decor_fee,
+        "decor_standard": f"装饰费 {decor_fee} 元/束（含丝带、贺卡、点缀饰材，按预算档标准收取）",
+        "stem_count": "、".join(f"{f['name']}×{stems.get(f['name'], 1)}" for f in (main + fillers + foliage)),
+        "note": "花材按支数计费，人工费与装饰费为门店统一收取标准，下单前以门店确认为准。",
+    }
+    # 3) budget_breakdown 与花材明细对齐
+    pkg_name = d.get("packaging") or "花束"
+    pkg = {"name": pkg_name, "id": "PK_BOX" if "礼盒" in pkg_name else "PK_BOUQUET"}
+    plan["budget_breakdown"] = _build_budget_breakdown(main, fillers, foliage, pkg, tier, plan.get("budget_num"))
+    return plan
+
+
+def _alloc_stems(
+    tier: dict,
+    main: list[dict], fillers: list[dict], foliage: list[dict],
+    budget_num: int | None = None,
+) -> dict[str, int]:
+    """按预算档 + 花材角色为每种花材分配具体支数。
+
+    - 主花支数取预算档基准 _TIER_MAIN_STEMS，平均分给每种主花（不足 1 支补 1）；
+    - 有明确预算时，主花数量受预算约束：预留配材/叶材/包装/人工/装饰费用后，
+      剩余预算除以主花均价，防止总价远超用户预算；
+    - 填充 / 叶材按主花总数的 30%-50% 配比，平均分摊。
+    返回 {花名: 支数}，供方案明细 / 预算 / 步骤精确引用。
+    """
+    tkey = tier.get("tier", "T2")
+    total_main = _TIER_MAIN_STEMS.get(tkey, 10)
+    if budget_num is not None and main:
+        # 预算约束：预留配材/叶材/包装/人工/装饰的估算费用
+        labor = _LABOR_FEE.get(tkey, 25)
+        decor = _DECOR_FEE.get(tkey, 18)
+        pkg = 35 if (tier.get("tier") == "T3") else 8
+        reserved = labor + decor + pkg
+        # 配材/叶材各按 1-2 支的均价预留
+        avg_unit = sum(_PRICE_UNIT.get(_price_tier_of(m["name"]), 28) for m in main) / len(main)
+        side_unit = (
+            sum(_PRICE_UNIT.get(_price_tier_of(f["name"]), 28)
+                for f in fillers + foliage) / max(len(fillers) + len(foliage), 1)
+            if (fillers + foliage) else 28
+        )
+        reserved += side_unit * 2
+        main_budget = max(0, budget_num - reserved)
+        total_main = max(1, int(main_budget // avg_unit))
+        # 至少给每种主花 1 支；上限不超档位基准，避免异常大
+        total_main = min(total_main, _TIER_MAIN_STEMS.get(tkey, 10) + 2)
+    per_main = max(1, total_main // max(len(main), 1))
+    stems: dict[str, int] = {}
+    for i, f in enumerate(main):
+        stems[f["name"]] = per_main + (1 if i < total_main % max(len(main), 1) else 0)
+    # 填充/叶材：主花总数的 30%-50%，每种至少 1 支
+    side_total = max(1, round(total_main * (0.4 if fillers else 0.25)))
+    side_pool = [f["name"] for f in fillers] + [f["name"] for f in foliage]
+    if side_pool:
+        per_side = max(1, side_total // len(side_pool))
+        for i, f in enumerate(side_pool):
+            stems[f] = per_side + (1 if i < side_total % len(side_pool) else 0)
+    return stems
 
 
 def _build_diy_steps(
     main: list[dict], fillers: list[dict], foliage: list[dict],
     color_scheme: list[str], packaging: dict | None,
 ) -> list[str]:
-    """生成可照做的分步插花指引（基于本方案实际花材/包装）。"""
+    """生成可照做的分步插花指引（基于本方案实际花材/数量/包装）。"""
     m = [f["name"] for f in main if f]
     f1 = [f["name"] for f in fillers if f]
     f2 = [f["name"] for f in foliage if f]
     pk_name = packaging["name"] if packaging else "花束"
     pk_desc = packaging.get("description", "") if packaging else ""
     colors = "/".join(color_scheme) or "自然色系"
+    # 每种花材的修剪方式：主花斜剪+去叶（玫瑰去刺/百合去雄蕊），配材短剪，叶材留长做托
+    trim_m = "；".join(f"{n}斜剪 45° 并去下半叶" for n in m) or "玫瑰斜剪 45° 并去下半叶"
+    trim_f = "；".join(f"{n}短剪保留 1/2 长度" for n in f1) or "满天星短剪成簇"
+    trim_g = "；".join(f"{n}留长 2/3 做托底勾边" for n in f2) or "尤加利留长做托底"
     return [
-        f"1. 备材处理：取主花 {'、'.join(m) or '玫瑰'}，斜剪根部 45° 并剥去下半部叶；"
-        f"若有玫瑰需去刺，百合建议摘除雄蕊防染色。",
-        "2. 定高构图：以主花为视觉重心，整体高度约为花束/花器的 1.5 倍；先插主花确定骨架与朝向。",
-        f"3. 填充层次：加入配材 {'、'.join(f1) or '满天星'} 填补空隙，"
-        f"叶材 {'、'.join(f2) or '尤加利'} 勾边制造空气感，形成前低后高。",
+        f"1. 备材处理（修剪）：{trim_m}。"
+        f"其中{'玫瑰需去刺' if any('玫瑰' in n for n in m) else '无刺花材无需去刺'}，"
+        f"{'百合需摘除雄蕊防染色' if any('百合' in n for n in m) else '无需特殊处理'}。",
+        "2. 定高构图：以主花为视觉重心，整体高度约为花束/花器的 1.5 倍；先插主花确定骨架与朝向，"
+        "各主花交错分布、花头朝向一致。",
+        f"3. 填充层次：{trim_f} 填补空隙，{trim_g} 勾边制造空气感，形成前低后高、疏密有致。",
         f"4. 配色比例：按色系 {colors} 控制主花:配材 ≈ 7:3，避免头重脚轻或色彩打架。",
-        f"5. 包装收尾：用「{pk_name}」（{pk_desc}）螺旋扎制并整理外层叶材外扩，丝带/韩素纸收尾。",
+        f"5. 包装收尾：用「{pk_name}」（{pk_desc}）螺旋扎制并整理外层叶材外扩，丝带/韩素纸收尾，"
+        f"如有贺卡随花附赠。",
         "6. 醒花养护：完成后深水醒花 2-4 小时再摆放，详见「养护建议」。",
     ]
 
@@ -773,30 +910,66 @@ def _build_budget_breakdown(
     main: list[dict], fillers: list[dict], foliage: list[dict],
     packaging: dict | None, tier: dict, budget_num: int | None,
 ) -> dict:
-    """按花材档位粗略估算预算分项（标注为估算，实际以门店为准）。"""
-    known = {x["name"]: x for x in (list(main) + list(fillers) + list(foliage)) if x and x.get("name")}
-
+    """按花材档位估算预算分项（含每种花材支数 + 人工费/装饰费收取标准）。"""
     def unit(name: str) -> int:
-        return _PRICE_UNIT.get(known.get(name, {}).get("price_tier", "中"), 28)
+        # 花材单价按知识库价格档查询（design 花材 dict 不带 price_tier，须回查知识库）
+        return _PRICE_UNIT.get(_price_tier_of(name), 28)
 
-    main_n = _TIER_MAIN_STEMS.get(tier.get("tier", "T2"), 10)
-    avg_main_unit = (sum(unit(m["name"]) for m in main) / max(len(main), 1)) if main else 28
-    main_cost = main_n * avg_main_unit
-    filler_cost = sum(unit(f["name"]) for f in fillers) or 18
-    foliage_cost = sum(unit(f["name"]) for f in foliage) or 14
-    pkg_cost = 35 if (packaging and packaging.get("id") == "PK_BOX") else 8
-    total = round(main_cost + filler_cost + foliage_cost + pkg_cost)
+    tkey = tier.get("tier", "T2")
+    # 每种花材的具体支数：优先取方案里已分配的 qty，否则按档位兜底
+    stems = _alloc_stems(tier, main, fillers, foliage, budget_num)
+    main_cost = sum(stems.get(m["name"], 1) * unit(m["name"]) for m in main)
+    filler_cost = sum(stems.get(f["name"], 1) * unit(f["name"]) for f in fillers)
+    foliage_cost = sum(stems.get(f["name"], 1) * unit(f["name"]) for f in foliage)
+    # 包装材料 + 装饰费 + 人工费（按预算档标准收取）
+    pkg_material = 35 if (packaging and packaging.get("id") == "PK_BOX") else 8
+    labor_fee = _LABOR_FEE.get(tkey, 25)
+    decor_fee = _DECOR_FEE.get(tkey, 18)
+    total = round(main_cost + filler_cost + foliage_cost + pkg_material + labor_fee + decor_fee)
     items = [
-        {"item": "主花", "detail": f"{main_n} 支（{'、'.join(m['name'] for m in main) or '玫瑰'}）", "amount": round(main_cost)},
-        {"item": "配材", "detail": "、".join(f["name"] for f in fillers) or "满天星", "amount": round(filler_cost)},
-        {"item": "叶材", "detail": "、".join(f["name"] for f in foliage) or "尤加利", "amount": round(foliage_cost)},
-        {"item": "包装/人工", "detail": packaging["name"] if packaging else "花束", "amount": pkg_cost},
+        {
+            "item": "主花",
+            "detail": "、".join(f"{m['name']}×{stems.get(m['name'], 1)}" for m in main) or "玫瑰",
+            "amount": round(main_cost),
+        },
+        {
+            "item": "配材",
+            "detail": "、".join(f"{f['name']}×{stems.get(f['name'], 1)}" for f in fillers) or "满天星",
+            "amount": round(filler_cost),
+        },
+        {
+            "item": "叶材",
+            "detail": "、".join(f"{f['name']}×{stems.get(f['name'], 1)}" for f in foliage) or "尤加利",
+            "amount": round(foliage_cost),
+        },
+        {
+            "item": "包装材料",
+            "detail": packaging["name"] if packaging else "花束",
+            "amount": pkg_material,
+        },
+        {
+            "item": "装饰费",
+            "detail": f"含丝带/贺卡/点缀（{decor_fee} 元/束，按预算档标准）",
+            "amount": decor_fee,
+        },
+        {
+            "item": "人工费",
+            "detail": f"含修剪、去刺、扎制、定型（{labor_fee} 元/束，按预算档标准）",
+            "amount": labor_fee,
+        },
     ]
     return {
         "total_estimate": total,
         "currency": "CNY",
         "items": items,
-        "note": "以上为按花材档位做的粗略估算，实际价格以门店/供应商为准。",
+        "fees": {
+            "labor": labor_fee,
+            "labor_standard": "按预算档收取：入门档 15 元 / 精致档 25 元 / 高级档 40 元（含修剪、去刺、扎制、定型）",
+            "decor": decor_fee,
+            "decor_standard": "按预算档收取：入门档 10 元 / 精致档 18 元 / 高级档 30 元（含丝带、贺卡、点缀饰材）",
+            "note": "花材费用按支数计，人工与装饰费为门店统一标准，下单前请以门店确认为准。",
+        },
+        "note": "以上为按花材档位做的估算，实际价格以门店/供应商为准。",
     }
 
 
@@ -895,6 +1068,12 @@ def _build_plan(
     filler_flowers = [{"name": f["name"], "role": "填充"} for f in fillers]
     foliage_flowers = [{"name": f["name"], "role": "叶材"} for f in foliage]
 
+    # 每种花材具体支数（按预算档分配 + 预算约束）
+    stems = _alloc_stems(tier, main, fillers, foliage, budget_num)
+    for fl in (main_flowers + filler_flowers + foliage_flowers):
+        fl["qty"] = stems.get(fl["name"], 1)
+        fl["unit_price"] = _PRICE_UNIT.get(_price_tier_of(fl["name"]), 28)
+
     # 包装：高档预算 / 重要场景 → 礼盒
     packaging = get_by_id("packaging", "PK_BOUQUET")
     important = dims.get("occasion") in ("告白", "生日") or (scene and scene["id"] in ("SC_WEDDING", "SC_ANNIVERSARY", "SC_NEWYEAR"))
@@ -955,6 +1134,17 @@ def _build_plan(
     caution = _build_caution(main)
     mood_tags = _mood_tags(color_scheme, tone)
 
+    # 花材支数清单文案（供 desc / 卡片展示）：如 "康乃馨×5、非洲菊×2、满天星×3、尤加利×3"
+    _stems = _alloc_stems(tier, main, fillers, foliage, budget_num)
+    _flower_qty_text = "、".join(
+        f"{f['name']}×{_stems.get(f['name'], 1)}"
+        for f in (main + fillers + foliage) if f
+    ) or "玫瑰×10"
+    # 人工/装饰费（按预算档标准）
+    tkey = tier.get("tier", "T2")
+    labor_fee = _LABOR_FEE.get(tkey, 25)
+    decor_fee = _DECOR_FEE.get(tkey, 18)
+
     plan = {
         "plan_id": "DIY_" + uuid.uuid4().hex[:6],
         "version": version,
@@ -985,15 +1175,23 @@ def _build_plan(
             "suitable_for": suitable_for,
             "caution": caution,
             "mood_tags": mood_tags,
+            # 费用结构：花材按支计费 + 人工费/装饰费按档位标准收取
+            "fees": {
+                "labor_fee": labor_fee,
+                "labor_standard": f"人工费 {labor_fee} 元/束（含修剪、去刺、扎制、定型，按预算档标准收取）",
+                "decor_fee": decor_fee,
+                "decor_standard": f"装饰费 {decor_fee} 元/束（含丝带、贺卡、点缀饰材，按预算档标准收取）",
+                "stem_count": _flower_qty_text,
+                "note": "花材按支数计费，人工费与装饰费为门店统一收取标准，下单前以门店确认为准。",
+            },
         },
         "estimated_price": est,
         "effect_prompt": effect_prompt,
         "desc": (
             f"为你设计了一份{style_label}{occ_label}花束："
-            f"以{ '、'.join(f['name'] for f in main) or '玫瑰' }为主花，"
-            f"{ '、'.join(f['name'] for f in fillers) or '满天星' }与"
-            f"{ '、'.join(f['name'] for f in foliage) or '尤加利' }点缀，"
-            f"色调{'/'.join(color_scheme)}，寓意{meaning}。预算{est}。"
+            f"花材共 {_flower_qty_text}，"
+            f"色调{'/'.join(color_scheme)}，寓意{meaning}。"
+            f"含人工费 {labor_fee} 元 + 装饰费 {decor_fee} 元，预算{est}。"
         ),
         # —— 落地化增强（纯模板，不依赖真实数据）——
         "diy_steps": _build_diy_steps(main, fillers, foliage, color_scheme, packaging),
@@ -1136,6 +1334,8 @@ def _merge_plan(baseline: dict, llm_plan: dict) -> dict:
             plan["card_message"] = ld["card_message"]
     # ── 锚定 style 名与 style_id 一致（修法 B）──
     _anchor_style(plan)
+    # ── 统一补齐花材支数 + 人工/装饰费（LLM 覆盖后重算）──
+    plan = _enrich_plan_fees(plan)
     return plan
 
 
@@ -1152,18 +1352,21 @@ def design_with_llm(requirements: str) -> dict:
             "你是资深花艺设计师。依据用户需求与下方【知识库召回】设计一份花艺方案，"
             "只输出 JSON、不要额外解释。字段须严格为："
             '{"name":方案名,"style":风格标签,"recipient":收礼人,"occasion":场景或节日,'
-            '"scene":场景名,"desc":一句话方案描述,'
+            '"scene":场景名,"desc":一句话方案描述（含花材与支数，如「玫瑰×10 配满天星×3」）,'
             '"effect_prompt":"生图 prompt（描述花材/色彩/形态/包装，与方案一致）",'
-            '"design":{"main_flowers":[{"name":花名,"role":"主花","flower_language":[花语]}],'
-            '"fillers":[{"name":花名,"role":"填充"}],'
-            '"foliage":[{"name":叶材名,"role":"叶材"}],'
+            '"design":{"main_flowers":[{"name":花名,"role":"主花","flower_language":[花语],"qty":支数}],'
+            '"fillers":[{"name":花名,"role":"填充","qty":支数}],'
+            '"foliage":[{"name":叶材名,"role":"叶材","qty":支数}],'
             '"color_scheme":[颜色],"packaging":包装名,"meaning":寓意文案,'
-            '"diy_steps":DIY 步骤,"care_tips":养护贴士,"card_message":贺卡文案,'
+            '"diy_steps":DIY 步骤(数组，需具体到每种花材的修剪方式与数量，如「玫瑰×10 斜剪45°去刺去叶」),'
+            '"care_tips":养护贴士,"card_message":贺卡文案,'
             '"difficulty":制作难度(仅限 入门/进阶/高手),"est_time":预计耗时分钟数(整数),'
             '"shelf_life":保鲜期(收到后可养几天,如"约 5-7 天"),'
             '"suitable_for":[适宜人群标签],"caution":禁忌或提醒(如花粉过敏慎选),'
             '"mood_tags":[情绪标签(如 治愈/热烈/宁静)]}}。'
             "要求：花材必须从【候选花材】中选取真实名称；配色与风格须与知识库一致；"
+            "每种花材务必给出具体支数 qty（按预算合理分配，主花 6-16 支、配材/叶材 1-4 支）；"
+            "diy_steps 要具体到每种花材怎么修剪（斜剪/去刺/去叶/摘雄蕊）、怎么装饰；"
             "若用户未指定某维度，按花语与场景合理默认，不要留空。"
         )
         user = f"用户需求：{requirements}\n\n{knowledge}"
@@ -1372,6 +1575,12 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
     if row and row["status"] == "done" and row.get("result_url"):
         result["status"] = "done"
         result["result_url"] = row["result_url"]
+        # 效果图写回会话 DIY 方案：后续 create_order 组装订单卡片时，
+        # 可从方案带出 effect_image_url 让订单卡直接渲染效果图。
+        if sid and diy:
+            diy = {**diy, "effect_image_url": row["result_url"]}
+            memory.set_session_json(uid, sid, "latest_diy_plan", diy)
+            memory.set_session_json(uid, sid, "selected_plan", diy)
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -1380,7 +1589,7 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
     description=(
         "当你准备好向用户输出本轮最终回复时，必须调用该工具结束本轮对话。"
         "携带：reply（自然语言回复）、ui（UI 动作类型）、data（按 ui 类型填充）、"
-        "stage（协商后的下一业务阶段）。"
+        "stage（协商后的下一业务阶段）、intent（你判断的用户本轮真实意图）。"
     ),
     parameters={
         "type": "object",
@@ -1396,6 +1605,18 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
                 "type": "string",
                 "description": "下一业务阶段，如 analyze/select_mode/view_plan/diy_design/image_gen/shop_recommend/done",
             },
+            "intent": {
+                "type": "string",
+                "enum": ["buying", "qa", "chitchat", "design", "other"],
+                "description": (
+                    "用户本轮真实意图："
+                    "buying=有购买/挑选花束的明确意图；"
+                    "qa=问花卉/花艺知识或咨询（花期/养护/寓意/送什么花好）；"
+                    "chitchat=纯闲聊寒暄；"
+                    "design=要 DIY 定制专属花束；"
+                    "other=其他。判定依据是用户『想干什么』，不是本轮是否调了工具。"
+                ),
+            },
         },
         "required": ["reply", "ui", "data", "stage"],
     },
@@ -1406,12 +1627,92 @@ def respond_to_user(
     ui: str = "text",
     data: dict | None = None,
     stage: str = "analyze",
+    intent: str = "other",
 ) -> str:
     """终结工具：模型以此结束本轮，参数由 agent 提取并校验后返回前端。"""
+    if intent not in ("buying", "qa", "chitchat", "design", "other"):
+        intent = "other"
     return json.dumps(
-        {"reply": reply, "ui": ui, "data": data or {}, "stage": stage},
+        {"reply": reply, "ui": ui, "data": data or {}, "stage": stage, "intent": intent},
         ensure_ascii=False,
     )
+
+
+@register_tool(
+    name="search_diy_plans",
+    description=(
+        "检索全局 DIY 方案模板库：按送礼对象/场合/风格/预算匹配历史成功方案。"
+        "命中时返回方案详情，供 agent 判断是否推荐复用或全新设计。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "recipient": {"type": "string", "description": "送礼对象（如 母亲/对象/朋友）"},
+            "occasion": {"type": "string", "description": "场合或节日（如 生日/七夕/母亲节）"},
+            "style": {"type": "string", "description": "风格标签（如 韩式/浪漫/简约）"},
+            "budget": {"type": "number", "description": "预算上限（元）"},
+        },
+        "required": [],
+    },
+    tags=["diy", "knowledge"],
+)
+def search_diy_plans(
+    recipient: str = "",
+    occasion: str = "",
+    style: str = "",
+    budget: float = 0,
+    **_kw,
+) -> str:
+    """检索全局 DIY 方案模板库，返回匹配的历史成功方案。
+
+    匹配规则：
+    - recipient/occasion/style：精确匹配（不区分大小写）
+    - budget：±30% 范围内匹配
+    - 结果按 order_count 降序排列（越多人验证过的方案越优先）
+    """
+    from backend.storage.db import get_conn as _get_conn
+
+    conn = _get_conn()
+    conditions = ["user_id='template'", "status='template'"]
+    params: list = []
+
+    if recipient:
+        conditions.append("LOWER(recipient) LIKE LOWER(?)")
+        params.append(f"%{recipient}%")
+    if occasion:
+        conditions.append("LOWER(occasion) LIKE LOWER(?)")
+        params.append(f"%{occasion}%")
+    if style:
+        conditions.append("LOWER(style) LIKE LOWER(?)")
+        params.append(f"%{style}%")
+    if budget > 0:
+        conditions.append("budget BETWEEN ? AND ?")
+        params.append(budget * 0.7)
+        params.append(budget * 1.3)
+
+    where = " AND ".join(conditions)
+    rows = conn.execute(
+        f"SELECT * FROM diy_plans WHERE {where} ORDER BY order_count DESC LIMIT 5",
+        params,
+    ).fetchall()
+
+    results = []
+    for r in rows:
+        results.append({
+            "plan_id": r["id"],
+            "name": r["name"],
+            "recipient": r["recipient"],
+            "occasion": r["occasion"],
+            "style": r["style"],
+            "budget": r["budget"],
+            "flowers": json.loads(r["flowers"] or "[]"),
+            "packaging": r["packaging"],
+            "meaning": r["meaning"],
+            "effect_image_url": r["effect_image_url"],
+            "order_count": r["order_count"],
+        })
+
+    return json.dumps(results, ensure_ascii=False)
 
 
 @register_tool(
@@ -1456,6 +1757,76 @@ def search_shops(plan: str = "latest", _context: dict | None = None) -> str:
         memory.set_session_json(uid, sid, "selected_plan", plan_obj)
     shops = repo.list_shops(plan_obj, location, requirement=req)
     return json.dumps(shops[:3], ensure_ascii=False)
+
+
+@register_tool(
+    name="match_shop_items",
+    description=(
+        "根据 DIY 方案的花材需求，匹配各店铺库存中的单品（单支花束/配材/绿植），"
+        "返回每家店的匹配结果：覆盖了哪些花材、缺哪些、总费用估算。"
+        "用于 DIY 方案落地时推荐能实际提供所需花材的店铺。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "flowers": {
+                "type": "string",
+                "description": "DIY 方案的花材列表（JSON 数组或逗号分隔），如 '[\"红玫瑰\",\"满天星\",\"尤加利\"]' 或 '红玫瑰,满天星,尤加利'",
+            },
+            "shop_id": {
+                "type": "string",
+                "description": "指定店铺 ID（可选）；不指定则搜索所有店铺",
+            },
+        },
+        "required": ["flowers"],
+    },
+    inject_context=True,
+    tags=["shop", "diy"],
+)
+def match_shop_items(
+    flowers: str, shop_id: str | None = None, _context: dict | None = None
+) -> str:
+    """匹配 DIY 花材与店铺单品库存。
+
+    返回每家店的匹配详情：matched（已匹配的花材→商品映射）、
+    missing（缺少的花材）、coverage（覆盖率 0-1）、estimated_cost（已匹配商品总价）。
+    使用精确匹配（花材名完整出现在商品名或标签中），避免 "粉玫瑰" 错误匹配 "红玫瑰"。
+    """
+    from agent.skills.skill_order import _match_flowers_to_shop
+    from backend.storage.db import get_conn as _get_conn
+
+    # 解析花材列表
+    if flowers.startswith("["):
+        try:
+            flower_list = json.loads(flowers)
+        except json.JSONDecodeError:
+            flower_list = [f.strip() for f in flowers.strip("[]").split(",") if f.strip()]
+    else:
+        flower_list = [f.strip() for f in flowers.split(",") if f.strip()]
+
+    if not flower_list:
+        return json.dumps({"error": "花材列表为空"}, ensure_ascii=False)
+
+    conn = _get_conn()
+    if shop_id:
+        shops = conn.execute("SELECT * FROM shops WHERE id=?", (shop_id,)).fetchall()
+    else:
+        shops = conn.execute("SELECT * FROM shops").fetchall()
+
+    results = []
+    for s in shops:
+        match_result = _match_flowers_to_shop(flower_list, s["id"])
+        results.append({
+            "shop_id": s["id"],
+            "shop_name": s["name"],
+            "matched": match_result["matched"],
+            "missing": match_result["missing"],
+            "coverage": match_result["coverage"],
+            "estimated_cost": match_result["estimated_cost"],
+        })
+
+    results.sort(key=lambda x: (-x["coverage"], x["estimated_cost"]))
+    return json.dumps(results[:5], ensure_ascii=False)
 
 
 @register_tool(

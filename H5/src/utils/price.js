@@ -17,3 +17,21 @@ export function calcPayable(goodsTotal = 0, discount = 0, shippingFee = 0) {
   const ship = Number(shippingFee) || 0
   return Math.max(0, base + ship - off)
 }
+
+/**
+ * 金额显示：统一保留两位小数（¥12.30）。
+ * 全局唯一格式化入口，各页面不再各自定义 fmtMoney。
+ */
+export function fmtMoney(v) {
+  return `¥${Number(v || 0).toFixed(2)}`
+}
+
+/**
+ * 金额显示（千分位分组）：¥1,234.00，用于后台 GMV/流水等大额统计。
+ */
+export function fmtMoneyGrouped(v) {
+  return `¥${Number(v || 0).toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}

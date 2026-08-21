@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import { Pager } from '../App'
+import { fmtMoney } from '../../utils/price'
 
 const STATUS_META = {
   created: { label: '待付款', cls: 'bg-pink/10 text-pink' },
@@ -12,8 +13,6 @@ const STATUS_META = {
   canceled: { label: '已取消', cls: 'bg-line/40 text-sub' },
 }
 const CAN_SET = ['created', 'paid', 'shipped', 'done', 'canceled']
-
-const fmtMoney = (v) => `¥${Number(v || 0).toFixed(2)}`
 
 export function Orders() {
   const [rows, setRows] = useState([])

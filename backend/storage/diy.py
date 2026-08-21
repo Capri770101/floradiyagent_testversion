@@ -154,6 +154,72 @@ def mark_diy_plan_ordered(plan_id: str) -> None:
             logger.info("[diy] 方案已成交 id=%s", plan_id)
 
 
+def save_as_template(plan_id: str) -> None:
+    """成交方案沉淀为全局模板（user_id='template'），供其他用户检索复用。
+
+    同 fingerprint 的模板已存在时累加 order_count，不重复创建。
+    """
+    if not plan_id:
+        return
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM diy_plans WHERE id=?", (plan_id,)).fetchone()
+    if not row:
+        return
+    fp = row["fingerprint"]
+    # 同指纹模板已存在 → 累加成交数
+    existing = conn.execute(
+        "SELECT id FROM diy_plans WHERE user_id='template' AND fingerprint=?",
+        (fp,),
+    ).fetchone()
+    with conn:
+        if existing:
+            conn.execute(
+                "UPDATE diy_plans SET order_count=order_count+1 WHERE id=?",
+                (existing["id"],),
+            )
+            logger.info("[diy] 模板已存在，累加成交数 template_id=%s", existing["id"])
+        else:
+            conn.execute(
+                "INSERT INTO diy_plans("
+                "id,user_id,fingerprint,name,requirement,recipient,occasion,style,budget,"
+                "color_scheme,flowers,packaging,meaning,diy_steps,care_tips,card_message,"
+                "budget_breakdown,effect_image_url,difficulty,est_time,shelf_life,"
+                "suitable_for,caution,mood_tags,status,order_count,source_user_id,created_at"
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "TPL_" + plan_id,
+                    "template",
+                    fp,
+                    row["name"],
+                    row["requirement"],
+                    row["recipient"],
+                    row["occasion"],
+                    row["style"],
+                    row["budget"],
+                    row["color_scheme"],
+                    row["flowers"],
+                    row["packaging"],
+                    row["meaning"],
+                    row["diy_steps"],
+                    row["care_tips"],
+                    row["card_message"],
+                    row["budget_breakdown"],
+                    row["effect_image_url"],
+                    row["difficulty"],
+                    row["est_time"],
+                    row["shelf_life"],
+                    row["suitable_for"],
+                    row["caution"],
+                    row["mood_tags"],
+                    "template",
+                    1,
+                    row["user_id"],
+                    row["created_at"],
+                ),
+            )
+            logger.info("[diy] 新模板已创建 plan_id=%s → template_id=TPL_%s", plan_id, plan_id)
+
+
 def _j(v: str | None, default: Any) -> Any:
     try:
         return json.loads(v) if v else default

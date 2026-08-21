@@ -3,8 +3,9 @@
 // 后端已对下载地址做 SSRF 白名单 + 私网 IP 校验，前端只负责提交 prompt 与轮询结果。
 
 import { authHeaders, handleAuthFailure } from './auth'
+import { API_BASE } from './client'
 
-export const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+export { API_BASE }
 
 // 提交生图任务，立即返回 task_id；随后轮询 GET /tasks/{task_id} 取结果。
 // prompt 通常来自 DIY 方案的 effect_prompt（与花材/色彩/包装一致）。

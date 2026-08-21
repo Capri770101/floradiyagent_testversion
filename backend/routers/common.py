@@ -310,7 +310,7 @@ def _plan_card(p: dict[str, Any]) -> dict[str, Any]:
         "sold": int(p.get("sold", 0)),
         "tags": p.get("tags", []),
         "desc": p.get("desc", ""),
-        "image": None,  # H5 用占位色块渲染，不依赖真实图
+        "image": p.get("effect_image_url"),  # 后端真实图（/generated/ 或 /uploads/），H5 planImage 直接使用
     }
 
 

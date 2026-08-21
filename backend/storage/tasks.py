@@ -375,7 +375,7 @@ def _image_client_submit_api2img(prompt: str, task_id: str) -> str:
     raise RuntimeError("api2img 返回中既无 b64_json 也无 url")
 
 
-def _image_client_submit_zhipu(prompt: str, task_id: str) -> str:
+def _image_client_submit_zhipu(prompt: str, task_id: str, size: str | None = None) -> str:
     """调用智谱 AI 文生图接口（CogView，cogview-3-flash 免费）。
 
     智谱图像生成 API 路径为 {base}/images/generations（**不含 /v1**，与 api2img
@@ -385,6 +385,7 @@ def _image_client_submit_zhipu(prompt: str, task_id: str) -> str:
     Args:
         prompt: 文生图提示词。
         task_id: 本地生图任务 id，用作落盘文件名。
+        size: 出图尺寸（如 "1344x768" 宽幅）；缺省用配置 zhipu_size。
 
     Returns:
         本地图片 URL（/generated/{task_id}.{ext}）。
@@ -401,7 +402,7 @@ def _image_client_submit_zhipu(prompt: str, task_id: str) -> str:
     payload = {
         "model": settings.zhipu_model,  # "cogview-3-flash"
         "prompt": prompt,
-        "size": settings.zhipu_size,
+        "size": size or settings.zhipu_size,
     }
     try:
         resp = httpx.post(endpoint, headers=headers, json=payload, timeout=120.0)

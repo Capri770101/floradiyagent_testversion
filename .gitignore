@@ -35,3 +35,9 @@ _legacy/
 # Playwright 快照/录制产物
 *.snapshot.yml
 profile-*.yml
+
+# 运行时日志
+logs/
+
+# 本地调试截图
+order-card.png

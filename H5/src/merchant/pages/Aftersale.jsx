@@ -1,8 +1,7 @@
 // 商家售后查看：本店售后单只读列表（处理动作在平台管理端完成）。
 import React, { useCallback, useEffect, useState } from 'react'
 import { merchantAftersales } from '../api'
-
-const fmtMoney = (v) => `¥${Number(v || 0).toFixed(2)}`
+import { fmtMoney } from '../../utils/price'
 
 const TYPE_META = {
   refund: { label: '退款', cls: 'bg-gold/15 text-gold' },
