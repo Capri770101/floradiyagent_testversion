@@ -1,8 +1,7 @@
 // 商家数据看板：/merchant/stats 大数字卡 + 店铺列表（阶段3a 首屏，3b 并入更多业务页）。
 import React, { useCallback, useEffect, useState } from 'react'
 import { merchantStats } from '../api'
-
-const fmtMoney = (v) => `¥${Number(v || 0).toFixed(2)}`
+import { fmtMoney } from '../../utils/price'
 
 export function Dashboard() {
   const [stats, setStats] = useState(null)
