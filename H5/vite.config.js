@@ -40,6 +40,11 @@ export default defineConfig({
         target: BACKEND,
         changeOrigin: true,
       },
+      // 生成图（后端 data/generated 静态托管，/generated/plan_*.png）
+      '/generated': {
+        target: BACKEND,
+        changeOrigin: true,
+      },
     },
   },
   preview: {
@@ -51,6 +56,10 @@ export default defineConfig({
         rewrite: (p) => p.replace(/^\/api/, ''),
       },
       '/uploads': {
+        target: BACKEND,
+        changeOrigin: true,
+      },
+      '/generated': {
         target: BACKEND,
         changeOrigin: true,
       },
