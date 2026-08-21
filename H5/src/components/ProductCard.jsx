@@ -96,7 +96,7 @@ export default function ProductCard({ p, onOpen, onAdd, compact = false, fav, on
         <div className={`mt-auto flex items-center justify-between ${compact ? 'pt-2.5' : 'pt-3'}`}>
           <p className="text-[15px] text-ink">
             <span className="mr-0.5 text-[10px] text-stone">¥</span>
-            {p.price}
+            {Number(p.price).toFixed(2)}
           </p>
           <button
             onClick={(e) => {
