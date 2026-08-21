@@ -7,8 +7,7 @@ import SmartImage from '../components/SmartImage'
 import Reveal from '../components/Reveal'
 import { toast } from '../utils/toast'
 import { statusMeta } from '../utils/status'
-
-const fmtMoney = (v) => `¥${Number(v || 0).toFixed(2)}`
+import { fmtMoney } from '../utils/price'
 
 // 物流跟踪页：订单概要 + 时间线，商家/用户共用数据源
 export default function Logistics() {
