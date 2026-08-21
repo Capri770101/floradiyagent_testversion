@@ -90,7 +90,7 @@ export default function Favorites() {
                 <div className="min-w-0 flex-1" onClick={() => nav(`/product/${f.plan_id}`)}>
                   <p className="truncate text-[13px] font-medium text-dark">{f.name}</p>
                   <p className="mt-1 text-[12px] text-pink">
-                    ¥{f.price}
+                    ¥{Number(f.price).toFixed(2)}
                     {f.merchant_name ? ` · ${f.merchant_name}` : ''}
                   </p>
                   <p className="mt-1 line-clamp-1 text-[11px] text-sub">{f.desc}</p>
