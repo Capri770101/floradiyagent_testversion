@@ -128,7 +128,7 @@ export default function Home() {
 
   const cartCount = useMemo(() => Object.values(cart).reduce((s, it) => s + it.qty, 0), [cart])
   const cartTotal = useMemo(
-    () => Object.values(cart).reduce((s, it) => s + it.price * it.qty, 0),
+    () => Math.round(Object.values(cart).reduce((s, it) => s + it.price * it.qty, 0) * 100) / 100,
     [cart],
   )
 
@@ -440,7 +440,7 @@ export default function Home() {
                       </p>
                       <p className="mt-1 flex items-center gap-1 text-[10px] text-sub">
                         <IconStar width={10} height={10} className="text-cream" /> {s.rating} ·{' '}
-                        {s.eta} · 起送 ¥{s.min_delivery}
+                        {s.eta} · 起送 ¥{Number(s.min_delivery).toFixed(2)}
                       </p>
                     </div>
                     <span className="text-[10px] text-sub">{s.dist}</span>
