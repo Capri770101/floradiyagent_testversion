@@ -9,8 +9,7 @@ import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
 import Reveal from '../components/Reveal'
 import { planImage } from '../assets/imageMap'
-import DeliveryLocationPicker from '../components/DeliveryLocationPicker'
-import AddressSearchInput from '../components/AddressSearchInput'
+import AddressLocationPicker from '../components/AddressLocationPicker'
 
 function SectionTitle({ title }) {
   return <h2 className="mb-2 mt-5 px-1 text-[16px] font-medium text-dark">{title}</h2>
@@ -46,8 +45,7 @@ export default function OrderConfirm() {
   const [addresses, setAddresses] = useState([])
   const [selectedAddr, setSelectedAddr] = useState(null)
   // 配送位置（地图选点，与收货地址分开）
-  const [deliveryLoc, setDeliveryLoc] = useState(null) // {lat, lng, address}
-  const [locPickerOpen, setLocPickerOpen] = useState(false)
+  const [deliveryLoc, setDeliveryLoc] = useState(null) // {lat, lng, address} 与收货地址同源
 
   // 配送时段 / 配送费由后端运营配置下发（红线2：不写死在页面）
   useEffect(() => {
@@ -135,6 +133,10 @@ export default function OrderConfirm() {
   const pickAddr = (a) => {
     setSelectedAddr(a.id)
     setRecipient({ name: a.name, phone: a.phone, address: a.address })
+    // 选中已有地址：同步配送位置坐标（地址簿地址如有坐标则带上）
+    if (a.lat != null && a.lng != null) {
+      setDeliveryLoc({ lat: a.lat, lng: a.lng, address: a.address })
+    }
   }
 
   const onPay = async () => {
@@ -228,46 +230,18 @@ export default function OrderConfirm() {
             inputMode="tel"
             className="maison-field"
           />
-          <AddressSearchInput
+          <AddressLocationPicker
             value={recipient.address}
-            onChange={(v) => setRecipient({ ...recipient, address: v })}
-            onPick={(it) => setRecipient((r) => ({ ...r, address: it.title, lat: it.lat, lng: it.lng }))}
-            placeholder="收货地址（输入可搜索匹配）"
-            className="maison-field"
+            onChange={(v) => setRecipient((r) => ({ ...r, address: v }))}
+            onConfirm={(loc) => {
+              // 搜索/选点结果：收货地址与配送位置同源（坐标用于配送距离计算）
+              setRecipient((r) => ({ ...r, address: loc.address || r.address, lat: loc.lat, lng: loc.lng }))
+              setDeliveryLoc({ lat: loc.lat, lng: loc.lng, address: loc.address || '' })
+            }}
+            placeholder="收货地址（搜索匹配或地图选点）"
           />
         </div>
         </Reveal>
-
-        {/* 配送位置（地图选点，与收货地址分开） */}
-        <Reveal>
-        <SectionTitle title="配送位置" />
-        </Reveal>
-        <Reveal>
-        <div className="space-y-2 rounded-card bg-white p-4 border border-line">
-          <p className="text-[11px] text-sub">地图选点确定配送位置，花店按此计算配送距离（与收货地址可不同）</p>
-          <button
-            onClick={() => setLocPickerOpen(true)}
-            className="press flex w-full items-center justify-between rounded-[2px] border border-dashed border-gold/50 bg-gold/5 px-4 py-3"
-          >
-            <span className={`text-[13px] ${deliveryLoc ? 'text-ink' : 'text-gold'}`}>
-              {deliveryLoc
-                ? `已选：${deliveryLoc.address || `${deliveryLoc.lat}, ${deliveryLoc.lng}`}`
-                : '＋ 地图选点配送位置'}
-            </span>
-          </button>
-          {deliveryLoc?.lat != null && (
-            <p className="text-[10px] text-sub/70">坐标：{deliveryLoc.lat}, {deliveryLoc.lng}</p>
-          )}
-        </div>
-        </Reveal>
-        <DeliveryLocationPicker
-          open={locPickerOpen}
-          onConfirm={(loc) => {
-            setDeliveryLoc(loc)
-            setLocPickerOpen(false)
-          }}
-          onClose={() => setLocPickerOpen(false)}
-        />
 
         <Reveal>
         <SectionTitle title="配送时间" />
