@@ -26,9 +26,6 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-# --------------------------------------------------------------------------- #
-# 内容指纹：同一用户同一配方 = 重复（花材+角色+风格+对象+预算+包装）
-# --------------------------------------------------------------------------- #
 def _flower_keys(design: dict) -> list[str]:
     out: list[str] = []
     for bucket, key in (("m", "main_flowers"), ("f", "fillers"), ("g", "foliage")):
@@ -40,7 +37,6 @@ def _flower_keys(design: dict) -> list[str]:
 
 
 def _fingerprint(plan: dict) -> str:
-    """内容指纹（同一用户维度下判断方案是否重复）。"""
     d = plan.get("design") or plan
     payload = {
         "recipient": str(plan.get("recipient") or ""),
@@ -70,10 +66,6 @@ def _flower_rows(design: dict) -> list[dict[str, Any]]:
 
 
 def save_diy_plan(plan: dict, user_id: str) -> dict[str, Any]:
-    """落库一条已确认的 DIY 方案；重复（同用户同指纹）不重复写入。
-
-    Returns: {"saved": bool, "duplicate": bool, "plan_id": str}
-    """
     plan_id = str(plan.get("plan_id") or "") if plan else ""
     if not plan or not user_id:
         return {"saved": False, "duplicate": False, "plan_id": plan_id}
@@ -89,7 +81,6 @@ def save_diy_plan(plan: dict, user_id: str) -> dict[str, Any]:
             (user_id, fp),
         ).fetchone()
         if row:
-            # 重复方案不重写；旧记录缺效果图而新方案有则补齐（生图完成晚于确认）
             if not row["effect_image_url"]:
                 img = _plan_image(plan)
                 if img:
@@ -106,9 +97,7 @@ def save_diy_plan(plan: dict, user_id: str) -> dict[str, Any]:
             "suitable_for, caution, mood_tags, status, order_count, created_at, confirmed_at"
             ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                plan_id,
-                user_id,
-                fp,
+                plan_id, user_id, fp,
                 str(plan.get("name") or "未命名方案"),
                 str(plan.get("requirement") or ""),
                 str(plan.get("recipient") or ""),
@@ -136,12 +125,11 @@ def save_diy_plan(plan: dict, user_id: str) -> dict[str, Any]:
                 now,
             ),
         )
-    logger.info("[diy] 方案已入库 id=%s user=%s", plan_id, user_id)
+    logger.info("[diy] saved id=%s user=%s", plan_id, user_id)
     return {"saved": True, "duplicate": False, "plan_id": plan_id}
 
 
 def mark_diy_plan_ordered(plan_id: str) -> None:
-    """DIY 方案成交（create_order 落单）后升级状态并累计成交数。"""
     if not plan_id:
         return
     conn = get_conn()
@@ -151,14 +139,10 @@ def mark_diy_plan_ordered(plan_id: str) -> None:
             (plan_id,),
         )
         if cur.rowcount:
-            logger.info("[diy] 方案已成交 id=%s", plan_id)
+            logger.info("[diy] ordered id=%s", plan_id)
 
 
 def save_as_template(plan_id: str) -> None:
-    """成交方案沉淀为全局模板（user_id='template'），供其他用户检索复用。
-
-    同 fingerprint 的模板已存在时累加 order_count，不重复创建。
-    """
     if not plan_id:
         return
     conn = get_conn()
@@ -166,7 +150,6 @@ def save_as_template(plan_id: str) -> None:
     if not row:
         return
     fp = row["fingerprint"]
-    # 同指纹模板已存在 → 累加成交数
     existing = conn.execute(
         "SELECT id FROM diy_plans WHERE user_id='template' AND fingerprint=?",
         (fp,),
@@ -177,7 +160,7 @@ def save_as_template(plan_id: str) -> None:
                 "UPDATE diy_plans SET order_count=order_count+1 WHERE id=?",
                 (existing["id"],),
             )
-            logger.info("[diy] 模板已存在，累加成交数 template_id=%s", existing["id"])
+            logger.info("[diy] template exists, increment template_id=%s", existing["id"])
         else:
             conn.execute(
                 "INSERT INTO diy_plans("
@@ -187,37 +170,18 @@ def save_as_template(plan_id: str) -> None:
                 "suitable_for,caution,mood_tags,status,order_count,source_user_id,created_at"
                 ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    "TPL_" + plan_id,
-                    "template",
-                    fp,
-                    row["name"],
-                    row["requirement"],
-                    row["recipient"],
-                    row["occasion"],
-                    row["style"],
-                    row["budget"],
-                    row["color_scheme"],
-                    row["flowers"],
-                    row["packaging"],
-                    row["meaning"],
-                    row["diy_steps"],
-                    row["care_tips"],
-                    row["card_message"],
-                    row["budget_breakdown"],
-                    row["effect_image_url"],
-                    row["difficulty"],
-                    row["est_time"],
-                    row["shelf_life"],
-                    row["suitable_for"],
-                    row["caution"],
-                    row["mood_tags"],
-                    "template",
-                    1,
-                    row["user_id"],
-                    row["created_at"],
+                    "TPL_" + plan_id, "template", fp,
+                    row["name"], row["requirement"], row["recipient"],
+                    row["occasion"], row["style"], row["budget"],
+                    row["color_scheme"], row["flowers"], row["packaging"],
+                    row["meaning"], row["diy_steps"], row["care_tips"],
+                    row["card_message"], row["budget_breakdown"],
+                    row["effect_image_url"], row["difficulty"], row["est_time"],
+                    row["shelf_life"], row["suitable_for"], row["caution"],
+                    row["mood_tags"], "template", 1, row["user_id"], row["created_at"],
                 ),
             )
-            logger.info("[diy] 新模板已创建 plan_id=%s → template_id=TPL_%s", plan_id, plan_id)
+            logger.info("[diy] new template plan_id=%s -> TPL_%s", plan_id, plan_id)
 
 
 def _j(v: str | None, default: Any) -> Any:
@@ -228,7 +192,6 @@ def _j(v: str | None, default: Any) -> Any:
 
 
 def _row_to_plan(row: Any) -> dict[str, Any]:
-    """把 diy_plans 行还原为与 generate_diy_plan 兼容的方案 dict（供卡片/排序/下单）。"""
     flowers = _j(row["flowers"], [])
     design = {
         "main_flowers": [{"name": f["name"], "ratio": f.get("ratio")} for f in flowers if f.get("bucket") == "主花"],
@@ -274,7 +237,7 @@ def _row_to_plan(row: Any) -> dict[str, Any]:
         "budget_breakdown": _j(row["budget_breakdown"], {}),
         "effect_image_url": row["effect_image_url"],
         "effect_prompt": effect_prompt,
-        "price": budget,  # 兼容 _filter_plans_by_requirement / _rank_plans 的预算命中
+        "price": budget,
         "tags": [row["style"], row["occasion"], row["recipient"]],
         "requirement": row["requirement"],
         "order_count": row["order_count"],
@@ -283,7 +246,6 @@ def _row_to_plan(row: Any) -> dict[str, Any]:
 
 
 def get_diy_plan(plan_id: str) -> dict[str, Any] | None:
-    """按 plan_id 取一条已确认的 DIY 方案。"""
     conn = get_conn()
     row = conn.execute("SELECT * FROM diy_plans WHERE id=?", (plan_id,)).fetchone()
     return _row_to_plan(row) if row else None
@@ -292,11 +254,9 @@ def get_diy_plan(plan_id: str) -> dict[str, Any] | None:
 def search_diy_plans(
     user_id: str, requirement: Any | None = None, limit: int = 3
 ) -> list[dict[str, Any]]:
-    """检索某用户已确认的 DIY 方案（个人资产复用），按需求软过滤、按成交数优先。"""
     if not user_id:
         return []
     from backend.storage.repository import _filter_plans_by_requirement
-
     conn = get_conn()
     rows = conn.execute(
         "SELECT * FROM diy_plans WHERE user_id=? ORDER BY order_count DESC, confirmed_at DESC",
@@ -304,7 +264,6 @@ def search_diy_plans(
     ).fetchall()
     plans = [_row_to_plan(r) for r in rows]
     plans = _filter_plans_by_requirement(plans, requirement)
-    # DIY 方案独有字段（recipient/occasion）软过滤：全部不命中时回退不过滤
     if requirement and (requirement.recipient or requirement.occasion):
         want_r = requirement.recipient
         want_o = requirement.occasion
@@ -319,7 +278,6 @@ def search_diy_plans(
 
 
 def list_proven_plans(limit: int = 20) -> list[dict[str, Any]]:
-    """平台级实战方案（学习用）：按成交数/确认时间取 top 方案，供知识库 proven 域检索。"""
     conn = get_conn()
     rows = conn.execute(
         "SELECT * FROM diy_plans ORDER BY order_count DESC, confirmed_at DESC LIMIT ?",
