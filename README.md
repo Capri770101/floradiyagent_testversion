@@ -189,7 +189,7 @@ npm run build          # 生产：产出 index.html / admin.html / merchant.html
 ### 演示账号
 
 | 端 | 账号 | 说明 |
-|---|---|---|
+|---|---|
 | C 端 | `customer_demo / 123456` | 顾客，可完整下单 |
 | 商家端 | `capri_demo / 123456` | 商家，绑定店铺 S001 / S4c8080 |
 | 管理端 | `admin / admin123456` | 平台管理员 |
