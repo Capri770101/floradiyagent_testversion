@@ -2,13 +2,14 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
-import { getOrder, updateOrder, listAddresses, publicConfig } from '../api/shop'
+import { getOrder, getShop, updateOrder, listAddresses, publicConfig } from '../api/shop'
 import { calcPayable } from '../utils/price'
 import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
 import SmartImage from '../components/SmartImage'
 import Reveal from '../components/Reveal'
 import { planImage } from '../assets/imageMap'
+import DeliveryLocationPicker from '../components/DeliveryLocationPicker'
 
 function SectionTitle({ title }) {
   return <h2 className="mb-2 mt-5 px-1 text-[16px] font-medium text-dark">{title}</h2>
@@ -22,6 +23,9 @@ function Row({ label, value, valueClass = 'text-ink' }) {
   )
 }
 
+// 最快配送默认项（拼接店铺配送时长，如「尽快送达（约22分钟）」）
+const FAST_DELIVERY = '尽快送达'
+
 // 06 订单确认
 export default function OrderConfirm() {
   const nav = useNavigate()
@@ -32,12 +36,17 @@ export default function OrderConfirm() {
   // 收货人 / 配送时间 / 备注：真实可编辑，去支付时写回订单（review 点名的「假交互」修复）
   const [recipient, setRecipient] = useState({ name: '', phone: '', address: '' })
   const [deliveryOptions, setDeliveryOptions] = useState([])
-  const [delivery, setDelivery] = useState('')
+  const [delivery, setDelivery] = useState(FAST_DELIVERY) // 默认最快配送
+  const [shopDelivery, setShopDelivery] = useState('')    // 店铺配送时长（如「约22分钟」）
+  const [customDelivery, setCustomDelivery] = useState('') // 自定义时间输入
   const [shippingFee, setShippingFee] = useState(null)
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [addresses, setAddresses] = useState([])
   const [selectedAddr, setSelectedAddr] = useState(null)
+  // 配送位置（地图选点，与收货地址分开）
+  const [deliveryLoc, setDeliveryLoc] = useState(null) // {lat, lng, address}
+  const [locPickerOpen, setLocPickerOpen] = useState(false)
 
   // 配送时段 / 配送费由后端运营配置下发（红线2：不写死在页面）
   useEffect(() => {
@@ -74,8 +83,22 @@ export default function OrderConfirm() {
         setOrder(o)
         const r = o?.recipient || {}
         setRecipient({ name: r.name || '', phone: r.phone || '', address: r.address || '' })
+        // 配送时间：订单已有值则回显；否则默认「尽快送达」
         if (o?.delivery_time) setDelivery(o.delivery_time)
+        else setDelivery(FAST_DELIVERY)
         if (o?.note) setNote(o.note)
+        // 回显已有配送位置
+        if (o?.delivery_location?.lat != null) {
+          setDeliveryLoc(o.delivery_location)
+        }
+        // 拉取店铺配送时长，用于「尽快送达」文案
+        if (o?.shop_id) {
+          getShop(o.shop_id)
+            .then((s) => {
+              if (s?.delivery_time) setShopDelivery(s.delivery_time)
+            })
+            .catch(() => {})
+        }
       })
       .catch((e) => console.error('订单加载失败', e))
       .finally(() => setLoading(false))
@@ -117,8 +140,17 @@ export default function OrderConfirm() {
     if (saving) return
     setSaving(true)
     try {
+      // 自定义时间选中时，用输入框内容作为配送时间
+      const finalDelivery = delivery === 'custom' && customDelivery.trim()
+        ? customDelivery.trim()
+        : delivery
+      if (delivery === 'custom' && !customDelivery.trim()) {
+        toast('请填写自定义配送时间', 'error')
+        setSaving(false)
+        return
+      }
       // 把真实收货信息写回订单，再跳转支付
-      await updateOrder(orderId, { recipient, delivery, note })
+      await updateOrder(orderId, { recipient, delivery: finalDelivery, note, delivery_location: deliveryLoc })
       nav('/pay', { state: { orderId: order.order_id } })
     } catch (e) {
       toast('保存收货信息失败：' + e.message, 'error')
@@ -204,14 +236,55 @@ export default function OrderConfirm() {
         </div>
         </Reveal>
 
+        {/* 配送位置（地图选点，与收货地址分开） */}
+        <Reveal>
+        <SectionTitle title="配送位置" />
+        </Reveal>
+        <Reveal>
+        <div className="space-y-2 rounded-card bg-white p-4 border border-line">
+          <p className="text-[11px] text-sub">地图选点确定配送位置，花店按此计算配送距离（与收货地址可不同）</p>
+          <button
+            onClick={() => setLocPickerOpen(true)}
+            className="press flex w-full items-center justify-between rounded-[2px] border border-dashed border-gold/50 bg-gold/5 px-4 py-3"
+          >
+            <span className={`text-[13px] ${deliveryLoc ? 'text-ink' : 'text-gold'}`}>
+              {deliveryLoc
+                ? `已选：${deliveryLoc.address || `${deliveryLoc.lat}, ${deliveryLoc.lng}`}`
+                : '＋ 地图选点配送位置'}
+            </span>
+          </button>
+          {deliveryLoc?.lat != null && (
+            <p className="text-[10px] text-sub/70">坐标：{deliveryLoc.lat}, {deliveryLoc.lng}</p>
+          )}
+        </div>
+        </Reveal>
+        <DeliveryLocationPicker
+          open={locPickerOpen}
+          onConfirm={(loc) => {
+            setDeliveryLoc(loc)
+            setLocPickerOpen(false)
+          }}
+          onClose={() => setLocPickerOpen(false)}
+        />
+
         <Reveal>
         <SectionTitle title="配送时间" />
         </Reveal>
-        {deliveryOptions.length === 0 ? (
-          <p className="px-1 text-[11px] text-sub">配送时段加载中…</p>
-        ) : (
-          <Reveal>
+        <Reveal>
+        <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
+            {/* 最快配送（默认） */}
+            <button
+              onClick={() => setDelivery(FAST_DELIVERY)}
+              className={`rounded-pill px-3 py-1.5 text-[12px] transition ${
+                delivery === FAST_DELIVERY
+                  ? 'bg-pink text-white'
+                  : 'bg-white text-sub border border-line'
+              }`}
+            >
+              {FAST_DELIVERY}{shopDelivery ? `（${shopDelivery}）` : ''}
+            </button>
+            {/* 运营配置的固定时段 */}
             {deliveryOptions.map((opt) => (
               <button
                 key={opt}
@@ -225,9 +298,31 @@ export default function OrderConfirm() {
                 {opt}
               </button>
             ))}
+            {/* 自定义时间 */}
+            <button
+              onClick={() => setDelivery('custom')}
+              className={`rounded-pill px-3 py-1.5 text-[12px] transition ${
+                delivery === 'custom'
+                  ? 'bg-pink text-white'
+                  : 'bg-white text-sub border border-line'
+              }`}
+            >
+              自定义
+            </button>
           </div>
-          </Reveal>
-        )}
+          {delivery === 'custom' && (
+            <input
+              value={customDelivery}
+              onChange={(e) => setCustomDelivery(e.target.value)}
+              placeholder="请输入配送时间，如 今晚 20:00 / 明天下午"
+              className="maison-field !rounded-pill"
+            />
+          )}
+          {deliveryOptions.length === 0 && delivery !== 'custom' && (
+            <p className="px-1 text-[11px] text-sub">配送时段加载中…</p>
+          )}
+        </div>
+        </Reveal>
 
         <Reveal>
         <SectionTitle title="订单备注" />

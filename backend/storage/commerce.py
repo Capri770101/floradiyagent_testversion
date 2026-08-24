@@ -900,6 +900,7 @@ def create_order(
     delivery: str | None = None,
     note: str | None = None,
     address_id: str | None = None,
+    delivery_location: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """创建订单：服务端按目录取价计算总额、自动抵扣最优优惠券、落库（含收货信息），
     并从购物车移除带 item_id 的项。
@@ -910,6 +911,7 @@ def create_order(
 
     Args:
         address_id: 收货地址 id（用户已存地址时传此即可）；未传或找不到时回退 recipient 手填。
+        delivery_location: 配送位置（地图选点）{lat, lng, address}，与收货地址分开存储。
     """
     conn = get_conn()
     from backend.storage.repository import repo  # 延迟导入，避免循环依赖
@@ -935,6 +937,11 @@ def create_order(
     rname = r.get("name") or r.get("recipient_name")
     rphone = r.get("phone") or r.get("recipient_phone")
     raddr = r.get("address") or r.get("recipient_address")
+    # 配送位置（地图选点，与收货地址分开）
+    dl = delivery_location or {}
+    dlat = dl.get("lat") if dl.get("lat") is not None else None
+    dlng = dl.get("lng") if dl.get("lng") is not None else None
+    daddr = dl.get("address") or ""
     saved_addr = None
     if address_id:
         saved_addr = conn.execute(
@@ -946,8 +953,8 @@ def create_order(
         """INSERT INTO orders
            (order_id, user_id, plan_id, plan_type, shop_id, items, total_price,
             paid, status, expires_at, address_id, recipient_name, recipient_phone, recipient_address,
-            delivery_time, note, created_at)
-           VALUES (?,?,?,?,?,?,?,0,'created',?,?,?,?,?,?,?,?)""",
+            delivery_time, note, delivery_lat, delivery_lng, delivery_address, created_at)
+           VALUES (?,?,?,?,?,?,?,0,'created',?,?,?,?,?,?,?,?,?,?,?)""",
         (
             order_id,
             user_id,
@@ -963,6 +970,9 @@ def create_order(
             raddr,
             delivery,
             note,
+            dlat,
+            dlng,
+            daddr,
             _now(),
         ),
     )
@@ -993,14 +1003,16 @@ def update_order(
     recipient: dict[str, Any] | None = None,
     delivery: str | None = None,
     note: str | None = None,
+    delivery_location: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    """更新订单的收货人 / 配送时间 / 备注（仅允许设置传入的字段）。
+    """更新订单的收货人 / 配送时间 / 备注 / 配送位置（仅允许设置传入的字段）。
 
     Args:
         order_id: 订单号。
         recipient: ``{name, phone, address}`` 任意子集；缺省字段不覆盖。
         delivery: 配送时间描述（如 ``"今天 18:00–20:00"``）。
         note: 订单备注。
+        delivery_location: 配送位置 {lat, lng, address}（地图选点）。
 
     Returns:
         更新后的订单 dict；订单不存在返回 None。
@@ -1026,6 +1038,16 @@ def update_order(
     if note is not None:
         sets.append("note=?")
         vals.append(note)
+    if delivery_location is not None and isinstance(delivery_location, dict):
+        if delivery_location.get("lat") is not None:
+            sets.append("delivery_lat=?")
+            vals.append(delivery_location.get("lat"))
+        if delivery_location.get("lng") is not None:
+            sets.append("delivery_lng=?")
+            vals.append(delivery_location.get("lng"))
+        if "address" in delivery_location:
+            sets.append("delivery_address=?")
+            vals.append(delivery_location.get("address"))
     if sets:
         conn.execute(
             f"UPDATE orders SET {', '.join(sets)} WHERE order_id=?",
@@ -1090,6 +1112,12 @@ def get_order(order_id: str) -> dict[str, Any] | None:
         "name": d.get("recipient_name"),
         "phone": d.get("recipient_phone"),
         "address": d.get("recipient_address"),
+    }
+    # 配送位置（地图选点，与收货地址分开）
+    d["delivery_location"] = {
+        "lat": d.get("delivery_lat"),
+        "lng": d.get("delivery_lng"),
+        "address": d.get("delivery_address"),
     }
     d["logistics"] = list_logistics(order_id)
     d["remaining_seconds"] = _order_remaining_seconds(row)
@@ -1281,10 +1309,16 @@ def pay_order(
     if order["status"] not in ("created", "pending_payment"):
         raise ValueError(f"当前状态 {order['status']} 不可支付")
 
-    # 优惠券抵扣：应付金额 = total_price - discount（各支付渠道按此金额下单收款）。
-    # 不改动订单原值，仅向支付渠道传入应付金额，保证「展示的折扣」与「实付」一致。
+    # 优惠券抵扣：应付金额 = 商品金额 + 配送费 - 优惠券（各支付渠道按此金额下单收款）。
+    # 配送费来自运营配置（与前端 calcPayable 同源），保证「前端应付」与「实付」一致。
+    from backend.storage import config as config_store
+
+    shipping = float(config_store.get_config(config_store.K_SHIPPING, config_store.DEFAULTS[config_store.K_SHIPPING]) or 0)
     pay_order_ctx = dict(order)
-    payable = max(0.0, float(order.get("total_price") or 0) - float(order.get("discount") or 0))
+    payable = max(
+        0.0,
+        float(order.get("total_price") or 0) + shipping - float(order.get("discount") or 0),
+    )
     pay_order_ctx["total_price"] = payable
 
     provider = payment_module.get_provider()
@@ -1315,7 +1349,7 @@ def pay_order(
         if cur.rowcount > 0:
             add_points(
                 order["user_id"],
-                max(1, int(round(float(order.get("total_price") or 0)))),
+                max(1, int(round(payable))),
                 "订单消费返积分",
                 order_id,
             )
@@ -1363,10 +1397,18 @@ def mark_order_paid(order_id: str, transaction_id: str = "") -> bool:
         (now, order_id),
     )
     _append_logistics(order_id, "支付成功，商家备货中")
-    # 真实网关回调确认：同样按金额发放积分（与沙箱渠道行为一致）
+    # 实付金额 = 商品 + 配送费 - 优惠券（与 pay_order 同一口径，通知/积分/对账统一）
+    from backend.storage import config as config_store
+
+    shipping = float(config_store.get_config(config_store.K_SHIPPING, config_store.DEFAULTS[config_store.K_SHIPPING]) or 0)
+    payable = max(
+        0.0,
+        float(row["total_price"] or 0) + shipping - float(row["discount"] or 0),
+    )
+    # 真实网关回调确认：同样按实付发放积分（与沙箱渠道行为一致）
     add_points(
         row["user_id"],
-        max(1, int(round(float(row["total_price"] or 0)))),
+        max(1, int(round(payable))),
         "订单消费返积分",
         order_id,
     )
@@ -1381,7 +1423,7 @@ def mark_order_paid(order_id: str, transaction_id: str = "") -> bool:
         conn.execute(
             """INSERT INTO payments (id, order_id, method, amount, status, transaction_id, created_at, paid_at)
                VALUES (?,?,?,?,?,?,?,?)""",
-            ("P_" + uuid.uuid4().hex[:10], order_id, "unknown", float(row["total_price"] or 0),
+            ("P_" + uuid.uuid4().hex[:10], order_id, "unknown", payable,
              "paid", transaction_id, now, now),
         )
     conn.commit()
@@ -1390,7 +1432,7 @@ def mark_order_paid(order_id: str, transaction_id: str = "") -> bool:
 
     notify.try_create(
         row["user_id"], notify.T_ORDER, "支付成功",
-        f"订单 {order_id} 已支付 ¥{float(row['total_price'] or 0)}，商家备货中",
+        f"订单 {order_id} 已支付 ¥{payable:.2f}，商家备货中",
         ref_type="order", ref_id=order_id,
     )
     return True

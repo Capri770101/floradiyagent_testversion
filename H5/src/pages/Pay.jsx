@@ -64,7 +64,7 @@ export default function Pay() {
   const mm = String(Math.floor(remain / 60)).padStart(2, '0')
   const ss = String(remain % 60).padStart(2, '0')
   const total = order ? calcPayable(order.total_price, order.discount, shippingFee) : 0
-  const earnedPoints = order ? Math.max(1, Math.round(Number(order.total_price) || 0)) : 0
+  const earnedPoints = total ? Math.max(1, Math.round(total)) : 0
   const first = order?.items?.[0]
   const recipient = order?.recipient
 

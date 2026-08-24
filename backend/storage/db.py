@@ -517,6 +517,10 @@ _ALTERS = [
     ("orders", "recipient_address", "ALTER TABLE orders ADD COLUMN recipient_address TEXT"),
     ("orders", "delivery_time", "ALTER TABLE orders ADD COLUMN delivery_time TEXT"),
     ("orders", "note", "ALTER TABLE orders ADD COLUMN note TEXT"),
+    # orders: 配送位置（与收货地址分开，地图选点；用于配送距离计算）
+    ("orders", "delivery_lat", "ALTER TABLE orders ADD COLUMN delivery_lat REAL"),
+    ("orders", "delivery_lng", "ALTER TABLE orders ADD COLUMN delivery_lng REAL"),
+    ("orders", "delivery_address", "ALTER TABLE orders ADD COLUMN delivery_address TEXT"),
     # orders: 优惠券抵扣
     ("orders", "coupon_id", "ALTER TABLE orders ADD COLUMN coupon_id TEXT"),
     ("orders", "discount", "ALTER TABLE orders ADD COLUMN discount REAL NOT NULL DEFAULT 0"),

@@ -26,6 +26,10 @@ from backend.storage.payment import (
 def setup_module(module) -> None:
     # conftest 已将 DB_PATH 指向临时文件，这里建表 + 种子数据
     init_db()
+    # 固定配送费，避免受其他测试（如 test_admin_ext 改 shipping_fee=8）污染，保证断言确定
+    from backend.storage import config as config_store
+
+    config_store.set_config(config_store.K_SHIPPING, 5.0)
 
 
 # --------------------------------------------------------------------------- #
@@ -92,10 +96,10 @@ def test_pay_order_sandbox_records_payment_and_marks_paid() -> None:
     order = commerce.get_order(order_id)
     assert order["paid"] is True
     assert order["status"] == "paid"
-    # 应付金额 = 总额 - 优惠券抵扣（P001×2=398，自动满99减10 → 388）
+    # 应付金额 = 商品总额 - 优惠券 + 配送费（P001×2=398，自动满99减10，运费5 → 393）
     assert float(order["total_price"]) == 398.0
     assert float(order["discount"]) == 10.0
-    # payments 行已落库且为 paid，金额 = 实付（已扣券）
+    # payments 行已落库且为 paid，金额 = 实付（商品 - 券 + 配送费）
     from backend.storage.db import get_conn
 
     pay_row = get_conn().execute(
@@ -104,7 +108,7 @@ def test_pay_order_sandbox_records_payment_and_marks_paid() -> None:
     assert pay_row is not None
     assert pay_row["status"] == "paid"
     assert pay_row["method"] == "wechat"
-    assert float(pay_row["amount"]) == 388.0
+    assert float(pay_row["amount"]) == 393.0
 
 
 def test_pay_order_unknown_order_returns_none() -> None:

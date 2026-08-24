@@ -17,8 +17,9 @@ from backend.config import settings
 from backend.security import get_current_user
 from backend.storage import catalog as catalog_store
 from backend.storage import commerce, repository
-from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
+
+from fastapi import HTTPException, Request
 
 #: 进程级单例仓储（按 DATA_SOURCE 选择；含 MockRepository 的示例方案/店铺）
 repo = repository.repo
@@ -209,6 +210,9 @@ class OrderCreateRequest(BaseModel):
     delivery: str | None = None
     note: str | None = None
     address_id: str | None = Field(None, description="已存收货地址 id；传了则忽略 recipient 字段")
+    delivery_location: dict[str, Any] | None = Field(
+        None, description="配送位置（地图选点）：{lat, lng, address}，与收货地址分开存储"
+    )
 
 
 
@@ -226,6 +230,9 @@ class OrderPatchRequest(BaseModel):
     recipient: dict[str, Any] | None = Field(None, description="{name, phone, address} 任意子集")
     delivery: str | None = Field(None, description="配送时间描述")
     note: str | None = Field(None, description="订单备注")
+    delivery_location: dict[str, Any] | None = Field(
+        None, description="配送位置（地图选点）：{lat, lng, address}，与收货地址分开存储"
+    )
 
 
 

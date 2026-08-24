@@ -121,6 +121,7 @@ async def post_order(req: OrderCreateRequest, request: Request) -> dict[str, Any
             req.delivery,
             req.note,
             req.address_id,
+            req.delivery_location,
         )
     except ValueError as exc:
         # 方案不存在/已下架（服务端取价失败）→ 400，绝不信客户端价格
@@ -322,11 +323,11 @@ async def get_order_endpoint(order_id: str, request: Request, user_id: str | Non
 
 @router.patch("/orders/{order_id}")
 async def patch_order(order_id: str, req: OrderPatchRequest, request: Request) -> dict[str, Any]:
-    """更新订单收货信息（收货人 / 配送时间 / 备注），仅订单主人可改，且只能改传入字段。"""
+    """更新订单收货信息（收货人 / 配送时间 / 备注 / 配送位置），仅订单主人可改，且只能改传入字段。"""
     uid = await resolve_uid(request, None)
     await _assert_order_owner(order_id, uid)
     o = await asyncio.to_thread(
-        commerce.update_order, order_id, req.recipient, req.delivery, req.note
+        commerce.update_order, order_id, req.recipient, req.delivery, req.note, req.delivery_location
     )
     if not o:
         raise HTTPException(status_code=404, detail="订单不存在")

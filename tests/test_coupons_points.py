@@ -8,6 +8,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(autouse=True)
+def _fixed_shipping():
+    """固定配送费=5，避免受其他测试（test_admin_ext 改 8）污染，保证积分断言确定。"""
+    from backend.storage import config as config_store
+
+    config_store.set_config(config_store.K_SHIPPING, 5.0)
+    yield
+
+
 @pytest.fixture()
 def client():
     with TestClient(api.app) as c:
@@ -73,7 +82,7 @@ def test_pay_awards_points(client):
     )
     assert r.status_code == 200
     points = client.get("/points", headers={"Authorization": f"Bearer {token}"}).json()
-    assert points["balance"] == 199  # 订单总额以目录价计（P001=199），1:1 返积分
+    assert points["balance"] == 194  # 实付 = 目录价(199) - 券(10) + 运费(5)，1:1 返积分
     assert any("返积分" in rec["reason"] for rec in points["records"])
 
 
