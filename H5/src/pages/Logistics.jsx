@@ -9,7 +9,6 @@ import { toast } from '../utils/toast'
 import { statusMeta } from '../utils/status'
 import { fmtMoney } from '../utils/price'
 
-// 物流跟踪页：订单概要 + 时间线，商家/用户共用数据源
 export default function Logistics() {
   const nav = useNavigate()
   const { orderId } = useParams()
@@ -52,7 +51,6 @@ export default function Logistics() {
         </p>
       ) : (
         <>
-          {/* 订单概要 */}
           <Reveal>
           <div className="mx-5 mt-4 rounded-card bg-white p-4 border border-line">
             <div className="flex items-center justify-between">
@@ -69,7 +67,6 @@ export default function Logistics() {
           </div>
           </Reveal>
 
-          {/* 商品明细 */}
           <Reveal delay={80}>
           <div className="mx-5 mt-3 rounded-card bg-white p-4 border border-line">
             <p className="eyebrow">商品明细</p>
@@ -112,7 +109,6 @@ export default function Logistics() {
           </div>
           </Reveal>
 
-          {/* 物流时间线 */}
           <Reveal delay={160}>
           <div className="mx-5 mt-3 rounded-card bg-white p-4 border border-line">
             <p className="eyebrow">物流跟踪</p>
