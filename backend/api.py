@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             missing.append("AUTH_REQUIRED=true")
         if missing:
             raise RuntimeError(
-                "生产环境（APP_ENV=prod）启动校验失败，缺少: " + ", ".join(missing)
+                "生产环境（APP_ENV=prod）启动校验失败，缺少: ", ", ".join(missing)
                 + "。请先在 misc/.env 配置后再启动。"
             )
     # 上线前配置自检：缺失关键项给出明确告警，避免「半成品」直接上线
