@@ -62,12 +62,14 @@ _limiter = SlidingWindowLimiter()
 
 
 
+
 def _client_ip(request: Request) -> str:
     """取客户端 IP（透传 X-Forwarded-For 时取第一个值）。"""
     xff = request.headers.get("X-Forwarded-For", "")
     if xff:
         return xff.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
+
 
 
 
@@ -85,12 +87,14 @@ def _check_rate(key: str, limit: int, window: float = 60.0) -> None:
 
 
 
+
 class ChatRequest(BaseModel):
     user_id: str | None = Field(None, min_length=1, max_length=64, description="用户唯一标识（鉴权模式下以 JWT 为准，可不传）")
     message: str = Field(..., min_length=1, max_length=4000, description="用户消息")
     session_id: str | None = Field(None, description="可选，不传则服务端生成")
     user_role: str = Field("user", description="user | merchant | admin（本期仅 user）")
     location: dict[str, float] | None = Field(None, description="可选，{lat, lng} 用于距离计算")
+
 
 
 
@@ -103,9 +107,11 @@ class ResetRequest(BaseModel):
 
 
 
+
 class CreateConvRequest(BaseModel):
     user_id: str | None = Field(None, min_length=1, max_length=64, description="鉴权模式下以 JWT 为准，可不传")
     title: str | None = Field(None, description="会话标题（留空则由首条消息自动生成）")
+
 
 
 
@@ -117,8 +123,10 @@ class RenameConvRequest(BaseModel):
 
 
 
+
 class WxLoginRequest(BaseModel):
     code: str = Field(..., min_length=1, max_length=128, description="wx.login() 返回的一次性登录凭证 code")
+
 
 
 
@@ -131,9 +139,11 @@ class RegisterRequest(BaseModel):
 
 
 
+
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=32)
     password: str = Field(..., min_length=1, max_length=64)
+
 
 
 
@@ -146,8 +156,10 @@ class MerchantRegisterRequest(BaseModel):
 
 
 
+
 class PhoneCodeRequest(BaseModel):
     phone: str = Field(..., min_length=6, max_length=20, description="手机号（dev 模式不真实发送，验证码见 settings.sms_dev_code）")
+
 
 
 
@@ -159,6 +171,7 @@ class PhoneLoginRequest(BaseModel):
 
 
 
+
 class WxBindRequest(BaseModel):
     code: str = Field(..., min_length=1, max_length=128, description="wx.login() 返回的一次性登录凭证 code")
 
@@ -166,6 +179,7 @@ class WxBindRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 # 电商请求模型（购物车 / 订单 / 支付）
 # --------------------------------------------------------------------------- #
+
 
 
 
@@ -187,6 +201,7 @@ class CartMergeRequest(BaseModel):
 class CartUpdateRequest(BaseModel):
     qty: int | None = Field(None, ge=1, description="新的数量（>=1）")
     selected: bool | None = Field(None, description="是否勾选结算")
+
 
 
 
@@ -246,6 +261,7 @@ class ImageGenRequest(BaseModel):
 
 
 
+
 async def resolve_uid(request: Request, body_user_id: str | None = None) -> str | None:
     """解析当前请求归属的用户 ID。
 
@@ -260,6 +276,7 @@ async def resolve_uid(request: Request, body_user_id: str | None = None) -> str 
     if token_uid:
         return token_uid
     return body_user_id
+
 
 
 
@@ -301,18 +318,15 @@ def _plan_card(p: dict[str, Any]) -> dict[str, Any]:
         "id": p["plan_id"],
         "name": p["name"],
         "price": p["price"],
-        "merchant_name": p.get("merchant_name", ""),  # 透传给商品详情/加购/下单
-        "shop_id": catalog_store.plan_shop_id(p["plan_id"]),  # 商品对应的店家（跳转店铺页）
-        "label": _plan_label(p),  # Premium / Limited / New 角标
-        # 数据一致性（规则 2）：评分/已售一律以 DB 为准（plans.rating / plans.sold），
-        # 不再写死或 hash 推导；缺失时兜底默认值（兼容 Mock 数据源）。
+        "merchant_name": p.get("merchant_name", ""),
+        "shop_id": catalog_store.plan_shop_id(p["plan_id"]),
+        "label": _plan_label(p),
         "rating": str(p.get("rating", 4.8)),
         "sold": int(p.get("sold", 0)),
         "tags": p.get("tags", []),
         "desc": p.get("desc", ""),
-        "image": None,  # H5 用占位色块渲染，不依赖真实图
+        "image": p.get("effect_image_url"),
     }
-
 
 
 
@@ -353,7 +367,6 @@ def _plan_full(p: dict[str, Any]) -> dict[str, Any]:
     """方案详情（商品详情页 / DIY 详情直链兜底）。"""
     base = _plan_card(p)
     base["detail"] = p.get("desc", "")
-    # 推荐理由：DB plans.ai_reason 为唯一来源（seed/商家后台维护），缺省时模板兜底
     base["aiReason"] = p.get("ai_reason") or f"根据你的需求，这束「{p['name']}」{p.get('desc', '')}"
     base["main_flowers"] = p.get("main_flowers") or _derive_flowers(p)
     base["packaging"] = p.get("packaging") or _derive_packaging(p)
@@ -376,8 +389,6 @@ def _shop_card(s: dict[str, Any], location: dict[str, float] | None = None) -> d
         "dist": f"{d:.1f}km" if isinstance(d, float) else f"{d}km",
         "eta": "配送约30分钟",
         "price_range": s.get("price_range", ""),
-        # 数据一致性（规则 2）：起送/配送费读 DB（shops.min_delivery / delivery_fee），
-        # 缺失时按价位档/距离兜底（兼容 Mock 数据源）。
         "min_delivery": float(s.get("min_delivery") or (
             (int(float(s.get("price_range", "0").split("-")[0])) // 10 * 10)
             if s.get("price_range") and s["price_range"].split("-")[0].strip().isdigit()
@@ -393,10 +404,7 @@ def _shop_card(s: dict[str, Any], location: dict[str, float] | None = None) -> d
 
 
 def _shop_menu_item(p: dict[str, Any]) -> dict[str, Any]:
-    """店铺详情菜单项（美团式商品卡字段）。
-
-    月售以 DB plans.sold 为准（数据一致性规则 2），缺失时兜底 0。
-    """
+    """店铺详情菜单项（美团式商品卡字段）。"""
     return {
         "id": p["plan_id"],
         "name": p["name"],
@@ -413,13 +421,8 @@ def _shop_menu_item(p: dict[str, Any]) -> dict[str, Any]:
 
 
 def _shop_full(s: dict[str, Any]) -> dict[str, Any]:
-    """店铺详情（美团外卖式）：经营信息 + 分类菜单（左栏分类 / 右栏商品）。
-
-    数据一致性（规则 2）：经营信息一律读 DB（shops 表种子/商家后台维护字段），
-    不再 API 推导；缺失时兜底默认值（兼容 Mock 数据源/旧库迁移前）。
-    """
+    """店铺详情（美团外卖式）：经营信息 + 分类菜单（左栏分类 / 右栏商品）。"""
     plans = [p for p in (repo.get_plan(pid) for pid in s.get("plan_ids", [])) if p]
-    # 分类菜单：按 categories 排序分组，未分类的兜底到「其他」
     cats = catalog_store.list_categories()
     cat_map = {c["id"]: c["name"] for c in cats}
     menu: list[dict[str, Any]] = []
@@ -438,7 +441,6 @@ def _shop_full(s: dict[str, Any]) -> dict[str, Any]:
         "status": "营业中",
         "distance_km": float(s.get("distance_km") or 0),
         "intro": s.get("intro", "专注鲜花定制与同城速递，包装精致、准时送达。"),
-        # 美团式经营信息（DB 字段；演示值由 seed 灌入，上线前可清空重灌真实数据）
         "sales": int(s.get("sales", 0)),
         "min_delivery": float(s.get("min_delivery") or 30),
         "delivery_fee": float(s.get("delivery_fee") or 5),
@@ -449,7 +451,6 @@ def _shop_full(s: dict[str, Any]) -> dict[str, Any]:
         "image": s.get("image") or "",
         "cover": s.get("cover") or "",
         "logo": s.get("logo") or "",
-        # 分类菜单
         "menu": menu,
         "recommend": [
             {"id": p["plan_id"], "name": p["name"], "price": p["price"]}
@@ -484,7 +485,6 @@ class PlanWriteRequest(BaseModel):
 
 
 
-
 class ShopWriteRequest(BaseModel):
     shop_id: str | None = Field(None, max_length=30)
     name: str | None = Field(None, max_length=40)
@@ -496,14 +496,12 @@ class ShopWriteRequest(BaseModel):
     status: str | None = Field(None, max_length=10)
     intro: str | None = Field(None, max_length=120)
     image: str | None = Field(None, max_length=200)
-    # 店铺装修：封面横幅 / Logo / 经营信息（商家后台维护）
     cover: str | None = Field(None, max_length=200)
     logo: str | None = Field(None, max_length=200)
     hours: str | None = Field(None, max_length=30)
     address: str | None = Field(None, max_length=120)
     notice: str | None = Field(None, max_length=200)
     plan_ids: list[str] | str | None = None
-
 
 
 
@@ -515,13 +513,11 @@ class AddressWriteRequest(BaseModel):
 
 
 
-
 class AddressPatchRequest(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=32)
     phone: str | None = Field(None, min_length=5, max_length=20)
     address: str | None = Field(None, min_length=1, max_length=120)
     is_default: bool | None = None
-
 
 
 
@@ -532,10 +528,7 @@ class FavoriteRequest(BaseModel):
 
 
 async def _require_merchant(request: Request) -> str:
-    """商家校验：必须携带有效 JWT 且角色为 merchant，否则 401/403。
-
-    平台管理员（admin）走独立管理后台，不占用商家工作台（2026-08 决策）。
-    """
+    """商家校验：必须携带有效 JWT 且角色为 merchant，否则 401/403。"""
     uid = security.resolve_strict(request)
     role = await asyncio.to_thread(security.get_user_role, uid)
     if role != "merchant":
@@ -565,10 +558,7 @@ class OrderActionRequest(BaseModel):
 
 
 
-
 class ReviewRequest(BaseModel):
     order_id: str = Field(..., min_length=1, max_length=64)
     rating: int = Field(..., ge=1, le=5, description="1-5 星")
     content: str = Field("", max_length=500, description="评价内容（选填）")
-
-
