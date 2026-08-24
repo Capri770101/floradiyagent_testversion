@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { IconSearch } from '../components/icons'
 import { FloraBloom } from '../components/FloralDecor'
 import ProductCard from '../components/ProductCard'
+import Reveal from '../components/Reveal'
 import { listPlans, addCart } from '../api/shop'
 import { getUserId } from '../api/chat'
 import { matchPinyinFields } from '../utils/pinyin'
@@ -46,13 +47,16 @@ export default function Category() {
   return (
     <div className="min-h-full bg-bg pb-10">
       {/* 品牌头 */}
+      <Reveal>
       <div className="px-5 pt-8">
         <p className="eyebrow">Collection</p>
         <h1 className="mt-1 font-serif-cn text-[28px] font-normal text-ink">发现好花</h1>
         <p className="mt-1.5 text-[11px] text-sub">挑选心意，从一束花开始</p>
       </div>
+      </Reveal>
 
       {/* 搜索条（聚焦出金色竖线 + 花饰点缀） */}
+      <Reveal delay={80}>
       <div className="field-shell mx-5 mt-5 flex h-[42px] items-center gap-2 rounded-[2px] border border-line bg-white px-4">
         <IconSearch width={15} height={15} className="text-gold" />
         <input
@@ -63,17 +67,22 @@ export default function Category() {
         />
         <FloraBloom width={13} height={13} className="shrink-0 text-gold/40" />
       </div>
+      </Reveal>
 
       {/* 精选花束 */}
       <div className="mt-9 px-5">
+        <Reveal delay={140}>
         <div className="text-center">
           <p className="eyebrow">Signature Collection</p>
           <h2 className="mt-2 font-serif-cn text-[26px] font-normal text-ink">精选花束</h2>
           <div className="mx-auto mt-4 h-px w-9 bg-gold" />
         </div>
+        </Reveal>
         <div className="mt-7 space-y-4">
-          {featured.map((f) => (
-            <ProductCard key={f.id} p={f} onOpen={() => nav(`/product/${f.id}`)} onAdd={onAdd} />
+          {featured.map((f, i) => (
+            <Reveal key={f.id} delay={i * 140}>
+            <ProductCard p={f} onOpen={() => nav(`/product/${f.id}`)} onAdd={onAdd} />
+            </Reveal>
           ))}
           {featured.length === 0 && (
             <p className="py-10 text-center text-[12px] text-stone">没有找到匹配的花束</p>

@@ -110,6 +110,12 @@ class Settings(BaseSettings):
     sms_provider: str = "dev"             # dev | real（real 需自行实现发送通道）
     phone_code_ttl_seconds: int = 300     # 验证码有效期（秒）
 
+    # ---- 腾讯位置服务（地图选点 / 逆地理编码）----
+    # 前端 H5/.env 的 VITE_TENCENT_MAP_KEY 用于地图 SDK 加载（前端可见）；
+    # 后端此 key 用于 WebService API（逆地理编码），应配置独立的 key 或同一 key + 域名白名单。
+    tencent_map_key: str = ""
+    tencent_geocode_url: str = "https://apis.map.qq.com/ws/geocoder/v1/"
+
     # ---- 订单支付超时（分钟）----
     # created / pending_payment 的订单超过该时长未支付，读取时懒过期自动取消（并返还优惠券）。
     order_pay_timeout_minutes: int = 30

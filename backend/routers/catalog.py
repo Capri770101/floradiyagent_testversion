@@ -23,10 +23,43 @@ from backend.routers.common import (  # noqa: F401  # 共享单例/辅助（按�
     resolve_uid,
 )
 from backend.storage import config as config_store
+
 from fastapi import APIRouter, HTTPException
 
 router = APIRouter(tags=["catalog"])
 logger = logging.getLogger("api")
+
+@router.get("/geocode")
+async def geocode(lat: float, lng: float) -> dict[str, Any]:
+    """逆地理编码：坐标 → 地址（腾讯位置服务 WebService API，后端代理避免前端 CORS）。
+
+    供订单确认页地图选点后把坐标转为地址文本。未配置 TENCENT_MAP_KEY 时返回空 address。
+    """
+    if not settings.tencent_map_key:
+        return {"status": "no_key", "address": ""}
+    import httpx
+
+    params = {
+        "location": f"{lat},{lng}",
+        "key": settings.tencent_map_key,
+        "get_poi": "0",
+    }
+    try:
+        resp = await asyncio.to_thread(
+            lambda: httpx.get(settings.tencent_geocode_url, params=params, timeout=8.0).json()
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[geocode] 逆地理编码失败 lat=%s lng=%s: %s", lat, lng, exc)
+        return {"status": "error", "address": ""}
+    if resp.get("status") != 0:
+        return {"status": str(resp.get("status", "error")), "address": ""}
+    result = resp.get("result") or {}
+    return {
+        "status": "ok",
+        "address": result.get("formatted_addresses", {}).get("recommend")
+        or result.get("address")
+        or "",
+    }
 
 @router.get("/config")
 async def public_config() -> dict[str, Any]:
