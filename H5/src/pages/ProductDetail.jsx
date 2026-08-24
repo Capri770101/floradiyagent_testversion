@@ -15,7 +15,6 @@ import Reveal from '../components/Reveal'
 import ReportDialog from '../components/ReportDialog'
 import { planImage } from '../assets/imageMap'
 
-// 04 商品详情
 export default function ProductDetail() {
   const { id } = useParams()
   const nav = useNavigate()
