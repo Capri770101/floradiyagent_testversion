@@ -1480,7 +1480,8 @@ def revise_diy_plan(plan: str, feedback: str, _context: dict | None = None) -> s
 @register_tool(
     name="generate_effect_image",
     description=(
-        "为 DIY 方案提交 AI 生图任务。若传入 latest_diy 则自动使用最近一次设计的方案生成精确 prompt"
+        "为 DIY 方案提交 AI 生图任务（方案设计完成后系统会自动调用，无需用户确认）。"
+        "若传入 latest_diy 则自动使用最近一次设计的方案生成精确 prompt"
         "（花材/色彩/形态/包装一致）；也可直接传入自定义描述。立即返回 task_id，客户端通过 GET /tasks/{task_id} 轮询。"
     ),
     parameters={
@@ -1499,10 +1500,10 @@ def revise_diy_plan(plan: str, feedback: str, _context: dict | None = None) -> s
 def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None) -> str:
     """提交生图异步任务，返回 task_id。基于最近设计方案生成精确 prompt。
 
-    生图安全闸门（后端强约束，不依赖模型自觉）—— 融合自 111 的 session_flags 守卫：
+    生图安全闸门（后端强约束，不依赖模型自觉）：
     - skill 编排：只要有「已设计方案」即可生图，不再绑定 IMAGE_GEN 阶段；
-    - 必须已获用户明确同意（image_confirmed 标记，由 agent 识别肯定意图写入）；
-    - 同一轮确认只允许提交一次（image_submitted 标记）。
+    - 方案即生图：方案设计/调整完成后自动出图，无需用户确认（不再要求 image_confirmed）；
+    - 同一方案只允许提交一次（image_submitted 标记），方案调整后自动放行。
     """
     ctx = _context or {}
     sid = ctx.get("session_id", "")
@@ -1518,11 +1519,6 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
                         "请先调用 generate_diy_plan 设计一版方案，再来生成效果图。"
                     )
                 },
-                ensure_ascii=False,
-            )
-        if memory.get_session_flag(uid, sid, "image_confirmed") != "1":
-            return json.dumps(
-                {"error": "生成效果图前必须先获得用户明确同意（请先询问用户）"},
                 ensure_ascii=False,
             )
         # 防重按「方案」而非「会话」：image_submitted 存已生图方案的 plan_id，
@@ -1554,7 +1550,7 @@ def generate_effect_image(plan: str = "latest_diy", _context: dict | None = None
                     "error": (
                         "当前会话还没有任何 DIY 设计方案，无法生成效果图。"
                         "请先描述需求，由我调用 generate_diy_plan 设计一版方案（会自动写入会话），"
-                        "确认后再生成效果图。"
+                        "方案设计完成后效果图会随卡片自动生成。"
                     )
                 },
                 ensure_ascii=False,
