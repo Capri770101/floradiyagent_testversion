@@ -5,18 +5,6 @@
   ``asyncio.to_thread`` 调用同步存储函数，配合「每线程独立连接」避免跨线程共享。
 - 使用 WAL 模式 + busy_timeout，多个请求并发读写更稳。
 - 所有建表在此集中维护，启动时调用 init_db() 即可（幂等 + 迁移兼容旧库）。
-
-交付级数据模型（含电商 + 智能体记忆 + 多会话）：
-- 用户/地址：users、addresses
-- 商品目录：categories、plans、shops、shop_plans（多对多）
-- 商家智库：shop_profiles（1:1 档案）、shop_styles / shop_scenes（风格/场景多对多，供 AI 检索）
-- 智能体记忆与多会话：sessions（= 会话，含 title/preview）、messages、session_flags、memories
-- 电商交易：cart_items、orders、order_items、payments、reviews
-- 任务：image_tasks
-
-完整性策略：SQLite 外键在跨表删除/迁移时易踩坑，故不强制开启 PRAGMA foreign_keys，
-改以「应用层维护引用 + 关键列建索引」保证可交付级性能与一致性；外键语义在
-DDL 注释中明确标注，便于将来迁 Postgres/MySQL 时直接映射。
 """
 
 from __future__ import annotations
@@ -31,20 +19,18 @@ from backend.config import settings
 
 logger = logging.getLogger("db")
 
-#: 单线程连接缓存，避免每条 SQL 都重连
 _thread_local = threading.local()
 
-#: 建表语句（幂等：CREATE TABLE IF NOT EXISTS）
 _SCHEMA = """
 -- 用户（微信 openid 维度；H5 未登录时用本地生成的匿名 uid）
 CREATE TABLE IF NOT EXISTS users (
-    id          TEXT PRIMARY KEY,        -- 与 user_id 同值（openid 或匿名 uid）
-    openid      TEXT UNIQUE,             -- 微信 openid（匿名用户为空）
+    id          TEXT PRIMARY KEY,
+    openid      TEXT UNIQUE,
     nickname    TEXT,
     avatar      TEXT,
     phone       TEXT,
-    role        TEXT NOT NULL DEFAULT 'user',  -- user | merchant | admin（权限模型）
-    status      TEXT NOT NULL DEFAULT 'active', -- active | banned（管理后台禁用）
+    role        TEXT NOT NULL DEFAULT 'user',
+    status      TEXT NOT NULL DEFAULT 'active',
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -59,51 +45,50 @@ CREATE TABLE IF NOT EXISTS categories (
 
 -- 花艺方案（商品目录，DB 为唯一来源，init 时从种子数据灌入）
 CREATE TABLE IF NOT EXISTS plans (
-    id               TEXT PRIMARY KEY,           -- plan_id，如 P001
+    id               TEXT PRIMARY KEY,
     name             TEXT NOT NULL,
     price            REAL NOT NULL DEFAULT 0,
     desc             TEXT,
     effect_image_url TEXT,
-    merchant_name    TEXT,                       -- 示例商家名（用于购物车/下单归类展示）
-    tags             TEXT,                       -- JSON 数组字符串
-    style            TEXT,                       -- 风格，如 韩式/日式/田园
-    category_id      TEXT,                       -- -> categories.id
-    rating           REAL NOT NULL DEFAULT 4.8,  -- 评分（种子/商家后台维护，上线前可清空重灌）
-    sold             INTEGER NOT NULL DEFAULT 0, -- 已售（种子演示值，正式上线由订单统计）
-    ai_reason        TEXT,                       -- 推荐理由（种子/商家后台维护，详情页 aiReason 来源）
+    merchant_name    TEXT,
+    tags             TEXT,
+    style            TEXT,
+    category_id      TEXT,
+    rating           REAL NOT NULL DEFAULT 4.8,
+    sold             INTEGER NOT NULL DEFAULT 0,
+    ai_reason        TEXT,
     created_at       TEXT NOT NULL
 );
 
--- 用户 DIY 方案资产库：只收录「用户确认过」的方案（确认→confirmed，成交→ordered）；
--- 按 user_id + 内容指纹去重，同一用户同一配方不重复落库
+-- 用户 DIY 方案资产库：只收录「用户确认过」的方案
 CREATE TABLE IF NOT EXISTS diy_plans (
-    id               TEXT PRIMARY KEY,           -- plan_id，如 DIY_1a2b3c
+    id               TEXT PRIMARY KEY,
     user_id          TEXT NOT NULL,
-    fingerprint      TEXT NOT NULL,              -- 内容指纹（花材/角色/风格/对象/预算/包装）
+    fingerprint      TEXT NOT NULL,
     name             TEXT NOT NULL,
-    requirement      TEXT,                       -- 原始需求文本（学习/复用输入）
+    requirement      TEXT,
     recipient        TEXT,
     occasion         TEXT,
     style            TEXT,
     budget           REAL,
-    color_scheme     TEXT,                       -- JSON 数组
-    flowers          TEXT,                       -- JSON [{bucket,name,ratio}]
+    color_scheme     TEXT,
+    flowers          TEXT,
     packaging        TEXT,
     meaning          TEXT,
-    diy_steps        TEXT,                       -- JSON 数组
+    diy_steps        TEXT,
     care_tips        TEXT,
     card_message     TEXT,
-    budget_breakdown TEXT,                       -- JSON 对象
+    budget_breakdown TEXT,
     effect_image_url TEXT,
-    -- 卡片内容扩充（模块二）：LLM 设计产出 + 规则兜底，旧方案留空（前端显示 —）
-    difficulty       TEXT,                       -- 制作难度（入门/进阶/高手）
-    est_time         INTEGER,                    -- 预计耗时（分钟）
-    shelf_life       TEXT,                       -- 保鲜期/花期（收到后可养几天）
-    suitable_for     TEXT,                       -- JSON 数组：适宜人群
-    caution          TEXT,                       -- 禁忌/提醒（如花粉过敏慎选）
-    mood_tags        TEXT,                       -- JSON 数组：情绪标签（文字版）
+    difficulty       TEXT,
+    est_time         INTEGER,
+    shelf_life       TEXT,
+    suitable_for     TEXT,
+    caution          TEXT,
+    mood_tags        TEXT,
     status           TEXT NOT NULL DEFAULT 'confirmed',
     order_count      INTEGER NOT NULL DEFAULT 0,
+    source_user_id   TEXT,
     created_at       TEXT NOT NULL,
     confirmed_at     TEXT,
     UNIQUE (user_id, fingerprint)
@@ -113,23 +98,22 @@ CREATE INDEX IF NOT EXISTS idx_diy_plans_user ON diy_plans(user_id);
 
 -- 店铺
 CREATE TABLE IF NOT EXISTS shops (
-    id           TEXT PRIMARY KEY,               -- shop_id，如 S001
+    id           TEXT PRIMARY KEY,
     name         TEXT NOT NULL,
     rating       REAL NOT NULL DEFAULT 0,
-    distance_km  REAL,                           -- 静态距离（无定位时展示）
-    price_range  TEXT,                           -- '100-300'
-    lat          REAL,                           -- 经纬度，用于真实距离排序
+    distance_km  REAL,
+    price_range  TEXT,
+    lat          REAL,
     lng          REAL,
     status       TEXT NOT NULL DEFAULT '营业中',
     intro        TEXT,
-    -- 经营信息（种子/商家后台维护；正式上线由经营数据统计，上线前可清空重灌）
-    sales        INTEGER NOT NULL DEFAULT 0,     -- 月售
-    min_delivery REAL NOT NULL DEFAULT 30,       -- 起送价（元）
-    delivery_fee REAL NOT NULL DEFAULT 5,        -- 配送费（元）
-    hours        TEXT NOT NULL DEFAULT '09:00 - 21:00',  -- 营业时间
-    delivery_time TEXT NOT NULL DEFAULT '30分钟',  -- 配送时长（详情页展示，商家后台维护）
-    address      TEXT,                           -- 门店地址
-    notice       TEXT,                           -- 公告
+    sales        INTEGER NOT NULL DEFAULT 0,
+    min_delivery REAL NOT NULL DEFAULT 30,
+    delivery_fee REAL NOT NULL DEFAULT 5,
+    hours        TEXT NOT NULL DEFAULT '09:00 - 21:00',
+    delivery_time TEXT NOT NULL DEFAULT '30分钟',
+    address      TEXT,
+    notice       TEXT,
     created_at   TEXT NOT NULL
 );
 
@@ -137,56 +121,55 @@ CREATE TABLE IF NOT EXISTS shops (
 CREATE TABLE IF NOT EXISTS shop_plans (
     shop_id  TEXT NOT NULL,
     plan_id  TEXT NOT NULL,
-    status   TEXT NOT NULL DEFAULT 'on',        -- on=在售 off=已下架（商家端上下架）
+    status   TEXT NOT NULL DEFAULT 'on',
     PRIMARY KEY (shop_id, plan_id)
 );
 
--- 商家-店铺 绑定（商家后台按店隔离的权限来源；admin 不受限）
+-- 商家-店铺 绑定
 CREATE TABLE IF NOT EXISTS merchant_shops (
-    user_id    TEXT NOT NULL,                   -- users.id
-    shop_id    TEXT NOT NULL,                   -- shops.id
+    user_id    TEXT NOT NULL,
+    shop_id    TEXT NOT NULL,
     created_at TEXT NOT NULL,
     PRIMARY KEY (user_id, shop_id)
 );
 
--- 商家智库 · 主档（1:1 shops）：以商家为单位沉淀品牌定位/风格/能力等知识，
--- 供 AI 检索（query_knowledge 的 shop 域）与店铺详情页展示
+-- 商家智库 · 主档（1:1 shops）
 CREATE TABLE IF NOT EXISTS shop_profiles (
-    shop_id     TEXT PRIMARY KEY,               -- -> shops.id
-    brand_story TEXT,                           -- 品牌故事 / 定位（自然语言档案）
-    price_level TEXT,                           -- 经济 | 中端 | 高端 | 轻奢
-    packaging   TEXT,                           -- 包装特色（自然语言）
-    services    TEXT,                           -- JSON 数组：服务能力（同城速递/宴会布置/花艺课…）
-    strengths   TEXT,                           -- 卖点 / 特色（自然语言，供向量检索）
-    keywords    TEXT,                           -- 运营补充关键词（逗号分隔，供关键词命中）
+    shop_id     TEXT PRIMARY KEY,
+    brand_story TEXT,
+    price_level TEXT,
+    packaging   TEXT,
+    services    TEXT,
+    strengths   TEXT,
+    keywords    TEXT,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
 
--- 商家智库 · 风格（多对多，style_id 引用 knowledge/styles.json 的 S_* 主风格 id）
+-- 商家智库 · 风格（多对多）
 CREATE TABLE IF NOT EXISTS shop_styles (
-    shop_id  TEXT NOT NULL,                     -- -> shops.id
-    style_id TEXT NOT NULL,                     -- S_KOREAN / S_NORDIC / ...
-    level    INTEGER NOT NULL DEFAULT 1,        -- 1=主打 2=次要
+    shop_id  TEXT NOT NULL,
+    style_id TEXT NOT NULL,
+    level    INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (shop_id, style_id)
 );
 
--- 商家智库 · 场景（多对多，scene_id 引用 knowledge/scenes.json 的 SC_* 场景 id）
+-- 商家智库 · 场景（多对多）
 CREATE TABLE IF NOT EXISTS shop_scenes (
-    shop_id  TEXT NOT NULL,                     -- -> shops.id
-    scene_id TEXT NOT NULL,                     -- SC_VALENTINE / SC_WEDDING / ...
-    level    INTEGER NOT NULL DEFAULT 1,        -- 1=擅长 2=可做
+    shop_id  TEXT NOT NULL,
+    scene_id TEXT NOT NULL,
+    level    INTEGER NOT NULL DEFAULT 1,
     PRIMARY KEY (shop_id, scene_id)
 );
 
--- 会话（= 智能体一次对话；多会话由此表承载，title/preview 供前端列表展示）
+-- 会话（= 智能体一次对话；多会话由此表承载）
 CREATE TABLE IF NOT EXISTS sessions (
     session_id  TEXT PRIMARY KEY,
     user_id     TEXT NOT NULL,
-    stage       TEXT NOT NULL DEFAULT 'analyze',  -- 仅 UI 焦点高亮，不参与流程闸门
-    requirement TEXT,                             -- 结构化需求 JSON
-    title       TEXT,                             -- 会话标题（取首条用户消息）
-    preview     TEXT,                             -- 列表预览（取最近一条消息摘要）
+    stage       TEXT NOT NULL DEFAULT 'analyze',
+    requirement TEXT,
+    title       TEXT,
+    preview     TEXT,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -194,17 +177,17 @@ CREATE TABLE IF NOT EXISTS sessions (
 -- 消息（会话内消息；role 含 user/assistant/tool；ui/data 供前端回放结构化卡片）
 CREATE TABLE IF NOT EXISTS messages (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id   TEXT NOT NULL,                   -- -> sessions.session_id
+    session_id   TEXT NOT NULL,
     role         TEXT NOT NULL,
     content      TEXT,
-    tool_calls   TEXT,                            -- assistant 工具调用列表，JSON 字符串
-    tool_call_id TEXT,                            -- tool 回执对应的 tool_call_id（OpenAI 规范必填）
-    ui           TEXT,                            -- 前端渲染类型，如 plan_card / text，JSON 字符串
-    data         TEXT,                            -- 前端渲染数据，JSON 字符串
+    tool_calls   TEXT,
+    tool_call_id TEXT,
+    ui           TEXT,
+    data         TEXT,
     created_at   TEXT NOT NULL
 );
 
--- 会话级控制标记（一次性业务约束，如 image_confirmed）
+-- 会话级控制标记（一次性业务约束）
 CREATE TABLE IF NOT EXISTS session_flags (
     user_id     TEXT NOT NULL,
     session_id  TEXT NOT NULL,
@@ -231,7 +214,7 @@ CREATE TABLE IF NOT EXISTS cart_items (
     price      REAL NOT NULL,
     shop       TEXT,
     qty        INTEGER NOT NULL DEFAULT 1,
-    selected   INTEGER NOT NULL DEFAULT 1,        -- 1=已勾选结算
+    selected   INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -243,13 +226,13 @@ CREATE TABLE IF NOT EXISTS orders (
     plan_id        TEXT,
     plan_type      TEXT,
     shop_id        TEXT,
-    items          TEXT,                          -- JSON 字符串（快照）
+    items          TEXT,
     total_price    REAL,
-    status         TEXT NOT NULL DEFAULT 'created',  -- created|paid|shipped|done|canceled
-    paid           INTEGER NOT NULL DEFAULT 0,    -- 0=未支付 1=已支付（兼容旧库）
+    status         TEXT NOT NULL DEFAULT 'created',
+    paid           INTEGER NOT NULL DEFAULT 0,
     paid_at        TEXT,
-    expires_at     TEXT,                          -- 支付超时时间（created/pending_payment 过期自动取消）
-    address_id     TEXT,                          -- -> addresses.id
+    expires_at     TEXT,
+    address_id     TEXT,
     recipient_name  TEXT,
     recipient_phone TEXT,
     recipient_address TEXT,
@@ -258,7 +241,7 @@ CREATE TABLE IF NOT EXISTS orders (
     created_at     TEXT NOT NULL
 );
 
--- 订单明细（与 orders.items 冗余，便于按方案统计/售后）
+-- 订单明细
 CREATE TABLE IF NOT EXISTS order_items (
     order_id  TEXT NOT NULL,
     plan_id   TEXT NOT NULL,
@@ -272,16 +255,16 @@ CREATE TABLE IF NOT EXISTS order_items (
 -- 支付记录
 CREATE TABLE IF NOT EXISTS payments (
     id            TEXT PRIMARY KEY,
-    order_id      TEXT NOT NULL,                  -- -> orders.order_id
-    method        TEXT NOT NULL,                 -- wechat|alipay|union|huabei
+    order_id      TEXT NOT NULL,
+    method        TEXT NOT NULL,
     amount        REAL NOT NULL,
-    status        TEXT NOT NULL DEFAULT 'pending',  -- pending|paid|failed|refunded
-    transaction_id TEXT,                         -- 第三方交易号
+    status        TEXT NOT NULL DEFAULT 'pending',
+    transaction_id TEXT,
     created_at    TEXT NOT NULL,
     paid_at       TEXT
 );
 
--- 评价（商家可回复：reply/reply_at；管理后台可隐藏：status）
+-- 评价（商家可回复；管理后台可隐藏）
 CREATE TABLE IF NOT EXISTS reviews (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL,
@@ -292,83 +275,83 @@ CREATE TABLE IF NOT EXISTS reviews (
     created_at TEXT NOT NULL,
     reply      TEXT,
     reply_at   TEXT,
-    status     TEXT NOT NULL DEFAULT 'visible'  -- visible | hidden（管理后台审核）
+    status     TEXT NOT NULL DEFAULT 'visible'
 );
 
--- 售后单（M4：用户发起退款/退货/换货，管理员审核并触发 sandbox 退款）
+-- 售后单
 CREATE TABLE IF NOT EXISTS aftersales (
     id            TEXT PRIMARY KEY,
     order_id      TEXT NOT NULL,
     user_id       TEXT NOT NULL,
     shop_id       TEXT,
-    type          TEXT NOT NULL DEFAULT 'refund',   -- refund|return|exchange
+    type          TEXT NOT NULL DEFAULT 'refund',
     reason        TEXT,
     description   TEXT,
-    evidence_imgs TEXT,                             -- JSON 数组（图片路径）
-    status        TEXT NOT NULL DEFAULT 'pending',  -- pending|approved|rejected|refunded|closed
+    evidence_imgs TEXT,
+    status        TEXT NOT NULL DEFAULT 'pending',
     refund_amount REAL,
-    review_note   TEXT,                             -- 审核备注（拒绝原因等）
+    review_note   TEXT,
     handled_by    TEXT,
     handled_at    TEXT,
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL
 );
 
--- 商家入驻申请（M5：用户提交执照等，管理员审核通过后提权并创建店铺）
+-- 商家入驻申请
 CREATE TABLE IF NOT EXISTS merchant_applications (
     id                TEXT PRIMARY KEY,
-    applicant_user_id TEXT NOT NULL,                -- 申请人 users.id
+    applicant_user_id TEXT NOT NULL,
     shop_name         TEXT NOT NULL,
     contact_name      TEXT,
     contact_phone     TEXT,
     license_no        TEXT,
-    license_img       TEXT,                         -- 执照图片路径
+    license_img       TEXT,
     address           TEXT,
     intro             TEXT,
-    status            TEXT NOT NULL DEFAULT 'pending', -- pending|approved|rejected
+    status            TEXT NOT NULL DEFAULT 'pending',
     review_note       TEXT,
     reviewed_by       TEXT,
     reviewed_at       TEXT,
     created_at        TEXT NOT NULL
 );
 
--- 运营配置（M7/M9：配送时段/运费/优惠券规则/FAQ/公告 后端化，灭前端写死）
+-- 运营配置
 CREATE TABLE IF NOT EXISTS operations_config (
-    key        TEXT PRIMARY KEY,                    -- delivery_options|shipping_fee|coupon_rules|faqs|announcements
-    value      TEXT                                 -- JSON 字符串
+    key        TEXT PRIMARY KEY,
+    value      TEXT
 );
 
 -- 生图任务
 CREATE TABLE IF NOT EXISTS image_tasks (
     task_id    TEXT PRIMARY KEY,
-    status     TEXT NOT NULL,                    -- pending|running|done|failed
+    status     TEXT NOT NULL,
     prompt     TEXT,
     result_url TEXT,
     created_at TEXT NOT NULL
 );
 
--- 订单物流轨迹（时间线事件，按 seq 顺序回放）
+-- 订单物流轨迹
 CREATE TABLE IF NOT EXISTS order_logistics (
-    order_id   TEXT NOT NULL,                    -- -> orders.order_id
-    seq        INTEGER NOT NULL,                 -- 事件序号（0 起）
-    text       TEXT NOT NULL,                    -- 事件描述（如「包裹已揽收」）
+    order_id   TEXT NOT NULL,
+    seq        INTEGER NOT NULL,
+    text       TEXT NOT NULL,
     created_at TEXT NOT NULL,
     PRIMARY KEY (order_id, seq)
 );
 
--- 收货地址（按用户隔离；仅一个默认地址）
+-- 收货地址（按用户隔离）
 CREATE TABLE IF NOT EXISTS addresses (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL,
-    name       TEXT NOT NULL,                 -- 收货人
+    name       TEXT NOT NULL,
     phone      TEXT NOT NULL,
     address    TEXT NOT NULL,
-    is_default INTEGER NOT NULL DEFAULT 0,    -- 1=默认（同用户仅一条）
+    is_default INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
--- 收藏（方案收藏，按用户隔离；user+plan 唯一）
+-- 收藏（方案收藏）
 CREATE TABLE IF NOT EXISTS favorites (
     user_id    TEXT NOT NULL,
     plan_id    TEXT NOT NULL,
@@ -376,33 +359,33 @@ CREATE TABLE IF NOT EXISTS favorites (
     PRIMARY KEY (user_id, plan_id)
 );
 
--- 优惠券（按用户隔离；下单时抵扣，status: unused|used）
+-- 优惠券
 CREATE TABLE IF NOT EXISTS coupons (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL,
     title      TEXT NOT NULL,
-    discount   REAL NOT NULL,                    -- 抵扣金额（元）
-    min_spend  REAL NOT NULL DEFAULT 0,          -- 满减门槛（0 表示无门槛）
-    status     TEXT NOT NULL DEFAULT 'unused',   -- unused|used
-    offer_id   TEXT,                             -- 来源（领券中心 offer，可选）
-    order_id   TEXT,                             -- 使用后关联的订单
+    discount   REAL NOT NULL,
+    min_spend  REAL NOT NULL DEFAULT 0,
+    status     TEXT NOT NULL DEFAULT 'unused',
+    offer_id   TEXT,
+    order_id   TEXT,
     created_at TEXT NOT NULL,
     used_at    TEXT
 );
 
--- 领券中心 / 积分商城：可领取/可兑换的券模板
+-- 领券中心 / 积分商城
 CREATE TABLE IF NOT EXISTS coupon_offers (
     id          TEXT PRIMARY KEY,
     title       TEXT NOT NULL,
-    discount    REAL NOT NULL,                   -- 抵扣金额（元）
-    min_spend   REAL NOT NULL DEFAULT 0,         -- 满减门槛
-    points_cost INTEGER NOT NULL DEFAULT 0,      -- 0=免费领取；>0=积分兑换
-    stock       INTEGER NOT NULL DEFAULT 0,      -- 剩余库存（-1=不限）
-    active      INTEGER NOT NULL DEFAULT 1,      -- 是否上架
+    discount    REAL NOT NULL,
+    min_spend   REAL NOT NULL DEFAULT 0,
+    points_cost INTEGER NOT NULL DEFAULT 0,
+    stock       INTEGER NOT NULL DEFAULT 0,
+    active      INTEGER NOT NULL DEFAULT 1,
     created_at  TEXT NOT NULL
 );
 
--- 积分账户 + 流水（支付成功按金额 1:1 发放，如 ¥99 → 99 分）
+-- 积分账户 + 流水
 CREATE TABLE IF NOT EXISTS user_points (
     user_id      TEXT PRIMARY KEY,
     balance      INTEGER NOT NULL DEFAULT 0,
@@ -412,64 +395,63 @@ CREATE TABLE IF NOT EXISTS user_points (
 CREATE TABLE IF NOT EXISTS point_records (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL,
-    delta      INTEGER NOT NULL,                 -- 正=获得 负=消费
+    delta      INTEGER NOT NULL,
     reason     TEXT NOT NULL,
     order_id   TEXT,
     created_at TEXT NOT NULL
 );
 
--- 商家-顾客会话（按店铺+顾客唯一；未读数分侧维护）
+-- 商家-顾客会话
 CREATE TABLE IF NOT EXISTS shop_chats (
     id             TEXT PRIMARY KEY,
-    shop_id        TEXT NOT NULL,                -- -> shops.id
-    user_id        TEXT NOT NULL,                -- -> users.id（顾客）
-    last_msg       TEXT,                         -- 最后一条消息摘要（会话列表展示）
-    last_at        TEXT,                         -- 最后消息时间
-    unread_user    INTEGER NOT NULL DEFAULT 0,   -- 顾客侧未读数（商家回复后 +1）
-    unread_merchant INTEGER NOT NULL DEFAULT 0,  -- 商家侧未读数（顾客发言后 +1）
+    shop_id        TEXT NOT NULL,
+    user_id        TEXT NOT NULL,
+    last_msg       TEXT,
+    last_at        TEXT,
+    unread_user    INTEGER NOT NULL DEFAULT 0,
+    unread_merchant INTEGER NOT NULL DEFAULT 0,
     created_at     TEXT NOT NULL,
     UNIQUE (shop_id, user_id)
 );
 
--- 会话消息（sender: user=顾客 | merchant=商家）
+-- 会话消息
 CREATE TABLE IF NOT EXISTS chat_messages (
     id         TEXT PRIMARY KEY,
-    chat_id    TEXT NOT NULL,                    -- -> shop_chats.id
-    sender     TEXT NOT NULL,                    -- user|merchant
+    chat_id    TEXT NOT NULL,
+    sender     TEXT NOT NULL,
     content    TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
 
--- 站内消息通知中心（模块一）：业务动作（下单/支付/发货/签收/评价回复/售后/公告）落一条通知
+-- 站内消息通知中心
 CREATE TABLE IF NOT EXISTS notifications (
-    id           TEXT PRIMARY KEY,               -- N_ 前缀
-    user_id      TEXT NOT NULL,                  -- 接收者 -> users.id
-    type         TEXT NOT NULL,                  -- order_status|logistics|review_reply|aftersale|announcement|system
+    id           TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL,
+    type         TEXT NOT NULL,
     title        TEXT NOT NULL,
     body         TEXT NOT NULL DEFAULT '',
-    ref_type     TEXT,                           -- plan|order|shop|aftersale 等，点击跳转用
-    ref_id       TEXT,                           -- 关联业务 id
-    push_channel TEXT NOT NULL DEFAULT 'inbox',  -- inbox|wechat（预留，本期仅 inbox）
-    is_read      INTEGER NOT NULL DEFAULT 0,     -- 0=未读 1=已读
+    ref_type     TEXT,
+    ref_id       TEXT,
+    push_channel TEXT NOT NULL DEFAULT 'inbox',
+    is_read      INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL
 );
 
--- 内容举报（阶段5）：C 端用户举报商品/店铺/评价，管理后台处理（passed|rejected|banned）
+-- 内容举报
 CREATE TABLE IF NOT EXISTS reports (
-    id           TEXT PRIMARY KEY,               -- R_ 前缀
-    user_id      TEXT NOT NULL,                  -- 举报人 -> users.id
-    target_type  TEXT NOT NULL,                  -- plan|shop|review
+    id           TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL,
+    target_type  TEXT NOT NULL,
     target_id    TEXT NOT NULL,
-    reason       TEXT NOT NULL,                  -- 举报原因（简短分类）
-    content      TEXT NOT NULL DEFAULT '',       -- 补充说明
-    status       TEXT NOT NULL DEFAULT 'pending',-- pending|passed|rejected|banned
+    reason       TEXT NOT NULL,
+    content      TEXT NOT NULL DEFAULT '',
+    status       TEXT NOT NULL DEFAULT 'pending',
     handled_at   TEXT,
-    handled_by   TEXT,                           -- 处理人 -> users.id
+    handled_by   TEXT,
     created_at   TEXT NOT NULL
 );
 """
 
-#: 索引（交付级查询性能）
 _INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_sessions_user        ON sessions(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_session     ON messages(session_id, id ASC);
@@ -494,20 +476,14 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user   ON notifications(user_id, cr
 CREATE INDEX IF NOT EXISTS idx_reports_status       ON reports(status, created_at DESC);
 """
 
-#: 旧库增量迁移：给已存在的表补缺失列（仅开发期存量数据需要）
 _ALTERS = [
-    # users: 账号密码体系（非微信注册/登录）
     ("users", "username", "ALTER TABLE users ADD COLUMN username TEXT"),
     ("users", "password_hash", "ALTER TABLE users ADD COLUMN password_hash TEXT"),
-    # users: 角色权限（user | merchant | admin）
     ("users", "role", "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"),
-    # sessions: 会话列表展示字段
     ("sessions", "title", "ALTER TABLE sessions ADD COLUMN title TEXT"),
     ("sessions", "preview", "ALTER TABLE sessions ADD COLUMN preview TEXT"),
-    # messages: 前端回放所需结构化字段
     ("messages", "ui", "ALTER TABLE messages ADD COLUMN ui TEXT"),
     ("messages", "data", "ALTER TABLE messages ADD COLUMN data TEXT"),
-    # orders: 状态机/收货/备注
     ("orders", "status", "ALTER TABLE orders ADD COLUMN status TEXT NOT NULL DEFAULT 'created'"),
     ("orders", "paid_at", "ALTER TABLE orders ADD COLUMN paid_at TEXT"),
     ("orders", "address_id", "ALTER TABLE orders ADD COLUMN address_id TEXT"),
@@ -516,27 +492,15 @@ _ALTERS = [
     ("orders", "recipient_address", "ALTER TABLE orders ADD COLUMN recipient_address TEXT"),
     ("orders", "delivery_time", "ALTER TABLE orders ADD COLUMN delivery_time TEXT"),
     ("orders", "note", "ALTER TABLE orders ADD COLUMN note TEXT"),
-    # orders: 优惠券抵扣
     ("orders", "coupon_id", "ALTER TABLE orders ADD COLUMN coupon_id TEXT"),
     ("orders", "discount", "ALTER TABLE orders ADD COLUMN discount REAL NOT NULL DEFAULT 0"),
-    # orders: 支付超时（懒过期自动取消）
     ("orders", "expires_at", "ALTER TABLE orders ADD COLUMN expires_at TEXT"),
-    # coupons: 领券中心来源标记
     ("coupons", "offer_id", "ALTER TABLE coupons ADD COLUMN offer_id TEXT"),
-    # shop_plans: 店铺内商品上下架（商家端管理；C 端仅展示 on）
-    (
-        "shop_plans",
-        "status",
-        "ALTER TABLE shop_plans ADD COLUMN status TEXT NOT NULL DEFAULT 'on'",
-    ),
-    # shops: 商家上传的店铺图片（/uploads/...）
+    ("shop_plans", "status", "ALTER TABLE shop_plans ADD COLUMN status TEXT NOT NULL DEFAULT 'on'"),
     ("shops", "image", "ALTER TABLE shops ADD COLUMN image TEXT"),
-    # plans: 评分/已售（种子演示值，上线前可清空；正式由订单统计）
     ("plans", "rating", "ALTER TABLE plans ADD COLUMN rating REAL NOT NULL DEFAULT 4.8"),
     ("plans", "sold", "ALTER TABLE plans ADD COLUMN sold INTEGER NOT NULL DEFAULT 0"),
-    # plans: 推荐理由（详情页 aiReason 展示，种子/商家后台维护）
     ("plans", "ai_reason", "ALTER TABLE plans ADD COLUMN ai_reason TEXT"),
-    # shops: 经营信息（月售/起送/配送费/营业时间/地址/公告）
     ("shops", "sales", "ALTER TABLE shops ADD COLUMN sales INTEGER NOT NULL DEFAULT 0"),
     ("shops", "min_delivery", "ALTER TABLE shops ADD COLUMN min_delivery REAL NOT NULL DEFAULT 30"),
     ("shops", "delivery_fee", "ALTER TABLE shops ADD COLUMN delivery_fee REAL NOT NULL DEFAULT 5"),
@@ -544,28 +508,23 @@ _ALTERS = [
     ("shops", "delivery_time", "ALTER TABLE shops ADD COLUMN delivery_time TEXT NOT NULL DEFAULT '30分钟'"),
     ("shops", "address", "ALTER TABLE shops ADD COLUMN address TEXT"),
     ("shops", "notice", "ALTER TABLE shops ADD COLUMN notice TEXT"),
-    # shops: 店铺装修（封面横幅 / Logo，商家端上传，/uploads/...）
     ("shops", "cover", "ALTER TABLE shops ADD COLUMN cover TEXT"),
     ("shops", "logo", "ALTER TABLE shops ADD COLUMN logo TEXT"),
-    # reviews: 商家回复评价（商家中心新增能力）
     ("reviews", "reply", "ALTER TABLE reviews ADD COLUMN reply TEXT"),
     ("reviews", "reply_at", "ALTER TABLE reviews ADD COLUMN reply_at TEXT"),
-    # users: 管理后台禁用（active|banned）
     ("users", "status", "ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"),
-    # reviews: 管理后台隐藏（visible|hidden）
     ("reviews", "status", "ALTER TABLE reviews ADD COLUMN status TEXT NOT NULL DEFAULT 'visible'"),
-    # diy_plans: 卡片内容扩充（模块二：难度/耗时/保鲜期/适宜人群/禁忌/情绪标签）
     ("diy_plans", "difficulty", "ALTER TABLE diy_plans ADD COLUMN difficulty TEXT"),
     ("diy_plans", "est_time", "ALTER TABLE diy_plans ADD COLUMN est_time INTEGER"),
     ("diy_plans", "shelf_life", "ALTER TABLE diy_plans ADD COLUMN shelf_life TEXT"),
     ("diy_plans", "suitable_for", "ALTER TABLE diy_plans ADD COLUMN suitable_for TEXT"),
     ("diy_plans", "caution", "ALTER TABLE diy_plans ADD COLUMN caution TEXT"),
     ("diy_plans", "mood_tags", "ALTER TABLE diy_plans ADD COLUMN mood_tags TEXT"),
+    ("diy_plans", "source_user_id", "ALTER TABLE diy_plans ADD COLUMN source_user_id TEXT"),
 ]
 
 
 def get_conn() -> sqlite3.Connection:
-    """获取当前线程的 SQLite 连接（懒初始化，线程安全）。"""
     if not hasattr(_thread_local, "conn"):
         Path(settings.db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(settings.db_path, check_same_thread=False, timeout=30)
@@ -578,7 +537,6 @@ def get_conn() -> sqlite3.Connection:
 
 @contextmanager
 def transaction() -> sqlite3.Connection:
-    """事务上下文：正常提交，异常回滚。"""
     conn = get_conn()
     try:
         yield conn
@@ -589,36 +547,33 @@ def transaction() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """建表 + 索引 + 旧库迁移；应用启动时调用一次。"""
     conn = get_conn()
     conn.executescript(_SCHEMA)
     conn.executescript(_INDEXES)
-    # 兼容旧库：补齐缺失列（开发期存量数据）
     for table, col, ddl in _ALTERS:
         cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if col not in cols:
             try:
                 conn.execute(ddl)
-            except sqlite3.OperationalError as exc:  # pragma: no cover
-                logger.warning("迁移跳过 %s.%s: %s", table, col, exc)
-    # 手机号全局唯一索引（三端架构阶段2 硬约束）：存量脏数据（重复 phone）时降级为普通索引并告警
+            except sqlite3.OperationalError as exc:
+                logger.warning("%s.%s: %s", table, col, exc)
     try:
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone) "
             "WHERE phone IS NOT NULL AND phone != ''"
         )
-    except sqlite3.OperationalError as exc:  # pragma: no cover
-        logger.warning("users.phone 唯一索引创建失败（存量重复数据），降级为普通索引: %s", exc)
+    except sqlite3.OperationalError as exc:
+        logger.warning("users.phone unique index failed, degraded: %s", exc)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone) "
             "WHERE phone IS NOT NULL AND phone != ''"
         )
     conn.commit()
-    # 目录种子数据：首次启动（plans 为空）灌入示例方案/店铺，DB 成为唯一来源
     try:
         from backend.storage import catalog
-
-        catalog.seed_catalog()
-    except Exception:  # pragma: no cover
-        logger.warning("目录种子数据灌入失败（不影响记忆/交易表）", exc_info=True)
-    logger.info("长期记忆数据库就绪: %s", settings.db_path)
+        plans_n = conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0]
+        if plans_n == 0:
+            catalog.seed_catalog()
+    except Exception:
+        logger.warning("Seed data failed", exc_info=True)
+    logger.info("DB ready: %s", settings.db_path)
