@@ -14,23 +14,35 @@ const PIN_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   '<circle cx="14" cy="14" r="6" fill="#ffffff"/></svg>'
 )
 
-// 加载腾讯地图 GL JS（挂载到 window.TMap）
+// 加载腾讯地图 GL JS + service 附加库（挂载到 window.TMap，提供逆地理编码）
 function loadTMap() {
   return new Promise((resolve, reject) => {
-    if (window.TMap) {
+    if (window.TMap?.service?.Geocoder) {
       resolve(window.TMap)
       return
     }
     const script = document.createElement('script')
-    script.src = `https://map.qq.com/api/gljs?v=1.exp&key=${MAP_KEY}`
+    script.src = `https://map.qq.com/api/gljs?v=1.exp&key=${MAP_KEY}&libraries=service`
     script.onload = () => (window.TMap ? resolve(window.TMap) : reject(new Error('TMap 未就绪')))
     script.onerror = () => reject(new Error('地图脚本加载失败'))
     document.head.appendChild(script)
   })
 }
 
-// 逆地理编码：坐标 → 地址（走后端代理 /geocode，避免腾讯 WebService API 的浏览器 CORS 限制）
-async function reverseGeocode(lat, lng) {
+// 逆地理编码：坐标 → 地址。优先用 TMap 内置 Geocoder（走 JS API 配额，无需额外授权），
+// 失败/不可用时回退后端代理 /geocode（WebService API 配额）。
+async function reverseGeocode(lat, lng, TMap) {
+  // 优先 TMap.service.Geocoder（JS API 配额）
+  if (TMap?.service?.Geocoder) {
+    try {
+      const geocoder = new TMap.service.Geocoder()
+      const res = await geocoder.getAddress({ location: new TMap.LatLng(lat, lng) })
+      const addr = res?.result?.address
+      if (addr) return addr
+    } catch {
+      // 回退后端代理
+    }
+  }
   try {
     const res = await fetch(`/api/geocode?lat=${lat}&lng=${lng}`)
     const data = await res.json()
@@ -85,7 +97,7 @@ export default function DeliveryLocationPicker({ open, onConfirm, onClose }) {
           const lat = e.latLng.lat
           const lng = e.latLng.lng
           setLocated({ lat, lng })
-          const addr = await reverseGeocode(lat, lng)
+          const addr = await reverseGeocode(lat, lng, TMap)
           setAddress(addr || '')
           markerRef.current?.setGeometries([
             { id: 'pick', styleId: 'picked', position: new TMap.LatLng(lat, lng) },
@@ -127,7 +139,7 @@ export default function DeliveryLocationPicker({ open, onConfirm, onClose }) {
     setAddress('')
     try {
       const loc = await locateNow()
-      const addr = await reverseGeocode(loc.lat, loc.lng)
+      const addr = await reverseGeocode(loc.lat, loc.lng, window.TMap)
       setLocated(loc)
       setAddress(addr || '')
       if (mapRef.current) {
