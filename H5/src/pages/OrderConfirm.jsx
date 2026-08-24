@@ -22,14 +22,12 @@ function Row({ label, value, valueClass = 'text-ink' }) {
   )
 }
 
-// 06 订单确认
 export default function OrderConfirm() {
   const nav = useNavigate()
   const { state } = useLocation()
   const orderId = state?.orderId
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
-  // 收货人 / 配送时间 / 备注：真实可编辑，去支付时写回订单（review 点名的「假交互」修复）
   const [recipient, setRecipient] = useState({ name: '', phone: '', address: '' })
   const [deliveryOptions, setDeliveryOptions] = useState([])
   const [delivery, setDelivery] = useState('')
@@ -39,7 +37,6 @@ export default function OrderConfirm() {
   const [addresses, setAddresses] = useState([])
   const [selectedAddr, setSelectedAddr] = useState(null)
 
-  // 配送时段 / 配送费由后端运营配置下发（红线2：不写死在页面）
   useEffect(() => {
     publicConfig()
       .then((cfg) => {
@@ -117,7 +114,6 @@ export default function OrderConfirm() {
     if (saving) return
     setSaving(true)
     try {
-      // 把真实收货信息写回订单，再跳转支付
       await updateOrder(orderId, { recipient, delivery, note })
       nav('/pay', { state: { orderId: order.order_id } })
     } catch (e) {
@@ -132,9 +128,7 @@ export default function OrderConfirm() {
       <div className="flex-1 overflow-y-auto px-4 pt-3">
         {order.items.map((it, i) => (
           <Reveal key={i} delay={i * 140}>
-          <div
-            className="flex items-center gap-3 rounded-card bg-white p-3 border border-line"
-          >
+          <div className="flex items-center gap-3 rounded-card bg-white p-3 border border-line">
             <SmartImage
               src={planImage(it)}
               color={imgColor(it.plan_id || it.name)}
@@ -166,41 +160,21 @@ export default function OrderConfirm() {
                   <span className="text-[13px] font-medium text-dark">{a.name}</span>
                   <span className="text-[11px] text-sub">{a.phone}</span>
                   {a.is_default ? (
-                    <span className="rounded-full bg-pink/10 px-2 py-0.5 text-[10px] text-pink">
-                      默认
-                    </span>
+                    <span className="rounded-full bg-pink/10 px-2 py-0.5 text-[10px] text-pink">默认</span>
                   ) : null}
                 </div>
                 <p className="mt-1 text-[11px] text-ink">{a.address}</p>
               </button>
               </Reveal>
             ))}
-            <p className="text-[10px] text-sub">
-              选中地址已自动填入下方，也可手动修改；去「我的地址」管理
-            </p>
+            <p className="text-[10px] text-sub">选中地址已自动填入下方，也可手动修改；去「我的地址」管理</p>
           </div>
         )}
         <Reveal>
         <div className="space-y-2 rounded-card bg-white p-4 border border-line">
-          <input
-            value={recipient.name}
-            onChange={(e) => setRecipient({ ...recipient, name: e.target.value })}
-            placeholder="收货人姓名"
-            className="maison-field"
-          />
-          <input
-            value={recipient.phone}
-            onChange={(e) => setRecipient({ ...recipient, phone: e.target.value })}
-            placeholder="手机号"
-            inputMode="tel"
-            className="maison-field"
-          />
-          <input
-            value={recipient.address}
-            onChange={(e) => setRecipient({ ...recipient, address: e.target.value })}
-            placeholder="收货地址"
-            className="maison-field"
-          />
+          <input value={recipient.name} onChange={(e) => setRecipient({ ...recipient, name: e.target.value })} placeholder="收货人姓名" className="maison-field" />
+          <input value={recipient.phone} onChange={(e) => setRecipient({ ...recipient, phone: e.target.value })} placeholder="手机号" inputMode="tel" className="maison-field" />
+          <input value={recipient.address} onChange={(e) => setRecipient({ ...recipient, address: e.target.value })} placeholder="收货地址" className="maison-field" />
         </div>
         </Reveal>
 
@@ -217,9 +191,7 @@ export default function OrderConfirm() {
                 key={opt}
                 onClick={() => setDelivery(opt)}
                 className={`rounded-pill px-3 py-1.5 text-[12px] transition ${
-                  delivery === opt
-                    ? 'bg-pink text-white'
-                    : 'bg-white text-sub border border-line'
+                  delivery === opt ? 'bg-pink text-white' : 'bg-white text-sub border border-line'
                 }`}
               >
                 {opt}
@@ -234,12 +206,7 @@ export default function OrderConfirm() {
         </Reveal>
         <Reveal>
         <div className="field-shell rounded-card bg-white p-4 border border-line">
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="请填写您的备注（选填）"
-            className="maison-field-inline w-full"
-          />
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="请填写您的备注（选填）" className="maison-field-inline w-full" />
         </div>
         </Reveal>
 
@@ -247,11 +214,7 @@ export default function OrderConfirm() {
         <div className="mt-4 space-y-2 rounded-card bg-white p-4 text-[12px] border border-line">
           <Row label="商品金额" value={`¥${Number(order.total_price).toFixed(2)}`} />
           <Row label="配送费" value={`¥${Number(shippingFee ?? 0).toFixed(2)}`} />
-          <Row
-            label="优惠券"
-            value={`-¥${Number(order.discount || 0).toFixed(2)}`}
-            valueClass="text-pink"
-          />
+          <Row label="优惠券" value={`-¥${Number(order.discount || 0).toFixed(2)}`} valueClass="text-pink" />
         </div>
         </Reveal>
         <div className="h-4" />
