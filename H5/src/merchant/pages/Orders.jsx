@@ -140,7 +140,6 @@ export function Orders({ onContact }) {
         )}
       </div>
 
-      {/* 筛选 */}
       <div className="mt-4 rounded-card border border-line bg-white p-3">
         <input
           value={keyword}
@@ -149,75 +148,31 @@ export function Orders({ onContact }) {
           className="w-full rounded-[4px] border border-line bg-bg/50 px-3 py-2 text-[12px] text-ink outline-none transition placeholder:text-sub/50 focus:border-gold"
         />
         <div className="mt-2 flex items-center gap-2">
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="flex-1 rounded-[4px] border border-line bg-bg/50 px-2 py-1.5 text-[11px] text-ink outline-none transition focus:border-gold"
-          />
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="flex-1 rounded-[4px] border border-line bg-bg/50 px-2 py-1.5 text-[11px] text-ink outline-none transition focus:border-gold" />
           <span className="shrink-0 text-[10px] text-sub/60">至</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="flex-1 rounded-[4px] border border-line bg-bg/50 px-2 py-1.5 text-[11px] text-ink outline-none transition focus:border-gold"
-          />
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="flex-1 rounded-[4px] border border-line bg-bg/50 px-2 py-1.5 text-[11px] text-ink outline-none transition focus:border-gold" />
           {(keyword || dateFrom || dateTo) && (
-            <button
-              onClick={() => {
-                setKeyword('')
-                setDateFrom('')
-                setDateTo('')
-              }}
-              className="press shrink-0 rounded-[4px] border border-gold/40 px-2.5 py-1.5 text-[11px] tracking-[1px] text-gold"
-            >
-              清除
-            </button>
+            <button onClick={() => { setKeyword(''); setDateFrom(''); setDateTo('') }} className="press shrink-0 rounded-[4px] border border-gold/40 px-2.5 py-1.5 text-[11px] tracking-[1px] text-gold">清除</button>
           )}
         </div>
       </div>
 
-      {/* 状态 + 店铺筛选 */}
       <div className="mt-3 flex gap-1.5">
         {STATUS_TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setStatus(t.key)}
-            className={`flex-1 rounded-full border py-1.5 text-center text-[11px] transition ${
-              status === t.key ? 'border-gold bg-gold/10 font-medium text-gold' : 'border-line bg-white text-sub'
-            }`}
-          >
-            {t.label}
-          </button>
+          <button key={t.key} onClick={() => setStatus(t.key)} className={`flex-1 rounded-full border py-1.5 text-center text-[11px] transition ${status === t.key ? 'border-gold bg-gold/10 font-medium text-gold' : 'border-line bg-white text-sub'}`}>{t.label}</button>
         ))}
       </div>
       {shops.length > 0 && (
         <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none]">
-          <button
-            onClick={() => setFilterShop('')}
-            className={`shrink-0 rounded-pill border px-3 py-1 text-[11px] transition ${
-              !filterShop ? 'border-gold bg-gold/10 font-medium text-gold' : 'border-line bg-white text-sub'
-            }`}
-          >
-            全部店铺
-          </button>
+          <button onClick={() => setFilterShop('')} className={`shrink-0 rounded-pill border px-3 py-1 text-[11px] transition ${!filterShop ? 'border-gold bg-gold/10 font-medium text-gold' : 'border-line bg-white text-sub'}`}>全部店铺</button>
           {shops.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setFilterShop(s.id)}
-              className={`shrink-0 rounded-pill border px-3 py-1 text-[11px] transition ${
-                filterShop === s.id ? 'border-gold bg-gold/10 font-medium text-gold' : 'border-line bg-white text-sub'
-              }`}
-            >
-              {s.name}
-            </button>
+            <button key={s.id} onClick={() => setFilterShop(s.id)} className={`shrink-0 rounded-pill border px-3 py-1 text-[11px] transition ${filterShop === s.id ? 'border-gold bg-gold/10 font-medium text-gold' : 'border-line bg-white text-sub'}`}>{s.name}</button>
           ))}
         </div>
       )}
 
       {err && <p className="mt-3 text-[12px] text-burgundy">{err}</p>}
 
-      {/* 订单列表 */}
       <div className="mt-4 space-y-3">
         {loading ? (
           <p className="rounded-card border border-line bg-white p-8 text-center text-[12px] text-sub">加载中…</p>
@@ -225,79 +180,33 @@ export function Orders({ onContact }) {
           <p className="rounded-card border border-line bg-white p-8 text-center text-[12px] text-sub">暂无订单</p>
         ) : (
           orders.map((o) => {
-            const meta = STATUS_META[o.status] || { label: o.status, cls: 'bg-bg text-sub' }
+            const s = STATUS_META[o.status] || { label: o.status, cls: 'bg-bg text-sub' }
             const expanded = expandedId === o.order_id
             return (
               <div key={o.order_id} className="rounded-card border border-line bg-white p-4">
-                <button onClick={() => toggleExpand(o)} className="w-full text-left">
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0">
-                      <p className="truncate text-[13px] text-ink">
-                        {o.recipient_name || '顾客'} · {o.shop_id || '—'}
-                      </p>
-                      <p className="mt-0.5 text-[10px] text-sub">{o.order_id}</p>
-                    </div>
-                    <span className={`rounded-pill px-2 py-0.5 text-[10px] ${meta.cls}`}>{meta.label}</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className={`rounded-pill px-2 py-0.5 text-[10px] ${s.cls}`}>{s.label}</span>
+                    <span className="text-[12px] text-ink">{fmtMoney(o.total_price)}</span>
                   </div>
-                  <div className="mt-2 flex items-baseline justify-between text-[11px] text-sub">
-                    <span>{o.created_at?.replace('T', ' ').slice(0, 16) || ''}</span>
-                    <span className="text-[13px] text-ink">{fmtMoney(o.total_price)}</span>
-                  </div>
-                </button>
-
+                  <span className="text-[10px] text-sub">{o.created_at?.replace('T', ' ').slice(0, 16)}</span>
+                </div>
+                <p className="mt-1 truncate text-[11px] text-sub">{o.order_id}</p>
+                {o.recipient_name && <p className="mt-0.5 text-[11px] text-sub">收货人：{o.recipient_name} {o.recipient_phone}</p>}
+                <div className="mt-2 flex gap-2">
+                  {o.status === 'paid' && (
+                    <button onClick={() => ship(o)} disabled={busyId === o.order_id} className="rounded-[4px] bg-gold px-3 py-1 text-[11px] text-white disabled:opacity-50">{busyId === o.order_id ? '发货中…' : '确认发货'}</button>
+                  )}
+                  <button onClick={() => toggleExpand(o)} className="rounded-[4px] border border-line px-3 py-1 text-[11px] text-sub">{expanded ? '收起' : '详情'}</button>
+                  <button onClick={() => onContact?.(o.user_id)} className="rounded-[4px] border border-line px-3 py-1 text-[11px] text-sub">联系顾客</button>
+                </div>
                 {expanded && (
                   <div className="mt-3 border-t border-line pt-3">
                     <PlanCard plan={plans[o.order_id]} />
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-sub">
-                      <p>收货：{o.recipient_name} {o.recipient_phone}</p>
-                      <p>地址：{o.recipient_address || '—'}</p>
-                      {o.note && <p className="col-span-2">备注：{o.note}</p>}
+                    <div className="mt-2 flex gap-2">
+                      <input value={logiDraft[o.order_id] || ''} onChange={(e) => setLogiDraft((d) => ({ ...d, [o.order_id]: e.target.value }))} placeholder="物流更新（如：已揽收）" className="flex-1 rounded-[4px] border border-line bg-bg/50 px-2 py-1.5 text-[11px] outline-none focus:border-gold" />
+                      <button onClick={() => addLogistics(o)} disabled={!logiDraft[o.order_id]?.trim() || busyId === o.order_id} className="rounded-[4px] border border-gold/40 px-2.5 py-1.5 text-[11px] text-gold disabled:opacity-50">更新物流</button>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {o.status === 'paid' && (
-                        <button
-                          onClick={() => ship(o)}
-                          disabled={!!busyId}
-                          className="press rounded-[4px] bg-gold px-4 py-2 text-[12px] tracking-[1px] text-[#FAF8F5] disabled:opacity-40"
-                        >
-                          {busyId === o.order_id ? '处理中…' : '发货'}
-                        </button>
-                      )}
-                      {o.user_id && (
-                        <button
-                          onClick={() => onContact && onContact(o)}
-                          className="press rounded-[4px] border border-gold/40 px-4 py-2 text-[12px] tracking-[1px] text-gold"
-                        >
-                          联系顾客
-                        </button>
-                      )}
-                      {o.status === 'shipped' && (
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            value={logiDraft[o.order_id] || ''}
-                            onChange={(e) => setLogiDraft((d) => ({ ...d, [o.order_id]: e.target.value }))}
-                            placeholder="更新物流信息"
-                            className="w-44 rounded-[4px] border border-line bg-bg/50 px-2 py-1.5 text-[11px] text-ink outline-none focus:border-gold"
-                          />
-                          <button
-                            onClick={() => addLogistics(o)}
-                            disabled={!!busyId}
-                            className="press rounded-[4px] border border-line px-3 py-1.5 text-[11px] text-sub disabled:opacity-40"
-                          >
-                            更新
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    {o.logistics && o.logistics.length > 0 && (
-                      <div className="mt-3 space-y-1 border-t border-line pt-3">
-                        {o.logistics.map((lg, i) => (
-                          <p key={i} className="text-[10px] text-sub">
-                            {lg.time} {lg.text}
-                          </p>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
