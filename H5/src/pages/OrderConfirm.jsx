@@ -10,6 +10,7 @@ import SmartImage from '../components/SmartImage'
 import Reveal from '../components/Reveal'
 import { planImage } from '../assets/imageMap'
 import DeliveryLocationPicker from '../components/DeliveryLocationPicker'
+import AddressSearchInput from '../components/AddressSearchInput'
 
 function SectionTitle({ title }) {
   return <h2 className="mb-2 mt-5 px-1 text-[16px] font-medium text-dark">{title}</h2>
@@ -227,10 +228,11 @@ export default function OrderConfirm() {
             inputMode="tel"
             className="maison-field"
           />
-          <input
+          <AddressSearchInput
             value={recipient.address}
-            onChange={(e) => setRecipient({ ...recipient, address: e.target.value })}
-            placeholder="收货地址"
+            onChange={(v) => setRecipient({ ...recipient, address: v })}
+            onPick={(it) => setRecipient((r) => ({ ...r, address: it.title, lat: it.lat, lng: it.lng }))}
+            placeholder="收货地址（输入可搜索匹配）"
             className="maison-field"
           />
         </div>
