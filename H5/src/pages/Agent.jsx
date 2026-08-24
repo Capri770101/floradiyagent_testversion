@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   sendChat,
   sendChatStream,
@@ -363,6 +363,7 @@ function OrderCard({ data, onPay }) {
 
 export default function Agent() {
   const nav = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [messages, setMessages] = useState([GREETING])
   const [conversations, setConversations] = useState([])
   const [activeId, setActiveId] = useState(null)
@@ -377,6 +378,7 @@ export default function Agent() {
   const abortRef = useRef(null)
 
   // 进入页面：拉取会话列表；若有历史则自动打开最近的会话（保留对话记录）
+  const [sessionReady, setSessionReady] = useState(false)
   useEffect(() => {
     let alive = true
     ;(async () => {
@@ -392,6 +394,8 @@ export default function Agent() {
         }
       } catch (e) {
         if (alive) console.warn('加载会话列表失败', e)
+      } finally {
+        if (alive) setSessionReady(true)
       }
     })()
     return () => {
@@ -403,6 +407,33 @@ export default function Agent() {
     const el = scrollRef.current
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [messages, loading])
+
+  // URL ?q= 预填：首页快捷气泡带消息跳转过来时，自动新建会话并发送该消息
+  const presetSentRef = useRef(false)
+  useEffect(() => {
+    const q = searchParams.get('q')
+    if (!q || presetSentRef.current || !sessionReady) return
+    presetSentRef.current = true
+    // 清除 URL 上的 q，避免刷新重复发送（不依赖 setTimeout，避免 effect 重跑取消）
+    const sp = new URLSearchParams(searchParams)
+    sp.delete('q')
+    setSearchParams(sp, { replace: true })
+    ;(async () => {
+      setInput(q)
+      // 预填走独立新会话，避免混入历史对话（首页快捷入口是全新诉求）
+      try {
+        const cid = await createConversation(getUserId(), q.slice(0, 20))
+        setActiveId(cid)
+        setMessages([GREETING])
+        await refreshConversations()
+        send(q, cid)
+      } catch (e) {
+        console.warn('预填新建会话失败', e)
+        send(q)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, sessionReady])
 
   // 刷新会话列表（保留当前 activeId），用于新建/发送/删除后同步预览与排序
   const refreshConversations = useCallback(async () => {
@@ -510,11 +541,11 @@ export default function Agent() {
     [nav]
   )
 
-  async function send(text) {
+  async function send(text, presetSid) {
     const msg = (text ?? input).trim()
     if (!msg || loading) return
-    // 首条消息前确保有会话（无则先建）
-    let sid = activeId
+    // 首条消息前确保有会话（无则先建）；预填传 presetSid 时直接用它
+    let sid = presetSid || activeId
     if (!sid) {
       try {
         sid = await createConversation(getUserId(), msg.slice(0, 20))

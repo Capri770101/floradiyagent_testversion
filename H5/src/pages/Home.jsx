@@ -4,6 +4,7 @@ import { IconArrow, IconStar, IconPin, IconMenu } from '../components/icons'
 import LocationPicker from '../components/LocationPicker'
 import ProductCard from '../components/ProductCard'
 import MaisonBloom from '../components/MaisonBloom'
+import { FloraBloom } from '../components/FloralDecor'
 import SmartImage from '../components/SmartImage'
 import Reveal from '../components/Reveal'
 import Carousel from '../components/Carousel'
@@ -16,6 +17,9 @@ import { toast } from '../utils/toast'
 import { getLocation, setLocation } from '../utils/location'
 import { imgColor } from '../utils/color'
 import { shopImage } from '../assets/imageMap'
+
+// 首页「小兰 AI」快捷示例（点击直达对话并预填）
+const AI_QUICK = ['想送妈妈一束花，预算200', '情人节送女友什么花', '想DIY一个毕业花束']
 
 export default function Home() {
   const nav = useNavigate()
@@ -316,6 +320,47 @@ export default function Home() {
         </div>
       </div>
 
+      {/* 小兰 AI 花艺师入口（老板诉求：首页突出 AI 智能体） */}
+      <div className="mt-8 px-5">
+        <Reveal>
+          <button
+            onClick={() => nav('/agent')}
+            className="relative block w-full overflow-hidden rounded-[4px] border border-gold/30 bg-gradient-to-br from-[#F7EDE3] to-[#FDF6EF] px-4 py-4 text-left shadow-soft"
+          >
+            <div className="flex items-center gap-3">
+              <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gold text-[#FAF8F5] shadow-soft">
+                <FloraBloom width={22} height={22} />
+                <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-teal ring-2 ring-white" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="text-[15px] font-medium text-ink">小兰 AI 花艺师</span>
+                  <span className="rounded-full bg-teal/15 px-2 py-0.5 text-[9px] font-medium text-teal">在线</span>
+                </span>
+                <span className="mt-0.5 block truncate text-[11px] text-sub">
+                  告诉我想送谁、什么场合、预算，为你设计专属花束
+                </span>
+              </span>
+              <IconArrow width={14} height={14} className="shrink-0 rotate-0 text-gold" />
+            </div>
+            <span className="mt-3 flex flex-wrap gap-1.5">
+              {AI_QUICK.map((q) => (
+                <span
+                  key={q}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    nav(`/agent?q=${encodeURIComponent(q)}`)
+                  }}
+                  className="press rounded-full border border-gold/30 bg-white/80 px-2.5 py-1 text-[10px] text-gold-dark"
+                >
+                  {q}
+                </span>
+              ))}
+            </span>
+          </button>
+        </Reveal>
+      </div>
+
       {/* 猜你喜欢（模块三：个性化推荐位，数据来自 /recommend/plans） */}
       <div className="mt-10 px-5">
         <Reveal>
@@ -468,6 +513,15 @@ export default function Home() {
           跳舞兰 — 轻奢花艺 · 2026
         </p>
       </Reveal>
+
+      {/* 小兰 AI 悬浮球（老板诉求：随时唤起 AI 花艺师） */}
+      <button
+        onClick={() => nav('/agent')}
+        aria-label="小兰 AI 花艺师"
+        className="press fixed bottom-[76px] right-4 z-30 flex h-[52px] w-[52px] items-center justify-center rounded-full bg-gold text-[#FAF8F5] shadow-soft ring-2 ring-white"
+      >
+        <FloraBloom width={26} height={26} />
+      </button>
 
       {/* 吸底结算栏（参考稿 .sticky：墨黑底 + 香槟金 CTA） */}
       <div className="sticky bottom-0 z-10 flex items-center justify-between bg-ink px-5 py-3.5">
