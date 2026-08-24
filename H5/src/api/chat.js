@@ -30,6 +30,108 @@ export async function sendChat({ message, sessionId, userId }) {
   return res.json()
 }
 
+/**
+ * SSE 流式对话：实时推送 agent 思考过程、工具调用、文本回复和结构化卡片。
+ *
+ * @param {Object} params
+ * @param {string} params.message - 用户消息
+ * @param {string} [params.sessionId] - 会话 ID
+ * @param {string} params.userId - 用户 ID
+ * @param {function} params.onText - 文本片段回调 (text: string) => void
+ * @param {function} [params.onToolCall] - 工具调用回调 ({name, status}) => void
+ * @param {function} [params.onCard] - 结构化卡片回调 ({ui, data}) => void
+ * @param {function} [params.onDone] - 流结束回调 ({sessionId}) => void
+ * @param {function} [params.onError] - 错误回调 (message: string) => void
+ * @returns {function} abort - 调用可中断 SSE 连接
+ */
+export function sendChatStream({ message, sessionId, userId, onText, onToolCall, onCard, onDone, onError }) {
+  const loc = getLocation()
+  const body = {
+    user_id: userId,
+    message,
+    session_id: sessionId || undefined,
+  }
+  if (loc?.lat != null && loc?.lng != null) body.location = { lat: loc.lat, lng: loc.lng }
+
+  const ctrl = new AbortController()
+
+  fetch(`${API_BASE}/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+    signal: ctrl.signal,
+  }).then(async (res) => {
+    if (!res.ok) {
+      handleAuthFailure(res)
+      const text = await res.text().catch(() => '')
+      onError?.(`后端返回 ${res.status}：${text.slice(0, 200)}`)
+      return
+    }
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      // 解析 SSE 事件（按 \n\n 分割）
+      const events = buffer.split('\n\n')
+      buffer = events.pop() || ''  // 最后一段可能不完整，保留
+
+      for (const raw of events) {
+        if (!raw.trim()) continue
+        let eventType = 'message'
+        let eventData = ''
+
+        for (const line of raw.split('\n')) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7).trim()
+          } else if (line.startsWith('data: ')) {
+            eventData = line.slice(6)
+          }
+        }
+
+        if (!eventData) continue
+
+        try {
+          const data = JSON.parse(eventData)
+          switch (eventType) {
+            case 'text':
+              onText?.(data.content || '')
+              break
+            case 'tool_call':
+              onToolCall?.({ name: data.name, status: data.status })
+              break
+            case 'card':
+              onCard?.({ ui: data.ui, data: data.data })
+              break
+            case 'done':
+              onDone?.({ sessionId: data.session_id })
+              break
+            case 'error':
+              onError?.(data.message || '未知错误')
+              break
+            default:
+              // thinking 等其他事件，暂不处理
+              break
+          }
+        } catch {
+          // JSON 解析失败，忽略
+        }
+      }
+    }
+  }).catch((err) => {
+    if (err.name !== 'AbortError') {
+      onError?.(err.message || 'SSE 连接失败')
+    }
+  })
+
+  return () => ctrl.abort()
+}
+
 // 以下为「类 ChatGPT」多会话管理接口（详见后端 /conversations 系列端点）。
 
 export async function listConversations(userId) {

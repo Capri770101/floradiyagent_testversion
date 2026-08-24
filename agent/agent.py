@@ -124,6 +124,63 @@ class ReActAgent:
             self.run, user_id, message, session_id, user_role, location
         )
 
+    async def arun_stream(
+        self,
+        user_id: str,
+        message: str,
+        session_id: str | None = None,
+        user_role: str = "user",
+        location: dict[str, float] | None = None,
+    ):
+        """流式异步入口：yield SSE 事件字典，供 /chat/stream 消费。
+
+        事件类型：
+        - {"event": "tool_call", "name": "...", "status": "ok/error"}
+        - {"event": "text", "content": "..."}  — 逐句输出最终回复
+        - {"event": "card", "ui": "...", "data": {...}}  — 结构化卡片
+        - {"event": "done", "session_id": "..."}
+        - {"event": "error", "message": "..."}
+        """
+        if not is_allowed(user_role, "chat"):
+            yield {"event": "error", "message": f"角色 {user_role} 无权执行 chat"}
+            return
+
+        try:
+            loop = asyncio.get_running_loop()
+            queue: asyncio.Queue[dict | None] = asyncio.Queue()
+
+            def _on_event(evt: dict) -> None:
+                """run() 线程中调用，线程安全地把事件推入 async Queue。"""
+                loop.call_soon_threadsafe(queue.put_nowait, evt)
+
+            async def _run():
+                result = await asyncio.to_thread(
+                    self.run, user_id, message, session_id, user_role, location,
+                    on_event=_on_event,
+                )
+                # run() 内部 on_event 已推送 text/card 事件，此处只送 done
+                await queue.put({"event": "done", "session_id": result.session_id})
+                await queue.put(None)  # sentinel
+
+            import concurrent.futures
+            task = loop.create_task(_run())
+
+            try:
+                while True:
+                    evt = await queue.get()
+                    if evt is None:
+                        break
+                    yield evt
+            except asyncio.CancelledError:
+                task.cancel()
+                raise
+            finally:
+                if not task.done():
+                    task.cancel()
+        except Exception as exc:
+            logger.exception("[agent] arun_stream 异常")
+            yield {"event": "error", "message": f"智能体执行失败: {type(exc).__name__}"}
+
     # ------------------------------------------------------------------ #
     # 主循环（同步，运行在 to_thread 中）
     # ------------------------------------------------------------------ #
@@ -135,6 +192,7 @@ class ReActAgent:
         session_id: str | None,
         user_role: str,
         location: dict[str, float] | None,
+        on_event: Callable[[dict], None] | None = None,
     ) -> ChatResponse:
         t0 = time.perf_counter()
         # 透传前端/上轮给定的会话 ID；为空则 memory 层新建一个会话
@@ -221,6 +279,8 @@ class ReActAgent:
                         name=tc["name"], arguments=tc["arguments"], result=result, status=status
                     )
                     tool_log.append(record)
+                    if on_event:
+                        on_event({"event": "tool_call", "name": tc["name"], "status": status})
                     # 回填 observation
                     messages.append({"role": "tool", "content": result, "tool_call_id": tc.get("id", "")})
                     new_msgs.append({"role": "tool", "content": result, "tool_call_id": tc.get("id", "")})
@@ -613,6 +673,23 @@ class ReActAgent:
 
         elapsed = (time.perf_counter() - t0) * 1000
         logger.info("[agent] 完成 阶段=%s ui=%s 耗时=%.0fms", new_stage.value, ui.value, elapsed)
+
+        # 流式回调：推送最终文本（逐句）+ 卡片，供 arun_stream 桥接 SSE
+        if on_event:
+            import re as _re
+            parts = _re.split(r'([。！？\n])', final_reply or "")
+            buf = ""
+            for seg in parts:
+                buf += seg
+                if seg in ("。", "！", "？", "\n") or len(buf) > 20:
+                    on_event({"event": "text", "content": buf})
+                    buf = ""
+                    time.sleep(0.03)  # 微延迟，让 SSE 逐句到达前端
+            if buf:
+                on_event({"event": "text", "content": buf})
+            if ui and ui.value != "text":
+                on_event({"event": "card", "ui": ui.value, "data": data})
+
         return ChatResponse(
             user_id=user_id,
             reply=final_reply,

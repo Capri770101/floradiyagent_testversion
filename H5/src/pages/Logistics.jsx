@@ -73,8 +73,8 @@ export default function Logistics() {
           <Reveal delay={80}>
           <div className="mx-5 mt-3 rounded-card bg-white p-4 border border-line">
             <p className="eyebrow">商品明细</p>
-            {items.map((it) => (
-              <div key={it.plan_id} className="mt-2.5 flex items-center gap-3">
+            {items.map((it, i) => (
+              <div key={`${it.plan_id || it.name}-${i}`} className="mt-2.5 flex items-center gap-3">
                 <SmartImage
                   src={planImage(it)}
                   imgKey="home_rec_1"
@@ -83,7 +83,7 @@ export default function Logistics() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] text-dark">{it.name}</p>
                   <p className="text-[11px] text-sub">
-                    {fmtMoney(it.price)} × {it.qty}
+                    {fmtMoney(it.unit_price || it.price)} × {it.qty}
                     {it.shop ? ` · ${it.shop}` : ''}
                   </p>
                 </div>

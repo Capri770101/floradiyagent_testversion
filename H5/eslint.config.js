@@ -33,6 +33,8 @@ export default [
         clearInterval: 'readonly',
         URLSearchParams: 'readonly',
         FormData: 'readonly',
+        TextDecoder: 'readonly',
+        TextEncoder: 'readonly',
         File: 'readonly',
         Blob: 'readonly',
         process: 'readonly',

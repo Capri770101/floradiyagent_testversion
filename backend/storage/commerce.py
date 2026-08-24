@@ -215,7 +215,7 @@ def apply_best_coupon(order_id: str, user_id: str, total: float) -> float:
 
 
 def apply_coupon(order_id: str, coupon: dict[str, Any], total: float) -> float:
-    """把优惠券落订单（discount/coupon_id），标记为已用，返回抵扣后的金额。"""
+    """把优惠券落订单（discount/coupon_id），标记为已用，返回实际抵扣金额。"""
     conn = get_conn()
     discount = min(float(coupon["discount"]), total)
     conn.execute(
@@ -227,7 +227,7 @@ def apply_coupon(order_id: str, coupon: dict[str, Any], total: float) -> float:
         (order_id, _now(), coupon["id"]),
     )
     conn.commit()
-    return total - discount
+    return discount
 
 
 def get_points(user_id: str) -> dict[str, Any]:
@@ -1045,6 +1045,31 @@ def _expires_at_str() -> str:
     )
 
 
+def _enrich_order_item_images(conn: Any, items: list[dict]) -> None:
+    """按商品 plan_id 回填订单明细缺失的商品图（effect_image_url）。
+
+    兼容历史订单：下单时未快照图片的明细，读取时从 plans 表补齐，
+    保证订单详情/物流页能展示真实商品图；已带 image 的明细不覆盖。
+    """
+    need = [it for it in items if not (it.get("image") or it.get("effect_image_url"))]
+    if not need:
+        return
+    # 商品图：优先 product_id（DIY 匹配到的店铺单品），否则 plan_id（现有方案）
+    ids = list({str(it.get("product_id") or it.get("plan_id") or "") for it in need if it.get("product_id") or it.get("plan_id")})
+    if not ids:
+        return
+    ph = ",".join("?" * len(ids))
+    rows = conn.execute(
+        f"SELECT id, effect_image_url FROM plans WHERE id IN ({ph})",
+        ids,
+    ).fetchall()
+    img_by_id = {r["id"]: r["effect_image_url"] for r in rows if r["effect_image_url"]}
+    for it in need:
+        pid = str(it.get("product_id") or it.get("plan_id") or "")
+        if pid in img_by_id:
+            it["image"] = img_by_id[pid]
+
+
 def get_order(order_id: str) -> dict[str, Any] | None:
     """读取订单详情（items 反序列化、paid 转 bool、补充 recipient 嵌套对象）。
 
@@ -1058,6 +1083,7 @@ def get_order(order_id: str) -> dict[str, Any] | None:
     row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
     d = dict(row)
     d["items"] = json.loads(d["items"]) if d.get("items") else []
+    _enrich_order_item_images(conn, d["items"])
     d["paid"] = bool(d.get("paid"))
     # 归一化出嵌套 recipient，便于前端直接消费
     d["recipient"] = {

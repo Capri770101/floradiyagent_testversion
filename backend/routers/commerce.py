@@ -29,11 +29,12 @@ from backend.routers.common import (  # noqa: F401  # 共享单例/辅助（按�
     resolve_uid,
 )
 from backend.storage import admin as admin_store
-from backend.storage import commerce
+from backend.storage import commerce, diy
 from backend.storage import payment as payment_module
-from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
+
+from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(tags=["commerce"])
 logger = logging.getLogger("api")
@@ -309,6 +310,12 @@ async def get_order_endpoint(order_id: str, request: Request, user_id: str | Non
     o = await asyncio.to_thread(commerce.get_order, order_id)
     if not o:
         raise HTTPException(status_code=404, detail="订单不存在")
+    # 附上 DIY 方案制作信息（花材配比/包装/步骤/卡片留言），供订单详情页完整展示；
+    # 非 DIY 方案（目录商品）不附带 plan 字段。
+    if o.get("plan_id"):
+        plan = await asyncio.to_thread(diy.get_diy_plan, o["plan_id"])
+        if plan:
+            o["plan"] = plan
     return {"order": o}
 
 

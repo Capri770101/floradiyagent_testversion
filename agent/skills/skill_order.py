@@ -57,37 +57,53 @@ def _plan_price(plan: dict) -> float:
     return 0.0
 
 
-def _extract_flower_names(plan: dict) -> list[str]:
-    """从 DIY 方案中提取花材名称列表（兼容 in-memory 和 DB 两种格式）。"""
+def _extract_flower_names(plan: dict) -> list[dict]:
+    """从 DIY 方案中提取花材列表（带 qty），兼容 in-memory 和 DB 两种格式。
+
+    返回 [{name, qty}] — qty 为该花材支数，缺失时默认 1。
+    """
     design = plan.get("design") or {}
     flowers_raw = plan.get("flowers") or []
 
-    names: list[str] = []
+    seen: dict[str, int] = {}
     # in-memory 格式：design.main_flowers / fillers / foliage
     for key in ("main_flowers", "fillers", "foliage"):
         for f in design.get(key, []):
-            name = f.get("name", "") if isinstance(f, dict) else str(f)
-            if name and name not in names:
-                names.append(name)
+            if not isinstance(f, dict):
+                continue
+            name = f.get("name", "")
+            if not name:
+                continue
+            qty = int(f.get("qty", 1)) if isinstance(f.get("qty"), (int, float)) else 1
+            seen[name] = seen.get(name, 0) + qty
     # DB 格式：flowers 带 bucket 字段
     for f in flowers_raw:
-        if isinstance(f, dict) and f.get("name") and f["name"] not in names:
-            names.append(f["name"])
-    return names
+        if isinstance(f, dict) and f.get("name"):
+            name = f["name"]
+            qty = int(f.get("qty", 1)) if isinstance(f.get("qty"), (int, float)) else 1
+            seen[name] = seen.get(name, 0) + qty
+    return [{"name": n, "qty": q} for n, q in seen.items()]
 
 
-def _match_flowers_to_shop(flower_list: list[str], shop_id: str) -> dict:
+def _match_flowers_to_shop(flower_list: list[dict], shop_id: str) -> dict:
     """将花材列表与店铺在售商品做匹配，返回匹配结果。
 
+    flower_list: [{name, qty}] —— _extract_flower_names 的输出。
     匹配策略（优先级从高到低）：
-    1. 商品名包含花材名（如 "单支粉玫瑰" 包含 "粉玫瑰"）
-    2. 标签包含花材名（如 tags="粉玫瑰,单支" 包含 "粉玫瑰"）
-    3. 花材名出现在标签列表的任一元素中
-    4. 子串兜底：花材名的任一词根（≥2字）出现在商品名中（如 "蝴蝶兰" → "蝴蝶" 命中 "蝴蝶兰鲜切花"）
+    1. 商品名包含花材名
+    2. 标签包含花材名
+    3. 子串兜底：花材名的任一词根（≥2字）出现在商品名中
+
+    返回:
+      matched: [{plan_id, name, price, image, flower, qty, line_total}]
+      missing: [{name, qty}]
+      estimated_cost: 所有已匹配商品 line_total 之和
+      coverage: 已匹配花材种类数 / 总花材种类数
+      budget_total: 方案 budget_breakdown.total_estimate（若有）
     """
     conn = get_conn()
     items = conn.execute(
-        """SELECT p.id, p.name, p.price, p.tags, p.desc
+        """SELECT p.id, p.name, p.price, p.tags, p.desc, p.effect_image_url
            FROM plans p JOIN shop_plans sp ON p.id = sp.plan_id
            WHERE sp.shop_id=? AND sp.status='on'""",
         (shop_id,),
@@ -97,12 +113,14 @@ def _match_flowers_to_shop(flower_list: list[str], shop_id: str) -> dict:
     missing = []
     total_cost = 0.0
 
-    for fl in flower_list:
+    for fl_info in flower_list:
+        fl = fl_info["name"]
+        qty = fl_info.get("qty", 1)
         best = None
         for item in items:
             name = item["name"] or ""
             tags_raw = item["tags"] or ""
-            # 解析 tags（可能是 JSON 数组字符串或逗号分隔）
+            # 解析 tags
             if tags_raw.startswith("["):
                 try:
                     tags_list = json.loads(tags_raw)
@@ -111,18 +129,18 @@ def _match_flowers_to_shop(flower_list: list[str], shop_id: str) -> dict:
             else:
                 tags_list = [t.strip() for t in tags_raw.split(",") if t.strip()]
 
-            # 精确匹配：花材名必须完整出现在商品名或标签中
             if fl in name or fl in tags_raw or fl in tags_list:
                 best = {
                     "plan_id": item["id"],
                     "name": name,
                     "price": item["price"],
+                    "image": item["effect_image_url"] or "",
                     "flower": fl,
+                    "qty": qty,
+                    "line_total": round(item["price"] * qty, 2),
                 }
                 break
         if not best:
-            # 子串兜底：花材名拆成 ≥2 字词根，任一命中商品名即匹配
-            # （如 "蝴蝶兰" → ["蝴蝶", "蝶兰", "蝴蝶兰"]，"尤加利叶" → ["尤加利", "加利叶", "尤加利叶"]）
             for item in items:
                 name = item["name"] or ""
                 candidates = {fl[i:i+2] for i in range(len(fl)-1)} | {fl[i:i+3] for i in range(max(0, len(fl)-2))}
@@ -131,14 +149,17 @@ def _match_flowers_to_shop(flower_list: list[str], shop_id: str) -> dict:
                         "plan_id": item["id"],
                         "name": name,
                         "price": item["price"],
+                        "image": item["effect_image_url"] or "",
                         "flower": fl,
+                        "qty": qty,
+                        "line_total": round(item["price"] * qty, 2),
                     }
                     break
         if best:
             matched.append(best)
-            total_cost += best["price"]
+            total_cost += best["line_total"]
         else:
-            missing.append(fl)
+            missing.append({"name": fl, "qty": qty})
 
     return {
         "matched": matched,
@@ -151,60 +172,83 @@ def _match_flowers_to_shop(flower_list: list[str], shop_id: str) -> dict:
 def _build_detailed_items(plan: dict) -> list[dict]:
     """非 DIY 方案：返回单条方案项。"""
     pid = plan.get("plan_id", "")
-    return [{"plan_id": pid, "name": plan.get("name", "花束"), "role": "方案", "price": _plan_price(plan), "unit_price": _plan_price(plan), "qty": 1}]
+    return [{
+        "plan_id": pid,
+        "name": plan.get("name", "花束"),
+        "role": "方案",
+        "price": _plan_price(plan),
+        "unit_price": _plan_price(plan),
+        "qty": 1,
+        "image": plan.get("effect_image_url") or plan.get("image") or "",
+    }]
 
 
-def _build_diy_order_items(plan: dict, shop_id: str) -> tuple[list[dict], float]:
+def _build_diy_order_items(plan: dict, shop_id: str) -> tuple[list[dict], float, float, list[dict]]:
     """DIY 方案：从 shop 单品匹配组装订单明细。
 
-    返回 (items, total)：
-    - items: 每条 = {plan_id, name, role, price, unit_price, qty, product_id}
-    - total: 所有匹配商品实际价格之和
-    """
-    flower_names = _extract_flower_names(plan)
-    if not flower_names:
-        # 无花材信息，走方案估算价兜底
-        return _build_detailed_items(plan), _plan_price(plan)
+    返回 (items, total, coverage, missing)：
+    - items: 每条 = {plan_id, name, role, price, unit_price, qty, product_id, image}
+    - total: 全覆盖时用店铺实际价之和；部分覆盖时也用已匹配价之和（调用方负责拦截）
+    - coverage: 花材覆盖率（0~1）
+    - missing: 缺失花材列表 [{name, qty}]
 
-    match_result = _match_flowers_to_shop(flower_names, shop_id)
+    当花材覆盖率 < 100% 时，调用方（create_order）应拦截并提示用户，
+    而非用预算估算价创建订单。
+    """
+    flower_infos = _extract_flower_names(plan)
+    if not flower_infos:
+        return _build_detailed_items(plan), _plan_price(plan), 1.0, []
+
+    match_result = _match_flowers_to_shop(flower_infos, shop_id)
     matched = match_result["matched"]
     missing = match_result["missing"]
 
     items: list[dict] = []
     pid = plan.get("plan_id", "")
 
-    # 已匹配的商品：用店铺实际价格
+    # 已匹配的商品：用店铺实际价格 × qty
     for m in matched:
         items.append({
             "plan_id": pid,
             "name": m["name"],
             "role": m["flower"],
-            "price": m["price"],
+            "price": m["line_total"],
             "unit_price": m["price"],
-            "qty": 1,
+            "qty": m["qty"],
             "product_id": m["plan_id"],
+            "image": m.get("image", ""),
         })
 
     # 缺少的花材：标价 0，提示店铺无此花材
     for fl in missing:
         items.append({
             "plan_id": pid,
-            "name": f"{fl}（店铺暂无）",
-            "role": fl,
+            "name": f"{fl['name']}（店铺暂无）",
+            "role": fl["name"],
             "price": 0,
             "unit_price": 0,
-            "qty": 1,
+            "qty": fl["qty"],
         })
 
-    total = match_result["estimated_cost"]
-    # 兜底：匹配全失败（无任何商品命中）时，用方案估算价生成一条方案级明细，
-    # 避免订单卡片显示空列表 + ¥0。
+    coverage = match_result.get("coverage", 0)
+    matched_cost = match_result["estimated_cost"]
+
+    # 总价决策：全覆盖（coverage >= 1.0）用店铺实际价之和；
+    # 部分覆盖时不在此兜底总价（由调用方拦截，禁止下单），
+    # 这里仍给一个安全回退值避免出现 0 总价。
+    if coverage >= 1.0:
+        total = matched_cost
+    else:
+        total = matched_cost
+
+    # 无任何匹配时兜底
     if not items:
         items = _build_detailed_items(plan)
         total = _plan_price(plan)
     elif total <= 0:
-        total = _plan_price(plan)
-    return items, total
+        total = matched_cost or _plan_price(plan)
+
+    return items, total, coverage, match_result.get("missing", [])
 
 
 @register_tool(
@@ -243,8 +287,30 @@ def create_order(
     order_id = "O_" + uuid.uuid4().hex[:10]
 
     # DIY 方案：从 shop 单品匹配组装；现有方案：直接用方案价格
+    coverage = 1.0
+    missing_flowers: list[dict] = []
     if plan_type == "diy":
-        items, total = _build_diy_order_items(plan, shop["shop_id"])
+        items, total, coverage, missing_flowers = _build_diy_order_items(plan, shop["shop_id"])
+        # 覆盖率不足：禁止下单，返回缺失花材 + 建议
+        if coverage < 1.0:
+            return json.dumps(
+                {
+                    "error": "insufficient_coverage",
+                    "message": "该店铺缺少部分花材，无法完成此 DIY 方案。",
+                    "coverage": round(coverage, 2),
+                    "missing_flowers": missing_flowers,
+                    "suggestion": "您可以选择：1）从不同店铺分别购买缺失的花材，自行 DIY 制作；2）更换其他花材方案或调整设计。",
+                },
+                ensure_ascii=False,
+            )
+        # DIY 方案落库（成交时自动沉淀，供订单详情回放花材配比/步骤；重复方案按指纹去重）
+        try:
+            from backend.storage.diy import save_diy_plan
+            _res = save_diy_plan(plan, user_id)
+            if _res.get("plan_id"):
+                plan["plan_id"] = _res["plan_id"]
+        except Exception:  # noqa: BLE001
+            logger.warning("[skill_order] DIY 方案落库失败（不影响下单）", exc_info=True)
     else:
         total = _plan_price(plan)
         items = _build_detailed_items(plan)
@@ -297,6 +363,8 @@ def create_order(
             "plan_type": plan_type,
             "pay_jump": pay_jump,
             "effect_image_url": plan.get("effect_image_url") or plan.get("result_url") or "",
+            "coverage": coverage,
+            "missing_flowers": missing_flowers,
         },
         ensure_ascii=False,
     )

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   sendChat,
+  sendChatStream,
   getUserId,
   listConversations,
   createConversation,
@@ -373,6 +374,7 @@ export default function Agent() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const scrollRef = useRef(null)
+  const abortRef = useRef(null)
 
   // 进入页面：拉取会话列表；若有历史则自动打开最近的会话（保留对话记录）
   useEffect(() => {
@@ -528,39 +530,74 @@ export default function Agent() {
     setInput('')
     setError(null)
     setLoading(true)
-    try {
-      const resp = await sendChat({
-        message: msg,
-        sessionId: sid,
-        userId: getUserId(),
-      })
-      // 智能体可能因「新需求」开新会话（DONE 后重购），以返回的会话 ID 为准
-      if (resp.session_id) setActiveId(resp.session_id)
-      setMessages([
-        ...hist,
-        {
-          role: 'assistant',
-          content: resp.reply || '',
-          ui: resp.ui,
-          data: resp.data,
-        },
-      ])
-      await refreshConversations()
-    } catch (e) {
-      setError(e.message || '请求失败')
-      setMessages([
-        ...hist,
-        {
-          role: 'assistant',
-          content: /504|处理超时/.test(e.message)
-            ? '生成花艺方案需要一点时间，请稍后重试；若多次超时可把需求简化一些再发。'
-            : '抱歉，连接后端失败了，请确认服务已启动（后端 uvicorn 在 8080，且 H5 用 npm run dev 访问）。',
-          error: true,
-        },
-      ])
-    } finally {
-      setLoading(false)
-    }
+
+    // SSE 流式：逐步构建助手回复，打字机效果
+    let replyText = ''
+    let streamUi = null
+    let streamData = null
+    let streamSid = sid
+
+    // 先插入一条空的助手消息（占位），后续逐步更新 content
+    const streamingIdx = hist.length
+    setMessages([...hist, { role: 'assistant', content: '', ui: null, data: null, streaming: true }])
+
+    const abort = sendChatStream({
+      message: msg,
+      sessionId: sid,
+      userId: getUserId(),
+      onText: (chunk) => {
+        replyText += chunk
+        setMessages((prev) => {
+          const next = [...prev]
+          next[streamingIdx] = { ...next[streamingIdx], content: replyText }
+          return next
+        })
+      },
+      onToolCall: ({ name, status }) => {
+        // 工具调用提示（可选：显示加载状态）
+      },
+      onCard: ({ ui, data: cardData }) => {
+        streamUi = ui
+        streamData = cardData
+      },
+      onDone: ({ sessionId: finalSid }) => {
+        if (finalSid) streamSid = finalSid
+        // 最终替换：把流式消息替换为完整消息（含卡片）
+        setMessages((prev) => {
+          const next = [...prev]
+          next[streamingIdx] = {
+            role: 'assistant',
+            content: replyText,
+            ui: streamUi,
+            data: streamData,
+            streaming: false,
+          }
+          return next
+        })
+        if (streamSid) setActiveId(streamSid)
+        setLoading(false)
+        refreshConversations()
+      },
+      onError: (errMsg) => {
+        setError(errMsg || '请求失败')
+        setMessages((prev) => {
+          const next = [...prev]
+          next[streamingIdx] = {
+            role: 'assistant',
+            content: /504|处理超时/.test(errMsg)
+              ? '生成花艺方案需要一点时间，请稍后重试；若多次超时可把需求简化一些再发。'
+              : '抱歉，连接后端失败了，请确认服务已启动（后端 uvicorn 在 8080，且 H5 用 npm run dev 访问）。',
+            error: true,
+            streaming: false,
+          }
+          return next
+        })
+        setLoading(false)
+      },
+    })
+
+    // 保存 abort 函数供组件卸载时调用
+    abortRef.current = abort
   }
 
   function extractPlans(data) {

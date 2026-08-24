@@ -193,33 +193,41 @@ export default function Orders() {
                 <div
                   className="block w-full overflow-hidden rounded-card bg-white border border-line text-left"
                 >
-                  <div className="flex items-center justify-between border-b border-line px-4 py-3">
-                    <span className="text-[11px] text-sub">{o.order_id}</span>
-                    <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>
-                      {meta.label}
-                    </span>
-                  </div>
-                  {items.slice(0, 2).map((it) => (
-                    <div key={it.plan_id} className="flex items-center gap-3 px-4 py-2.5">
-                      <SmartImage
-                        src={planImage(it)}
-                        imgKey="home_rec_1"
-                        className="h-[44px] w-[44px] shrink-0 rounded-[4px]"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] text-dark">{it.name}</p>
-                        <p className="text-[11px] text-sub">
-                          ¥{Number(it.price).toFixed(2)} × {it.qty}
-                          {it.shop ? ` · ${it.shop}` : ''}
-                        </p>
-                      </div>
+                  <button
+                    type="button"
+                    onClick={() => nav(`/orders/${o.order_id}`)}
+                    className="block w-full text-left"
+                  >
+                    <div className="flex items-center justify-between border-b border-line px-4 py-3">
+                      <span className="text-[11px] text-sub">{o.order_id}</span>
+                      <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>
+                        {meta.label}
+                      </span>
                     </div>
-                  ))}
-                  {items.length > 2 && (
-                    <p className="px-4 pb-2.5 text-[11px] text-sub">等 {items.length} 件商品</p>
-                  )}
-                  <div className="flex items-center justify-between border-t border-line px-4 py-3">
-                    <span className="text-[11px] text-sub">共 {count} 件</span>
+                    {items.map((it, idx) => (
+                      <div key={`${it.plan_id || it.name}-${idx}`} className="flex items-center gap-3 px-4 py-2.5">
+                        <SmartImage
+                          src={planImage(it)}
+                          imgKey="home_rec_1"
+                          className="h-[44px] w-[44px] shrink-0 rounded-[4px]"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] text-dark">{it.name}</p>
+                          <p className="text-[11px] text-sub">
+                            ¥{Number(it.unit_price || it.price || 0).toFixed(2)} × {it.qty}
+                            {it.shop ? ` · ${it.shop}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between border-t border-line px-4 py-3">
+                      <span className="text-[11px] text-sub">共 {count} 件</span>
+                      <span className="font-serif-cn text-[15px] font-normal text-ink">
+                        合计 {fmtMoney(total)}
+                      </span>
+                    </div>
+                  </button>
+                  <div className="flex items-center justify-between border-t border-line px-4 py-2.5">
                     <div className="flex items-center gap-3">
                       {canAftersale(o) && (
                         <button
@@ -280,11 +288,15 @@ export default function Orders() {
                           评价
                         </Button>
                       )}
-                      <span className="font-serif-cn text-[15px] font-normal text-ink">
-                        合计 {fmtMoney(total)}
-                      </span>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => nav(`/orders/${o.order_id}`)}
+                    className="press block w-full border-t border-line bg-bg/50 py-2 text-center text-[11px] tracking-[1px] text-gold"
+                  >
+                      查看订单详情
+                  </button>
                   {o.shop_id && (
                     <button
                       type="button"

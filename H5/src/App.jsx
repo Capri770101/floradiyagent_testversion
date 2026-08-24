@@ -21,6 +21,7 @@ import Favorites from './pages/Favorites'
 import CouponCenter from './pages/CouponCenter'
 import Logistics from './pages/Logistics'
 import Orders from './pages/Orders'
+import OrderDetail from './pages/OrderDetail'
 import Chat from './pages/Chat'
 import MerchantApply from './pages/MerchantApply'
 import MyAftersales from './pages/MyAftersales'
@@ -143,6 +144,14 @@ export default function App() {
           element={
             <RequireAuth>
               <Orders />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/orders/:orderId"
+          element={
+            <RequireAuth>
+              <OrderDetail />
             </RequireAuth>
           }
         />

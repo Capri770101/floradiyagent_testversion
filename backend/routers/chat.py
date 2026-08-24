@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from pathlib import Path
@@ -29,7 +30,7 @@ from backend.security import get_current_user
 from backend.storage import memory as mem_store
 from backend.storage import tasks
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger("api")
@@ -81,6 +82,59 @@ async def chat(req: ChatRequest, request: Request) -> Any:
     final_sid = result.session_id
     await asyncio.to_thread(mem_store.update_conversation_preview, final_sid, req.message[:60])
     return result.model_dump()
+
+
+@router.post("/chat/stream")
+async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
+    """SSE 流式对话端点：实时推送 agent 思考过程、工具调用、文本回复和结构化卡片。
+
+    响应格式为 text/event-stream，每条事件格式：
+    event: <type>\n
+    data: <json>\n\n
+
+    事件类型：thinking / tool_call / text / card / done / error
+    """
+    _check_rate(f"chat:{_client_ip(request)}", settings.rate_limit_chat_per_minute)
+    request_id = getattr(request.state, "request_id", "-")
+    user_id = await resolve_uid(request, req.user_id)
+    logger.info("[%s] chat/stream user=%s msg=%s", request_id, user_id, req.message[:80])
+
+    if not is_allowed(req.user_role, "chat"):
+        raise HTTPException(status_code=403, detail=f"角色 {req.user_role} 无权执行 chat")
+
+    # 会话归属校验
+    sid = req.session_id
+    if sid:
+        conv = await asyncio.to_thread(mem_store.get_conversation, sid)
+        if not conv or conv.get("user_id") != user_id:
+            sid = None
+    if not sid:
+        sid = await asyncio.to_thread(
+            mem_store.create_conversation, user_id, title=req.message[:20]
+        )
+
+    async def event_generator():
+        """SSE 事件生成器：消费 agent.arun_stream 的 yield 事件。"""
+        try:
+            async for evt in agent.arun_stream(
+                user_id, req.message, sid, req.user_role, req.location
+            ):
+                event_type = evt.get("event", "text")
+                data = {k: v for k, v in evt.items() if k != "event"}
+                yield f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            logger.exception("[%s] SSE 流异常", request_id)
+            yield f"event: error\ndata: {json.dumps({'message': str(exc)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 

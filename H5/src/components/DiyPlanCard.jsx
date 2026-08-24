@@ -144,7 +144,7 @@ export default function DiyPlanCard({ plan, onConfirm, onAdjust, onEdit, img }) 
     return () => {
       alive = false
     }
-  }, [img?.task_id, img?.result_url])
+  }, [img?.task_id, img?.result_url, p?.effectImageUrl])
 
   // 防御：无方案不渲染。注意：必须在所有 hooks 之后 return（hooks 不能被条件跳过）。
   if (!p) return null

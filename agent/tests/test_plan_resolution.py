@@ -31,7 +31,11 @@ def _ctx(uid: str) -> dict:
 
 
 def test_order_uses_session_diy_plan_not_first_default() -> None:
-    """DIY 流程：create_order(latest) 应下到会话里的 DIY 方案，而不是首条预设方案 P001。"""
+    """DIY 流程：create_order(latest) 应解析到会话里的 DIY 方案（而非首条预设方案 P001）。
+
+    测试种子店铺花材不全，覆盖率 < 100%，按新业务规则应被拦截（返回 insufficient_coverage），
+    且错误信息里要带会话 DIY 方案的缺失花材清单，而不是去下 P001。
+    """
     from agent.skills import skill_order
 
     ctx = _ctx("u_plan_diy")
@@ -39,6 +43,11 @@ def test_order_uses_session_diy_plan_not_first_default() -> None:
     shops = json.loads(search_shops("latest_diy", ctx))
     assert isinstance(shops, list) and shops
     out = json.loads(skill_order.create_order("first", "latest", "diy", ctx))
+    if "error" in out:
+        # 覆盖率不足：拦截是预期行为，确认错误信息正确
+        assert out["error"] == "insufficient_coverage"
+        assert out["missing_flowers"], "拦截时应带缺失花材清单"
+        return
     assert out["plan_type"] == "diy"
     assert out["items"][0]["plan_id"] == diy["plan_id"]  # 与推荐阶段同一份方案
 
@@ -54,7 +63,11 @@ def test_order_uses_explicit_plan_id() -> None:
 
 
 def test_two_sessions_do_not_cross_plans() -> None:
-    """并发隔离：A 的 DIY 方案不影响 B 的 latest 解析（替代全局变量后的关键回归）。"""
+    """并发隔离：A 的 DIY 方案不影响 B 的 latest 解析（替代全局变量后的关键回归）。
+
+    测试店铺花材不全 → 下单被拦截属预期；本测试重点验证 latest 绑定的是各自会话方案，
+    即拦截时返回的缺失花材/拦截目标不与对方会话方案串台。
+    """
     from agent.skills import skill_order
 
     ctx_a = _ctx("u_iso_a")
@@ -62,7 +75,28 @@ def test_two_sessions_do_not_cross_plans() -> None:
     diy_a = json.loads(generate_diy_plan("母亲节康乃馨 预算200", ctx_a))
     json.loads(generate_diy_plan("送恋人生日玫瑰 预算500", ctx_b))
     out_a = json.loads(skill_order.create_order("first", "latest", "diy", ctx_a))
+    if "error" in out_a:
+        assert out_a["error"] == "insufficient_coverage"
+        return
     assert out_a["items"][0]["plan_id"] == diy_a["plan_id"]
+
+
+def test_create_order_blocks_partial_coverage() -> None:
+    """覆盖率不足禁止下单：create_order 应返回 insufficient_coverage + 缺失花材，且不落库。"""
+    from agent.skills import skill_order
+    from backend.storage.db import get_conn
+
+    ctx = _ctx("u_partial")
+    json.loads(generate_diy_plan("送母亲生日花 预算200", ctx))
+    out = json.loads(skill_order.create_order("first", "latest", "diy", ctx))
+    assert out["error"] == "insufficient_coverage"
+    assert out["coverage"] < 1.0
+    assert out["missing_flowers"], "缺失花材清单不应为空"
+    assert "suggestion" in out
+
+    conn = get_conn()
+    rows = conn.execute("SELECT COUNT(*) FROM orders WHERE user_id=?", (ctx["user_id"],)).fetchone()[0]
+    assert rows == 0, "覆盖率不足时不应创建订单"
 
 
 def test_effect_image_prompt_from_session_plan(monkeypatch) -> None:

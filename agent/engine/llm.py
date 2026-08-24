@@ -54,6 +54,26 @@ def _openai_call(
     return client.chat.completions.create(**kwargs)
 
 
+def call_llm_stream(
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+) -> Any:
+    """流式 LLM 调用，返回 OpenAI Stream 对象（可迭代 yield chunk）。
+
+    与 call_llm 相同的配置，但 stream=True。调用方需自行迭代 chunk 并拼装。
+    """
+    if not settings.llm_enabled:
+        raise RuntimeError(
+            "未配置 LLM_API_KEY，系统已切换为 live-only（已弃用 Mock 引擎）。"
+            "请在 .env 配置 LLM_API_KEY 后启动。"
+        )
+    try:
+        return _openai_call(messages, tools, stream=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[llm] 流式接口调用失败")
+        raise RuntimeError(f"LLM 流式调用失败: {exc}") from exc
+
+
 def call_llm(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,

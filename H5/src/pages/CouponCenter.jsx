@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
@@ -21,16 +21,16 @@ export default function CouponCenter() {
   const [busyId, setBusyId] = useState('')
   const loggedIn = isLoggedIn()
 
-  const loadOffers = async () => {
+  const loadOffers = useCallback(async () => {
     try {
       const data = await listCouponOffers()
       setOffers(data.offers || [])
     } catch (e) {
       toast(e.message || '加载失败', 'error')
     }
-  }
+  }, [])
 
-  const loadMine = async () => {
+  const loadMine = useCallback(async () => {
     if (!loggedIn) return
     try {
       const [cs, ps] = await Promise.all([listCoupons(), getPoints()])
@@ -39,15 +39,15 @@ export default function CouponCenter() {
     } catch (e) {
       toast(e.message || '加载失败', 'error')
     }
-  }
+  }, [loggedIn])
 
   useEffect(() => {
     loadOffers()
-  }, [])
+  }, [loadOffers])
 
   useEffect(() => {
     if (loggedIn) loadMine()
-  }, [loggedIn])
+  }, [loggedIn, loadMine])
 
   const claim = async (offer) => {
     if (!loggedIn) {
