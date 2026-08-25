@@ -514,15 +514,6 @@ export default function Home() {
         </p>
       </Reveal>
 
-      {/* 小兰 AI 悬浮球（老板诉求：随时唤起 AI 花艺师） */}
-      <button
-        onClick={() => nav('/agent')}
-        aria-label="小兰 AI 花艺师"
-        className="press fixed bottom-[76px] right-4 z-30 flex h-[52px] w-[52px] items-center justify-center rounded-full bg-gold text-[#FAF8F5] shadow-soft ring-2 ring-white"
-      >
-        <FloraBloom width={26} height={26} />
-      </button>
-
       {/* 吸底结算栏（参考稿 .sticky：墨黑底 + 香槟金 CTA） */}
       <div className="sticky bottom-0 z-10 flex items-center justify-between bg-ink px-5 py-3.5">
         <div>
