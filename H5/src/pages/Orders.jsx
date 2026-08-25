@@ -291,24 +291,28 @@ export default function Orders() {
                           评价
                         </Button>
                       )}
-                  </div>
-                  <div className="flex border-t border-line">
-                    {o.shop_id && (
-                      <button
-                        type="button"
-                        onClick={() => nav(`/chat/${encodeURIComponent(o.shop_id)}`)}
-                        className="press flex-1 border-r border-line bg-bg/50 py-2.5 text-center text-[11px] tracking-[1px] text-sub"
+                      {o.shop_id && (
+                        <Button
+                          variant="secondary"
+                          className="flex-1 !h-[34px] !text-[12px]"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            nav(`/chat/${encodeURIComponent(o.shop_id)}`)
+                          }}
+                        >
+                          联系商家
+                        </Button>
+                      )}
+                      <Button
+                        variant="secondary"
+                        className="flex-1 !h-[34px] !text-[12px]"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          nav(`/logistics/${o.order_id}`)
+                        }}
                       >
-                        联系商家
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => nav(`/logistics/${o.order_id}`)}
-                      className="press flex-1 bg-bg/50 py-2.5 text-center text-[11px] tracking-[1px] text-sub"
-                    >
-                      查看物流跟踪
-                    </button>
+                        查看物流
+                      </Button>
                   </div>
                 </div>
                 </Reveal>
