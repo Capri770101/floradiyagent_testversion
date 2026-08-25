@@ -199,7 +199,10 @@ export default function Orders() {
                     className="block w-full text-left"
                   >
                     <div className="flex items-center justify-between border-b border-line px-4 py-3">
-                      <span className="text-[11px] text-sub">{o.order_id}</span>
+                      <div className="flex flex-col">
+                        <span className="text-[11px] text-sub">{o.order_id}</span>
+                        <span className="text-[10px] text-sub/60">{o.created_at}</span>
+                      </div>
                       <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>
                         {meta.label}
                       </span>
