@@ -113,6 +113,11 @@ export async function updateOrder(orderId, patch) {
   return data.order
 }
 
+export async function getShareCard(token) {
+  const data = await api(`/share/card/${encodeURIComponent(token)}`)
+  return data.card
+}
+
 // ---------------- 收货地址 ----------------
 
 export async function listAddresses() {

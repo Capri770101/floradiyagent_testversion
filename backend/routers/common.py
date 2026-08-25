@@ -235,6 +235,7 @@ class OrderPatchRequest(BaseModel):
     )
     card_message: str | None = Field(None, description="贺卡寄语")
     card_image_url: str | None = Field(None, description="AI 生成贺卡图片 URL")
+    card_token: str | None = Field(None, description="贺卡分享 token")
 
 
 

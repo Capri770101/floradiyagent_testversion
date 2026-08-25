@@ -200,6 +200,24 @@ export default function OrderDetail() {
                   )}
                 </div>
               )}
+              {order.card_token && order.paid && (
+                <button
+                  className="mt-2 flex items-center gap-1 rounded-[2px] bg-pink/10 px-3 py-1.5 text-[11px] text-pink"
+                  onClick={() => {
+                    const url = `${window.location.origin}/card-share/${order.card_token}`
+                    navigator.clipboard?.writeText(url).then(
+                      () => toast('链接已复制，快去分享给 TA 吧'),
+                      () => toast('复制失败，请长按链接手动复制', 'error')
+                    )
+                  }}
+                >
+                  <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5">
+                    <path d="M4 12V4h8v8H4Z" stroke="currentColor" strokeWidth="1.2" />
+                    <path d="M6 12V2h8v10" stroke="currentColor" strokeWidth="1.2" />
+                  </svg>
+                  分享贺卡
+                </button>
+              )}
             </div>
             </Reveal>
           )}

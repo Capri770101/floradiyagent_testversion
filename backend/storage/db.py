@@ -259,6 +259,7 @@ CREATE TABLE IF NOT EXISTS orders (
     note           TEXT,
     card_message   TEXT,                          -- 贺卡寄语
     card_image_url TEXT,                          -- AI 生成贺卡图片
+    card_token     TEXT,                          -- 贺卡分享 token（唯一，支付后生成）
     created_at     TEXT NOT NULL
 );
 
@@ -531,6 +532,7 @@ _ALTERS = [
     ("orders", "expires_at", "ALTER TABLE orders ADD COLUMN expires_at TEXT"),
     ("orders", "card_message", "ALTER TABLE orders ADD COLUMN card_message TEXT"),
     ("orders", "card_image_url", "ALTER TABLE orders ADD COLUMN card_image_url TEXT"),
+    ("orders", "card_token", "ALTER TABLE orders ADD COLUMN card_token TEXT"),
     # coupons: 领券中心来源标记
     ("coupons", "offer_id", "ALTER TABLE coupons ADD COLUMN offer_id TEXT"),
     # shop_plans: 店铺内商品上下架（商家端管理；C 端仅展示 on）
@@ -625,6 +627,14 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone) "
             "WHERE phone IS NOT NULL AND phone != ''"
         )
+    # 贺卡分享 token 唯一索引
+    try:
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_card_token ON orders(card_token) "
+            "WHERE card_token IS NOT NULL AND card_token != ''"
+        )
+    except sqlite3.OperationalError:  # pragma: no cover
+        pass
     conn.commit()
     # 目录种子数据：仅首次启动（plans 为空）灌入示例方案/店铺，DB 成为唯一来源；
     # 已有业务数据（如 reset_and_seed 注入的自定义目录）时不覆盖

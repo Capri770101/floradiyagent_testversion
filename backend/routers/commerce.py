@@ -328,12 +328,23 @@ async def patch_order(order_id: str, req: OrderPatchRequest, request: Request) -
     await _assert_order_owner(order_id, uid)
     o = await asyncio.to_thread(
         commerce.update_order, order_id, req.recipient, req.delivery, req.note, req.delivery_location,
-        req.card_message, req.card_image_url
+        req.card_message, req.card_image_url, req.card_token
     )
     if not o:
         raise HTTPException(status_code=404, detail="订单不存在")
     return {"order": o}
 
+
+@router.get("/share/card/{token}")
+async def get_share_card(token: str) -> dict[str, Any]:
+    """公开端点：通过贺卡 token 查询贺卡信息（无需登录）。"""
+    import re
+    if not re.fullmatch(r"[0-9a-f]{12}", token):
+        raise HTTPException(status_code=400, detail="无效的贺卡链接")
+    d = await asyncio.to_thread(commerce.get_share_card, token)
+    if not d:
+        raise HTTPException(status_code=404, detail="贺卡不存在或已过期")
+    return {"card": d}
 
 
 @router.post("/orders/{order_id}/action")

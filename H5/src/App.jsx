@@ -27,6 +27,7 @@ import MerchantApply from './pages/MerchantApply'
 import MyAftersales from './pages/MyAftersales'
 import Notifications from './pages/Notifications'
 import NotificationDetail from './pages/NotificationDetail'
+import CardShare from './pages/CardShare'
 
 // 404 兜底页：路由未命中时给出明确反馈与返回入口（review 点名缺失）
 function NotFound() {
@@ -208,6 +209,7 @@ export default function App() {
         <Route path="/service" element={<Service />} />
         <Route path="/about" element={<About />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/card-share/:token" element={<CardShare />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

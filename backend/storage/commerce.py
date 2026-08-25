@@ -1006,6 +1006,7 @@ def update_order(
     delivery_location: dict[str, Any] | None = None,
     card_message: str | None = None,
     card_image_url: str | None = None,
+    card_token: str | None = None,
 ) -> dict[str, Any] | None:
     """更新订单的收货人 / 配送时间 / 备注 / 配送位置（仅允许设置传入的字段）。
 
@@ -1046,6 +1047,9 @@ def update_order(
     if card_image_url is not None:
         sets.append("card_image_url=?")
         vals.append(card_image_url)
+    if card_token is not None:
+        sets.append("card_token=?")
+        vals.append(card_token)
     if delivery_location is not None and isinstance(delivery_location, dict):
         if delivery_location.get("lat") is not None:
             sets.append("delivery_lat=?")
@@ -1366,6 +1370,11 @@ def pay_order(
     conn.commit()
 
     if intent.paid:
+        # 贺卡分享 token：支付完成后若订单有贺卡内容则自动生成唯一 token
+        if (order.get("card_message") or order.get("card_image_url")) and not order.get("card_token"):
+            token = uuid.uuid4().hex[:12]
+            conn.execute("UPDATE orders SET card_token=? WHERE order_id=?", (token, order_id))
+            conn.commit()
         # 通知中心（模块一）：沙箱渠道下单即支付成功
         from backend.storage import notify
 
@@ -1435,6 +1444,15 @@ def mark_order_paid(order_id: str, transaction_id: str = "") -> bool:
              "paid", transaction_id, now, now),
         )
     conn.commit()
+    # 贺卡分享 token：支付完成后若订单有贺卡内容则自动生成唯一 token
+    try:
+        has_card = row["card_message"] or row["card_image_url"]
+    except (IndexError, KeyError):
+        has_card = False
+    if has_card and not row["card_token"]:
+        token = uuid.uuid4().hex[:12]
+        conn.execute("UPDATE orders SET card_token=? WHERE order_id=?", (token, order_id))
+        conn.commit()
     # 通知中心（模块一）：真实网关回调确认支付成功
     from backend.storage import notify
 
@@ -1457,3 +1475,21 @@ def get_payment_status(order_id: str) -> dict[str, Any] | None:
     if not row:
         return None
     return {"order_id": order_id, "paid": bool(row["paid"]), "status": row["status"]}
+
+
+def get_share_card(token: str) -> dict[str, Any] | None:
+    """通过贺卡 token 查询贺卡信息（公开端点，无需登录）。"""
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT card_message, card_image_url, recipient_name, shop_id, created_at "
+        "FROM orders WHERE card_token=?", (token,)
+    ).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    if d.get("shop_id"):
+        shop = conn.execute("SELECT name FROM shops WHERE id=?", (d["shop_id"],)).fetchone()
+        d["shop_name"] = shop["name"] if shop else ""
+    else:
+        d["shop_name"] = ""
+    return d
