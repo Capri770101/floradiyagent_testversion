@@ -23,8 +23,8 @@ function Row({ label, value, valueClass = 'text-ink' }) {
   )
 }
 
-// 最快配送默认项（拼接店铺配送时长，如「尽快送达（约22分钟）」）
-const FAST_DELIVERY = '尽快送达'
+// 最快配送默认项（拼接店铺配送时长，如「立即送出（约22分钟）」）
+const FAST_DELIVERY = '立即送出'
 
 // 06 订单确认
 export default function OrderConfirm() {
@@ -82,7 +82,7 @@ export default function OrderConfirm() {
         setOrder(o)
         const r = o?.recipient || {}
         setRecipient({ name: r.name || '', phone: r.phone || '', address: r.address || '' })
-        // 配送时间：订单已有值则回显；否则默认「尽快送达」
+        // 配送时间：订单已有值则回显；否则默认「立即送出」
         if (o?.delivery_time) setDelivery(o.delivery_time)
         else setDelivery(FAST_DELIVERY)
         if (o?.note) setNote(o.note)
@@ -90,7 +90,7 @@ export default function OrderConfirm() {
         if (o?.delivery_location?.lat != null) {
           setDeliveryLoc(o.delivery_location)
         }
-        // 拉取店铺配送时长，用于「尽快送达」文案
+        // 拉取店铺配送时长，用于「立即送出」文案
         if (o?.shop_id) {
           getShop(o.shop_id)
             .then((s) => {
