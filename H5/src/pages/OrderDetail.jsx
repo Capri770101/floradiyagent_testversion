@@ -5,7 +5,8 @@ import { Button } from '../components/Button'
 import SmartImage from '../components/SmartImage'
 import Reveal from '../components/Reveal'
 import { IconPin, IconClock, IconBack } from '../components/icons'
-import { getOrder, orderAction, postReview, publicConfig } from '../api/shop'
+import { getOrder, orderAction, postReview, publicConfig, updateOrder } from '../api/shop'
+import { generateEffectImage, pollImageTask } from '../api/image'
 import { withApiUrl } from '../api/client'
 import { planImage } from '../assets/imageMap'
 import { statusMeta } from '../utils/status'
@@ -21,6 +22,11 @@ export default function OrderDetail() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [shippingFee, setShippingFee] = useState(0)
+  // 贺卡编辑
+  const [editingCard, setEditingCard] = useState(false)
+  const [cardMsg, setCardMsg] = useState('')
+  const [cardImg, setCardImg] = useState('')
+  const [cardBusy, setCardBusy] = useState(false)
 
   useEffect(() => {
     if (!orderId) return
@@ -52,6 +58,43 @@ export default function OrderDetail() {
   }
 
   const goPay = () => nav('/pay', { state: { orderId } })
+
+  const openAddCard = () => {
+    setEditingCard(true)
+    setCardMsg(order?.card_message || plan?.card_message || '')
+    setCardImg(order?.card_image_url || '')
+  }
+
+  const onGenerateCard = async () => {
+    if (cardBusy || !cardMsg.trim()) return
+    setCardBusy(true)
+    try {
+      const prompt = '水彩花卉贺卡背景，柔和暖色调，粉色玫瑰与香槟色百合，花瓣散落，柔和光影，梦幻模糊背景，温馨优雅，无文字无边框无字母无符号'
+      const { task_id } = await generateEffectImage(prompt)
+      const data = await pollImageTask(task_id, { timeoutMs: 90000 })
+      setCardImg(data.result_url)
+      toast('贺卡生成成功')
+    } catch (e) {
+      toast('贺卡生成失败：' + e.message, 'error')
+    } finally {
+      setCardBusy(false)
+    }
+  }
+
+  const saveCard = async () => {
+    if (!cardMsg.trim()) { toast('请填写寄语', 'error'); return }
+    try {
+      const o = await updateOrder(orderId, {
+        card_message: cardMsg.trim(),
+        card_image_url: cardImg || undefined,
+      })
+      setOrder(o)
+      setEditingCard(false)
+      toast('贺卡已保存')
+    } catch (e) {
+      toast('保存失败：' + e.message, 'error')
+    }
+  }
 
   const meta = order ? statusMeta(order.status) : null
   const items = order?.items || []
@@ -184,7 +227,8 @@ export default function OrderDetail() {
                   </ol>
                 </>
               )}
-              {(order.card_image_url || order.card_message || plan?.card_message) && (
+              {/* 贺卡区域：有贺卡时展示，无贺卡时显示添加按钮 */}
+              {(order.card_image_url || order.card_message || plan?.card_message) && !editingCard ? (
                 <div className="mt-3">
                   <div className="card-preview relative overflow-hidden rounded-[4px]" style={{ maxHeight: 180 }}>
                     {order.card_image_url ? (
@@ -208,7 +252,80 @@ export default function OrderDetail() {
                       </div>
                     )}
                   </div>
+                  <button
+                    className="mt-2 text-[11px] text-sub/70 underline"
+                    onClick={openAddCard}
+                  >
+                    编辑贺卡
+                  </button>
                 </div>
+              ) : editingCard ? (
+                <div className="mt-3 rounded-card bg-white p-4 border border-line">
+                  <p className="mb-2 text-[12px] font-medium text-ink">贺卡寄语</p>
+                  <textarea
+                    value={cardMsg}
+                    onChange={(e) => setCardMsg(e.target.value)}
+                    placeholder="写一句祝福的话…"
+                    maxLength={100}
+                    rows={2}
+                    className="w-full resize-none rounded-[4px] border border-line bg-bg p-3 text-[12px] text-ink outline-none placeholder:text-sub/60 focus:border-pink"
+                  />
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="text-[10px] text-sub">{cardMsg.length}/100</span>
+                    <Button
+                      variant="subtle"
+                      className="!h-[28px] !text-[11px]"
+                      disabled={cardBusy || !cardMsg.trim()}
+                      onClick={onGenerateCard}
+                    >
+                      {cardBusy ? '生成中…' : cardImg ? '重新生成' : 'AI 生成贺卡'}
+                    </Button>
+                  </div>
+                  {cardBusy && (
+                    <div className="mt-2 flex flex-col items-center justify-center rounded-[4px] bg-pink-2/50 py-6">
+                      <div className="mb-2 h-5 w-5 animate-spin rounded-full border-2 border-pink border-t-transparent" />
+                      <p className="text-[11px] text-sub">贺卡生成中…</p>
+                    </div>
+                  )}
+                  {cardImg && !cardBusy && (
+                    <div className="card-preview relative mt-2 overflow-hidden rounded-[4px]" style={{ maxHeight: 150 }}>
+                      <img
+                        src={withApiUrl(cardImg)}
+                        alt="贺卡"
+                        className="w-full object-cover"
+                        style={{ maxHeight: 150 }}
+                      />
+                      {cardMsg.trim() && (
+                        <div className="absolute inset-0 flex items-center justify-center px-4">
+                          <p
+                            className="font-serif-cn text-[14px] leading-[1.8] text-white"
+                            style={{ textShadow: '0 1px 6px rgba(0,0,0,0.4)' }}
+                          >
+                            {cardMsg.trim()}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="mt-3 flex gap-2">
+                    <Button variant="secondary" className="flex-1 !h-[32px] !text-[12px]" onClick={() => setEditingCard(false)}>
+                      取消
+                    </Button>
+                    <Button variant="primary" className="flex-1 !h-[32px] !text-[12px]" onClick={saveCard}>
+                      保存贺卡
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-white py-4 text-[12px] text-sub hover:border-pink"
+                  onClick={openAddCard}
+                >
+                  <svg viewBox="0 0 16 16" fill="none" className="h-4 w-4">
+                    <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                  </svg>
+                  添加贺卡寄语
+                </button>
               )}
               {order.card_token && order.paid && (
                 <button
