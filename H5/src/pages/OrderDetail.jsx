@@ -184,10 +184,21 @@ export default function OrderDetail() {
                   </ol>
                 </>
               )}
-              {plan.card_message && (
-                <p className="mt-2 rounded-[2px] bg-bg px-3 py-2 text-[11px] text-sub">
-                  卡片留言：{plan.card_message}
-                </p>
+              {(order.card_image_url || plan.card_message) && (
+                <div className="mt-3 rounded-[2px] bg-bg px-3 py-2">
+                  {order.card_image_url && (
+                    <SmartImage
+                      src={withApiUrl(order.card_image_url)}
+                      className="mb-2 w-full rounded-[4px] object-cover"
+                      style={{ maxHeight: 160 }}
+                    />
+                  )}
+                  {(order.card_message || plan.card_message) && (
+                    <p className="text-[11px] text-sub">
+                      贺卡寄语：{order.card_message || plan.card_message}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
             </Reveal>

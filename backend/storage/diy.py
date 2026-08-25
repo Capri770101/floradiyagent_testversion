@@ -102,9 +102,9 @@ def save_diy_plan(plan: dict, user_id: str) -> dict[str, Any]:
             "INSERT INTO diy_plans("
             "id, user_id, fingerprint, name, requirement, recipient, occasion, style, budget,"
             "color_scheme, flowers, packaging, meaning, diy_steps, care_tips, card_message,"
-            "budget_breakdown, effect_image_url, difficulty, est_time, shelf_life,"
+            "card_image_url, budget_breakdown, effect_image_url, difficulty, est_time, shelf_life,"
             "suitable_for, caution, mood_tags, status, order_count, created_at, confirmed_at"
-            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 plan_id,
                 user_id,
@@ -122,6 +122,7 @@ def save_diy_plan(plan: dict, user_id: str) -> dict[str, Any]:
                 json.dumps(plan.get("diy_steps") or [], ensure_ascii=False),
                 str(plan.get("care_tips") or ""),
                 str(plan.get("card_message") or ""),
+                str(plan.get("card_image_url") or ""),
                 json.dumps(plan.get("budget_breakdown") or {}, ensure_ascii=False),
                 _plan_image(plan),
                 str(d.get("difficulty") or ""),
@@ -183,9 +184,9 @@ def save_as_template(plan_id: str) -> None:
                 "INSERT INTO diy_plans("
                 "id,user_id,fingerprint,name,requirement,recipient,occasion,style,budget,"
                 "color_scheme,flowers,packaging,meaning,diy_steps,care_tips,card_message,"
-                "budget_breakdown,effect_image_url,difficulty,est_time,shelf_life,"
+                "card_image_url,budget_breakdown,effect_image_url,difficulty,est_time,shelf_life,"
                 "suitable_for,caution,mood_tags,status,order_count,source_user_id,created_at"
-                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     "TPL_" + plan_id,
                     "template",
@@ -203,6 +204,7 @@ def save_as_template(plan_id: str) -> None:
                     row["diy_steps"],
                     row["care_tips"],
                     row["card_message"],
+                    row.get("card_image_url") or "",
                     row["budget_breakdown"],
                     row["effect_image_url"],
                     row["difficulty"],
@@ -271,6 +273,7 @@ def _row_to_plan(row: Any) -> dict[str, Any]:
         "diy_steps": _j(row["diy_steps"], []),
         "care_tips": row["care_tips"],
         "card_message": row["card_message"],
+        "card_image_url": row["card_image_url"],
         "budget_breakdown": _j(row["budget_breakdown"], {}),
         "effect_image_url": row["effect_image_url"],
         "effect_prompt": effect_prompt,

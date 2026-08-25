@@ -1004,6 +1004,8 @@ def update_order(
     delivery: str | None = None,
     note: str | None = None,
     delivery_location: dict[str, Any] | None = None,
+    card_message: str | None = None,
+    card_image_url: str | None = None,
 ) -> dict[str, Any] | None:
     """更新订单的收货人 / 配送时间 / 备注 / 配送位置（仅允许设置传入的字段）。
 
@@ -1038,6 +1040,12 @@ def update_order(
     if note is not None:
         sets.append("note=?")
         vals.append(note)
+    if card_message is not None:
+        sets.append("card_message=?")
+        vals.append(card_message)
+    if card_image_url is not None:
+        sets.append("card_image_url=?")
+        vals.append(card_image_url)
     if delivery_location is not None and isinstance(delivery_location, dict):
         if delivery_location.get("lat") is not None:
             sets.append("delivery_lat=?")

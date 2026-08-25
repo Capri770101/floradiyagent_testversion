@@ -327,7 +327,8 @@ async def patch_order(order_id: str, req: OrderPatchRequest, request: Request) -
     uid = await resolve_uid(request, None)
     await _assert_order_owner(order_id, uid)
     o = await asyncio.to_thread(
-        commerce.update_order, order_id, req.recipient, req.delivery, req.note, req.delivery_location
+        commerce.update_order, order_id, req.recipient, req.delivery, req.note, req.delivery_location,
+        req.card_message, req.card_image_url
     )
     if not o:
         raise HTTPException(status_code=404, detail="订单不存在")

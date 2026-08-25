@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS diy_plans (
     diy_steps        TEXT,                       -- JSON 数组
     care_tips        TEXT,
     card_message     TEXT,
+    card_image_url   TEXT,                       -- AI 生成的贺卡图片
     budget_breakdown TEXT,                       -- JSON 对象
     effect_image_url TEXT,
     -- 卡片内容扩充（模块二）：LLM 设计产出 + 规则兜底，旧方案留空（前端显示 —）
@@ -256,6 +257,8 @@ CREATE TABLE IF NOT EXISTS orders (
     recipient_address TEXT,
     delivery_time  TEXT,
     note           TEXT,
+    card_message   TEXT,                          -- 贺卡寄语
+    card_image_url TEXT,                          -- AI 生成贺卡图片
     created_at     TEXT NOT NULL
 );
 
@@ -526,6 +529,8 @@ _ALTERS = [
     ("orders", "discount", "ALTER TABLE orders ADD COLUMN discount REAL NOT NULL DEFAULT 0"),
     # orders: 支付超时（懒过期自动取消）
     ("orders", "expires_at", "ALTER TABLE orders ADD COLUMN expires_at TEXT"),
+    ("orders", "card_message", "ALTER TABLE orders ADD COLUMN card_message TEXT"),
+    ("orders", "card_image_url", "ALTER TABLE orders ADD COLUMN card_image_url TEXT"),
     # coupons: 领券中心来源标记
     ("coupons", "offer_id", "ALTER TABLE coupons ADD COLUMN offer_id TEXT"),
     # shop_plans: 店铺内商品上下架（商家端管理；C 端仅展示 on）
@@ -567,6 +572,7 @@ _ALTERS = [
     ("diy_plans", "caution", "ALTER TABLE diy_plans ADD COLUMN caution TEXT"),
     ("diy_plans", "mood_tags", "ALTER TABLE diy_plans ADD COLUMN mood_tags TEXT"),
     ("diy_plans", "source_user_id", "ALTER TABLE diy_plans ADD COLUMN source_user_id TEXT"),
+    ("diy_plans", "card_image_url", "ALTER TABLE diy_plans ADD COLUMN card_image_url TEXT"),
 ]
 
 

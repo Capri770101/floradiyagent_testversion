@@ -233,6 +233,8 @@ class OrderPatchRequest(BaseModel):
     delivery_location: dict[str, Any] | None = Field(
         None, description="配送位置（地图选点）：{lat, lng, address}，与收货地址分开存储"
     )
+    card_message: str | None = Field(None, description="贺卡寄语")
+    card_image_url: str | None = Field(None, description="AI 生成贺卡图片 URL")
 
 
 

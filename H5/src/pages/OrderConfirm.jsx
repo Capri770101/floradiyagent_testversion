@@ -3,6 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
 import { getOrder, getShop, updateOrder, listAddresses, publicConfig } from '../api/shop'
+import { generateEffectImage, pollImageTask } from '../api/image'
+import { withApiUrl } from '../api/client'
 import { calcPayable } from '../utils/price'
 import { toast } from '../utils/toast'
 import { imgColor } from '../utils/color'
@@ -46,6 +48,10 @@ export default function OrderConfirm() {
   const [selectedAddr, setSelectedAddr] = useState(null)
   // 配送位置（地图选点，与收货地址分开）
   const [deliveryLoc, setDeliveryLoc] = useState(null) // {lat, lng, address} 与收货地址同源
+  // 贺卡寄语 + AI 生图
+  const [cardMessage, setCardMessage] = useState('')
+  const [cardImageUrl, setCardImageUrl] = useState('')
+  const [cardBusy, setCardBusy] = useState(false)
 
   // 配送时段 / 配送费由后端运营配置下发（红线2：不写死在页面）
   useEffect(() => {
@@ -86,6 +92,10 @@ export default function OrderConfirm() {
         if (o?.delivery_time) setDelivery(o.delivery_time)
         else setDelivery(FAST_DELIVERY)
         if (o?.note) setNote(o.note)
+        // 预填贺卡寄语（agent 生成的 or 已保存的）
+        if (o?.card_message) setCardMessage(o.card_message)
+        else if (o?.plan?.card_message) setCardMessage(o.plan.card_message)
+        if (o?.card_image_url) setCardImageUrl(o.card_image_url)
         // 回显已有配送位置
         if (o?.delivery_location?.lat != null) {
           setDeliveryLoc(o.delivery_location)
@@ -153,11 +163,39 @@ export default function OrderConfirm() {
         return
       }
       // 把真实收货信息写回订单，再跳转支付
-      await updateOrder(orderId, { recipient, delivery: finalDelivery, note, delivery_location: deliveryLoc })
+      await updateOrder(orderId, {
+        recipient,
+        delivery: finalDelivery,
+        note,
+        delivery_location: deliveryLoc,
+        card_message: cardMessage.trim() || undefined,
+        card_image_url: cardImageUrl || undefined,
+      })
       nav('/pay', { state: { orderId: order.order_id } })
     } catch (e) {
       toast('保存收货信息失败：' + e.message, 'error')
       setSaving(false)
+    }
+  }
+
+  const onGenerateCard = async () => {
+    if (cardBusy) return
+    const msg = cardMessage.trim()
+    if (!msg) {
+      toast('请先填写贺卡寄语', 'error')
+      return
+    }
+    setCardBusy(true)
+    try {
+      const prompt = `设计一张精美的电子贺卡，背景为柔和的暖色调花卉水彩风格，中央用手写体写着："${msg}"。整体风格温馨优雅，适合随花束赠送。不要包含任何边框或装饰性元素，保持简洁。`
+      const { task_id } = await generateEffectImage(prompt)
+      const data = await pollImageTask(task_id, { timeoutMs: 90000 })
+      setCardImageUrl(data.result_url)
+      toast('贺卡生成成功')
+    } catch (e) {
+      toast('贺卡生成失败：' + e.message, 'error')
+    } finally {
+      setCardBusy(false)
     }
   }
 
@@ -311,6 +349,43 @@ export default function OrderConfirm() {
             placeholder="请填写您的备注（选填）"
             className="maison-field-inline w-full"
           />
+        </div>
+        </Reveal>
+
+        <Reveal>
+        <SectionTitle title="贺卡寄语" />
+        </Reveal>
+        <Reveal>
+        <div className="rounded-card bg-white p-4 border border-line">
+          <textarea
+            value={cardMessage}
+            onChange={(e) => setCardMessage(e.target.value)}
+            placeholder="写一句祝福的话，随花束一起送给TA（选填）"
+            maxLength={100}
+            rows={2}
+            className="w-full resize-none rounded-[4px] border border-line bg-bg p-3 text-[12px] text-ink outline-none placeholder:text-sub/60 focus:border-pink"
+          />
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-[10px] text-sub">{cardMessage.length}/100</span>
+            <Button
+              variant="subtle"
+              className="!h-[30px] !text-[11px]"
+              disabled={cardBusy || !cardMessage.trim()}
+              onClick={onGenerateCard}
+            >
+              {cardBusy ? '生成中…' : 'AI 生成贺卡'}
+            </Button>
+          </div>
+          {cardImageUrl && (
+            <div className="mt-3">
+              <SmartImage
+                src={withApiUrl(cardImageUrl)}
+                className="w-full rounded-[4px] object-cover"
+                style={{ maxHeight: 180 }}
+              />
+              <p className="mt-1 text-center text-[10px] text-sub">贺卡预览 · 支付后随花束附赠</p>
+            </div>
+          )}
         </div>
         </Reveal>
 
