@@ -13,13 +13,11 @@ from __future__ import annotations
 import json
 import logging
 import re
-import uuid
 from datetime import UTC, datetime
 
 from agent.tools import _resolve_session_plan, register_tool
 from backend.config import settings
-from backend.storage.commerce import apply_best_coupon
-from backend.storage.db import get_conn, transaction
+from backend.storage.db import get_conn
 from backend.storage.repository import repo
 
 logger = logging.getLogger("skills.order")
@@ -284,8 +282,6 @@ def create_order(
     if plan.get("diy"):
         plan_type = "diy"
 
-    order_id = "O_" + uuid.uuid4().hex[:10]
-
     # DIY 方案：从 shop 单品匹配组装；现有方案：直接用方案价格
     coverage = 1.0
     missing_flowers: list[dict] = []
@@ -315,31 +311,54 @@ def create_order(
         total = _plan_price(plan)
         items = _build_detailed_items(plan)
 
-    with transaction() as c:
-        c.execute(
-            "INSERT INTO orders(order_id, user_id, plan_id, plan_type, shop_id, items, total_price, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
-            (
-                order_id,
-                user_id,
-                plan["plan_id"],
-                plan_type,
-                shop["shop_id"],
-                json.dumps(items, ensure_ascii=False),
-                total,
-                _now(),
-            ),
-        )
+    # 统一走 commerce.create_order()：自动设置 expires_at、物流事件、通知、优惠券、购物车清理
+    from backend.storage import commerce
+    from backend.storage.repository import repo as _repo
 
-    discount = apply_best_coupon(order_id, user_id, total)
-
+    plan_obj = _repo.get_plan(plan["plan_id"])
     if plan_type == "diy":
+        # DIY 方案：订单项以 DIY 方案本身为主（plan_id 指向 DIY 方案），
+        # 附带各花材明细供详情页展示。commerce 会对 DIY plan_id 校验；
+        # 若 DIY 方案未落库则用第一个已有店铺单品兜底。
+        diy_pid = plan.get("plan_id", "")
+        # 确保 DIY 方案已落库
+        if not plan_obj:
+            try:
+                from backend.storage.diy import save_diy_plan
+                _res = save_diy_plan(plan, user_id)
+                if _res.get("plan_id"):
+                    plan["plan_id"] = _res["plan_id"]
+                    diy_pid = _res["plan_id"]
+            except Exception:  # noqa: BLE001
+                logger.warning("[skill_order] DIY 方案落库失败（不影响下单）", exc_info=True)
+            plan_obj = _repo.get_plan(diy_pid)
+        # 如果 DIY 方案在 plans 表找不到（save_diy_plan 可能没写 plans），
+        # 用第一个已有店铺单品代替 plan_id，花材明细附在 items 里。
+        if not plan_obj and items:
+            primary_pid = items[0].get("product_id") or items[0].get("plan_id")
+            commerce_items = [{"plan_id": primary_pid, "qty": 1, "item_id": None}]
+        else:
+            commerce_items = [{"plan_id": diy_pid, "qty": 1, "item_id": None}]
         try:
             from backend.storage.diy import mark_diy_plan_ordered, save_as_template
             mark_diy_plan_ordered(plan["plan_id"])
             save_as_template(plan["plan_id"])
         except Exception:  # noqa: BLE001
             logger.warning("[skill_order] 标记 DIY 方案成交/沉淀模板失败", exc_info=True)
+    else:
+        # 现有方案：直接用方案 plan_id
+        commerce_items = [{"plan_id": plan["plan_id"], "qty": 1, "item_id": None}]
+
+    try:
+        order = commerce.create_order(
+            user_id=user_id,
+            items=commerce_items,
+        )
+    except Exception as exc:
+        return json.dumps({"error": f"下单失败: {exc}"}, ensure_ascii=False)
+    order_id = order["order_id"]
+    total = order["total_price"]
+    discount = order.get("discount", 0)
 
     pay_jump = {
         "order_id": order_id,

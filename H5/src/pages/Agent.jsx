@@ -759,7 +759,7 @@ export default function Agent() {
                 onPay={() => {
                   const oid =
                     m.data?.pay_jump?.params?.order_id || m.data?.order_id
-                  nav('/pay', { state: { orderId: oid } })
+                  nav('/order', { state: { orderId: oid } })
                 }}
               />
             )}
@@ -783,7 +783,7 @@ export default function Agent() {
                 onPay={() => {
                   const oid =
                     m.data?.pay_jump?.params?.order_id || m.data?.order_id
-                  nav('/pay', { state: { orderId: oid } })
+                  nav('/order', { state: { orderId: oid } })
                 }}
               />
             )}
