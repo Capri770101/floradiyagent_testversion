@@ -227,11 +227,11 @@ export default function Orders() {
                       </span>
                     </div>
                   </button>
-                  <div className="flex gap-2 border-t border-line px-4 py-2.5">
+                  <div className="flex gap-2 border-t border-line px-4 py-3">
                       {canAftersale(o) && (
                         <Button
-                          variant="subtle"
-                          className="flex-1 !h-[36px] !text-[12px]"
+                          variant="secondary"
+                          className="flex-1 !h-[34px] !text-[12px]"
                           onClick={(e) => {
                             e.stopPropagation()
                             setAsTarget(o)
@@ -246,14 +246,15 @@ export default function Orders() {
                         <>
                           <Button
                             variant="secondary"
-                            className="flex-1 !h-[36px] !text-[12px]"
+                            className="flex-1 !h-[34px] !text-[12px]"
                             disabled={busyId === o.order_id}
                             onClick={() => act(o.order_id, 'cancel')}
                           >
                             取消订单
                           </Button>
                           <Button
-                            className="flex-1 !h-[36px] !text-[12px]"
+                            variant="secondary"
+                            className="flex-1 !h-[34px] !text-[12px]"
                             disabled={busyId === o.order_id}
                             onClick={() => goPay(o.order_id)}
                           >
@@ -263,7 +264,8 @@ export default function Orders() {
                       )}
                       {o.status === 'paid' && (
                         <Button
-                          className="flex-1 !h-[36px] !text-[12px]"
+                          variant="secondary"
+                          className="flex-1 !h-[34px] !text-[12px]"
                           disabled={busyId === o.order_id}
                           onClick={() => act(o.order_id, 'ship')}
                         >
@@ -272,7 +274,8 @@ export default function Orders() {
                       )}
                       {o.status === 'shipped' && (
                         <Button
-                          className="flex-1 !h-[36px] !text-[12px]"
+                          variant="secondary"
+                          className="flex-1 !h-[34px] !text-[12px]"
                           disabled={busyId === o.order_id}
                           onClick={() => act(o.order_id, 'complete')}
                         >
@@ -281,7 +284,8 @@ export default function Orders() {
                       )}
                       {o.status === 'done' && (
                         <Button
-                          className="flex-1 !h-[36px] !text-[12px]"
+                          variant="secondary"
+                          className="flex-1 !h-[34px] !text-[12px]"
                           onClick={() => openReview(o)}
                         >
                           评价

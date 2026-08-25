@@ -284,28 +284,28 @@ export default function OrderDetail() {
               <Button variant="secondary" className="flex-1" disabled={busy} onClick={() => act('cancel')}>
                 取消订单
               </Button>
-              <Button className="flex-1" onClick={goPay}>
+              <Button variant="secondary" className="flex-1" onClick={goPay}>
                 去支付
               </Button>
             </div>
           )}
           {order.status === 'paid' && (
             <div className="mx-5 mt-4">
-              <Button className="w-full" disabled={busy} onClick={() => act('ship')}>
+              <Button variant="secondary" className="w-full" disabled={busy} onClick={() => act('ship')}>
                 模拟发货
               </Button>
             </div>
           )}
           {order.status === 'shipped' && (
             <div className="mx-5 mt-4">
-              <Button className="w-full" disabled={busy} onClick={() => act('complete')}>
+              <Button variant="secondary" className="w-full" disabled={busy} onClick={() => act('complete')}>
                 确认收货
               </Button>
             </div>
           )}
           {order.status === 'done' && (
             <div className="mx-5 mt-4">
-              <Button className="w-full" onClick={() => nav('/orders')}>
+              <Button variant="secondary" className="w-full" onClick={() => nav('/orders')}>
                 再来一单
               </Button>
             </div>
