@@ -227,21 +227,20 @@ export default function Orders() {
                       </span>
                     </div>
                   </button>
-                  <div className="flex items-center justify-between border-t border-line px-4 py-2.5">
-                    <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-2.5">
                       {canAftersale(o) && (
-                        <button
-                          type="button"
+                        <Button
+                          variant="subtle"
+                          className="!h-[28px] !rounded-pill !text-[11px]"
                           onClick={(e) => {
                             e.stopPropagation()
                             setAsTarget(o)
                             setAsReason('')
                             setAsType('refund')
                           }}
-                          className="press rounded-[2px] border border-gold/40 px-2.5 py-1 text-[11px] tracking-[1px] text-gold"
                         >
                           申请售后
-                        </button>
+                        </Button>
                       )}
                       {(o.status === 'created' || o.status === 'pending_payment') && (
                         <>
@@ -288,7 +287,6 @@ export default function Orders() {
                           评价
                         </Button>
                       )}
-                    </div>
                   </div>
                   <div className="flex border-t border-line">
                     {o.shop_id && (
