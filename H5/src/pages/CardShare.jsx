@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getShareCard } from '../api/shop'
 import { withApiUrl } from '../api/client'
-import SmartImage from '../components/SmartImage'
 import Reveal from '../components/Reveal'
 import { Button } from '../components/Button'
 
@@ -37,6 +36,9 @@ export default function CardShare() {
     )
   }
 
+  const hasImage = !!card.card_image_url
+  const hasMsg = !!card.card_message
+
   return (
     <div className="flex h-full flex-col bg-bg">
       {/* 顶部店铺信息 */}
@@ -51,45 +53,47 @@ export default function CardShare() {
 
       {/* 主内容区 */}
       <div className="flex-1 overflow-y-auto px-6 pb-6">
-        {/* 贺卡图片 */}
-        {card.card_image_url && (
+        {/* 贺卡：背景图 + CSS 文字叠加 */}
+        {(hasImage || hasMsg) && (
           <Reveal delay={100}>
-            <div className="mx-auto max-w-[300px]">
-              <SmartImage
-                src={withApiUrl(card.card_image_url)}
-                className="w-full rounded-card shadow-lg"
-                alt="贺卡"
-              />
-            </div>
-          </Reveal>
-        )}
-
-        {/* 寄语 */}
-        {card.card_message && (
-          <Reveal delay={200}>
-            <div className="mx-auto mt-6 max-w-[300px] text-center">
-              <div className="relative inline-block">
-                <FloraDecor variant="sprig" className="absolute -left-6 -top-4 h-8 w-8 text-cream/40" />
-                <p className="font-serif-cn text-[18px] leading-relaxed text-ink/80">
-                  {card.card_message}
-                </p>
-                <FloraDecor variant="sprig" className="absolute -bottom-3 -right-6 h-8 w-8 rotate-180 text-cream/40" />
-              </div>
+            <div className="card-preview relative mx-auto max-w-[320px] overflow-hidden rounded-card shadow-lg" style={{ aspectRatio: '3/4' }}>
+              {hasImage && (
+                <img
+                  src={withApiUrl(card.card_image_url)}
+                  alt="贺卡"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              )}
+              {/* 纯色兜底（无图时） */}
+              {!hasImage && (
+                <div className="absolute inset-0 bg-gradient-to-br from-[#F5E6D3] via-[#F0D4C0] to-[#E8C4B0]" />
+              )}
+              {/* 文字叠加层 */}
+              {hasMsg && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center px-8">
+                  <p
+                    className="font-serif-cn text-[20px] leading-[1.8] text-white"
+                    style={{ textShadow: '0 2px 12px rgba(0,0,0,0.4), 0 0 40px rgba(0,0,0,0.15)' }}
+                  >
+                    {card.card_message}
+                  </p>
+                </div>
+              )}
             </div>
           </Reveal>
         )}
 
         {/* 收礼人 */}
         {card.recipient_name && (
-          <Reveal delay={300}>
-            <p className="mt-6 text-center text-[11px] text-sub">
+          <Reveal delay={200}>
+            <p className="mt-6 text-center text-[12px] text-sub">
               致 {card.recipient_name}
             </p>
           </Reveal>
         )}
 
         {/* 时间 */}
-        <Reveal delay={400}>
+        <Reveal delay={300}>
           <p className="mt-2 text-center text-[10px] text-sub/50">
             {card.created_at?.slice(0, 10)}
           </p>
@@ -97,7 +101,7 @@ export default function CardShare() {
       </div>
 
       {/* 底部按钮 */}
-      <Reveal delay={500}>
+      <Reveal delay={400}>
         <div className="px-6 pb-safe py-4">
           <Button
             variant="primary"
@@ -110,22 +114,4 @@ export default function CardShare() {
       </Reveal>
     </div>
   )
-}
-
-/* 小装饰组件（与 DiyDetail 同源） */
-function FloraDecor({ variant = 'sprig', className = '' }) {
-  if (variant === 'sprig') {
-    return (
-      <svg viewBox="0 0 32 32" fill="none" className={className}>
-        <path
-          d="M16 28C16 28 8 22 8 14C8 10 12 6 16 6C20 6 24 10 24 14C24 22 16 28 16 28Z"
-          stroke="currentColor"
-          strokeWidth="1.2"
-          strokeLinecap="round"
-        />
-        <path d="M16 14V24" stroke="currentColor" strokeWidth="1" />
-      </svg>
-    )
-  }
-  return null
 }

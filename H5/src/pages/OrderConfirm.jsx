@@ -187,7 +187,7 @@ export default function OrderConfirm() {
     }
     setCardBusy(true)
     try {
-      const prompt = `设计一张精美的电子贺卡，背景为柔和的暖色调花卉水彩风格，中央用手写体写着："${msg}"。整体风格温馨优雅，适合随花束赠送。不要包含任何边框或装饰性元素，保持简洁。`
+      const prompt = '水彩花卉贺卡背景，柔和暖色调，粉色玫瑰与香槟色百合，花瓣散落，柔和光影，梦幻模糊背景，温馨优雅，无文字无边框无字母无符号'
       const { task_id } = await generateEffectImage(prompt)
       const data = await pollImageTask(task_id, { timeoutMs: 90000 })
       setCardImageUrl(data.result_url)
@@ -373,16 +373,30 @@ export default function OrderConfirm() {
               disabled={cardBusy || !cardMessage.trim()}
               onClick={onGenerateCard}
             >
-              {cardBusy ? '生成中…' : 'AI 生成贺卡'}
+              {cardBusy ? '生成中…' : cardImageUrl ? '重新生成' : 'AI 生成贺卡'}
             </Button>
           </div>
-          {cardImageUrl && (
+          {cardBusy && (
+            <div className="mt-3 flex flex-col items-center justify-center rounded-[4px] bg-pink-2/50 py-8">
+              <div className="mb-2 h-6 w-6 animate-spin rounded-full border-2 border-pink border-t-transparent" />
+              <p className="text-[11px] text-sub">贺卡生成中…</p>
+            </div>
+          )}
+          {cardImageUrl && !cardBusy && (
             <div className="mt-3">
-              <SmartImage
-                src={withApiUrl(cardImageUrl)}
-                className="w-full rounded-[4px] object-cover"
-                style={{ maxHeight: 180 }}
-              />
+              <div className="card-preview relative overflow-hidden rounded-[4px]" style={{ maxHeight: 180 }}>
+                <img
+                  src={withApiUrl(cardImageUrl)}
+                  alt="贺卡背景"
+                  className="w-full object-cover"
+                  style={{ maxHeight: 180 }}
+                />
+                <div className="absolute inset-0 flex flex-col items-center justify-center px-4">
+                  <p className="font-serif-cn text-[16px] leading-relaxed text-white" style={{ textShadow: '0 1px 8px rgba(0,0,0,0.45)' }}>
+                    {cardMessage.trim()}
+                  </p>
+                </div>
+              </div>
               <p className="mt-1 text-center text-[10px] text-sub">贺卡预览 · 支付后随花束附赠</p>
             </div>
           )}

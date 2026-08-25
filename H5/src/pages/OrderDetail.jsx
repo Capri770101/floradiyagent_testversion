@@ -185,19 +185,29 @@ export default function OrderDetail() {
                 </>
               )}
               {(order.card_image_url || order.card_message || plan?.card_message) && (
-                <div className="mt-3 rounded-[2px] bg-bg px-3 py-2">
-                  {order.card_image_url && (
-                    <SmartImage
-                      src={withApiUrl(order.card_image_url)}
-                      className="mb-2 w-full rounded-[4px] object-cover"
-                      style={{ maxHeight: 160 }}
-                    />
-                  )}
-                  {(order.card_message || plan?.card_message) && (
-                    <p className="text-[11px] text-sub">
-                      贺卡寄语：{order.card_message || plan?.card_message}
-                    </p>
-                  )}
+                <div className="mt-3">
+                  <div className="card-preview relative overflow-hidden rounded-[4px]" style={{ maxHeight: 180 }}>
+                    {order.card_image_url ? (
+                      <img
+                        src={withApiUrl(order.card_image_url)}
+                        alt="贺卡"
+                        className="w-full object-cover"
+                        style={{ maxHeight: 180 }}
+                      />
+                    ) : (
+                      <div className="flex h-[120px] w-full items-center justify-center bg-gradient-to-br from-[#F5E6D3] via-[#F0D4C0] to-[#E8C4B0]" />
+                    )}
+                    {(order.card_message || plan?.card_message) && (
+                      <div className="absolute inset-0 flex items-center justify-center px-6">
+                        <p
+                          className="font-serif-cn text-[15px] leading-[1.8] text-white"
+                          style={{ textShadow: '0 1px 8px rgba(0,0,0,0.4)' }}
+                        >
+                          {order.card_message || plan?.card_message}
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               {order.card_token && order.paid && (
