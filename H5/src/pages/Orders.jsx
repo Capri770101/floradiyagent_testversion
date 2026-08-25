@@ -170,13 +170,13 @@ export default function Orders() {
                   : '该状态下暂无订单'}
             </p>
             <p className="mt-2 text-[11px] text-sub">去首页挑一束心仪的花吧</p>
-            <button
-              type="button"
+            <Button
+              variant="subtle"
+              className="mt-5"
               onClick={() => nav('/')}
-              className="press mt-5 rounded-[2px] bg-dark px-8 py-2.5 text-[12px] font-medium tracking-[1px] text-[#FAF8F5]"
             >
-               去逛逛
-            </button>
+              去逛逛
+            </Button>
           </div>
           </Reveal>
         ) : (
@@ -290,29 +290,24 @@ export default function Orders() {
                       )}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => nav(`/orders/${o.order_id}`)}
-                    className="press block w-full border-t border-line bg-bg/50 py-2 text-center text-[11px] tracking-[1px] text-gold"
-                  >
-                      查看订单详情
-                  </button>
-                  {o.shop_id && (
+                  <div className="flex border-t border-line">
+                    {o.shop_id && (
+                      <button
+                        type="button"
+                        onClick={() => nav(`/chat/${encodeURIComponent(o.shop_id)}`)}
+                        className="press flex-1 border-r border-line bg-bg/50 py-2.5 text-center text-[11px] tracking-[1px] text-sub"
+                      >
+                        联系商家
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => nav(`/chat/${encodeURIComponent(o.shop_id)}`)}
-                      className="press block w-full border-t border-line bg-bg/50 py-2 text-center text-[11px] tracking-[1px] text-sub"
+                      onClick={() => nav(`/logistics/${o.order_id}`)}
+                      className="press flex-1 bg-bg/50 py-2.5 text-center text-[11px] tracking-[1px] text-sub"
                     >
-                      联系商家
+                      查看物流跟踪
                     </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => nav(`/logistics/${o.order_id}`)}
-                    className="press block w-full border-t border-line bg-bg/50 py-2 text-center text-[11px] tracking-[1px] text-sub"
-                  >
-                     查看物流跟踪
-                  </button>
+                  </div>
                 </div>
                 </Reveal>
               )
@@ -396,7 +391,7 @@ export default function Orders() {
                       key={t.v}
                       type="button"
                       onClick={() => setAsType(t.v)}
-                      className={`press flex-1 rounded-[2px] border py-2.5 text-[12px] tracking-[1px] ${
+                      className={`press flex-1 rounded-pill border py-2.5 text-[12px] tracking-[1px] ${
                         asType === t.v ? 'border-gold bg-gold/10 text-gold' : 'border-line bg-white text-sub'
                       }`}
                     >
@@ -416,13 +411,13 @@ export default function Orders() {
                   className="maison-field w-full resize-none"
                 />
               </div>
-              <button
-                type="submit"
+              <Button
+                className="mt-2 w-full"
                 disabled={asBusy}
-                className="press w-full rounded-[2px] bg-dark py-3 text-[12px] font-medium tracking-[1px] text-[#FAF8F5] disabled:opacity-40"
+                onClick={submitAftersale}
               >
                 {asBusy ? '提交中…' : '提交申请'}
-              </button>
+              </Button>
             </div>
           </form>
         </div>
