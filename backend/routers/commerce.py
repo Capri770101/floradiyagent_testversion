@@ -317,6 +317,12 @@ async def get_order_endpoint(order_id: str, request: Request, user_id: str | Non
         plan = await asyncio.to_thread(diy.get_diy_plan, o["plan_id"])
         if plan:
             o["plan"] = plan
+            # 贺卡数据兼容：历史订单可能只把贺卡存在 plan 上（orders 表当时未建卡片字段）。
+            # 把 plan 的贺卡合并到 order 顶层，保证前端始终能读到完整贺卡信息。
+            if not o.get("card_message") and plan.get("card_message"):
+                o["card_message"] = plan["card_message"]
+            if not o.get("card_image_url") and plan.get("card_image_url"):
+                o["card_image_url"] = plan["card_image_url"]
     return {"order": o}
 
 
