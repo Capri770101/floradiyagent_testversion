@@ -41,7 +41,7 @@ export default function OrderDetail() {
     setBusy(true)
     try {
       await orderAction(orderId, action)
-      toast(action === 'ship' ? '已模拟发货' : action === 'complete' ? '已确认收货' : '订单已取消')
+      toast(action === 'complete' ? '已确认收货' : '订单已取消')
       const o = await getOrder(orderId)
       setOrder(o || null)
     } catch (e) {
@@ -286,13 +286,6 @@ export default function OrderDetail() {
               </Button>
               <Button variant="secondary" className="flex-1" onClick={goPay}>
                 去支付
-              </Button>
-            </div>
-          )}
-          {order.status === 'paid' && (
-            <div className="mx-5 mt-4">
-              <Button variant="secondary" className="w-full" disabled={busy} onClick={() => act('ship')}>
-                模拟发货
               </Button>
             </div>
           )}

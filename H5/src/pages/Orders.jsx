@@ -53,7 +53,7 @@ export default function Orders() {
     setBusyId(oid)
     try {
       await orderAction(oid, action)
-      toast(action === 'ship' ? '已模拟发货' : action === 'complete' ? '已确认收货' : '订单已取消')
+      toast(action === 'complete' ? '已确认收货' : '订单已取消')
       loadOrders()
     } catch (e) {
       toast(e.message || '操作失败', 'error')
@@ -101,8 +101,8 @@ export default function Orders() {
     return list
   }, [orders, tab, kw])
 
-  // 售后：已支付且未取消的订单可发起
-  const canAftersale = (o) => o.paid && o.status !== 'canceled'
+  // 售后：仅已完成订单可发起
+  const canAftersale = (o) => o.status === 'done'
 
   const submitAftersale = async (e) => {
     e.preventDefault()
@@ -228,20 +228,6 @@ export default function Orders() {
                     </div>
                   </button>
                   <div className="flex gap-2 border-t border-line px-4 py-3">
-                      {canAftersale(o) && (
-                        <Button
-                          variant="secondary"
-                          className="flex-1 !h-[34px] !text-[12px]"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setAsTarget(o)
-                            setAsReason('')
-                            setAsType('refund')
-                          }}
-                        >
-                          申请售后
-                        </Button>
-                      )}
                       {(o.status === 'created' || o.status === 'pending_payment') && (
                         <>
                           <Button
@@ -262,16 +248,6 @@ export default function Orders() {
                           </Button>
                         </>
                       )}
-                      {o.status === 'paid' && (
-                        <Button
-                          variant="secondary"
-                          className="flex-1 !h-[34px] !text-[12px]"
-                          disabled={busyId === o.order_id}
-                          onClick={() => act(o.order_id, 'ship')}
-                        >
-                          模拟发货
-                        </Button>
-                      )}
                       {o.status === 'shipped' && (
                         <Button
                           variant="secondary"
@@ -283,13 +259,29 @@ export default function Orders() {
                         </Button>
                       )}
                       {o.status === 'done' && (
-                        <Button
-                          variant="secondary"
-                          className="flex-1 !h-[34px] !text-[12px]"
-                          onClick={() => openReview(o)}
-                        >
-                          评价
-                        </Button>
+                        <>
+                          <Button
+                            variant="secondary"
+                            className="flex-1 !h-[34px] !text-[12px]"
+                            onClick={() => openReview(o)}
+                          >
+                            评价
+                          </Button>
+                          {canAftersale(o) && (
+                            <Button
+                              variant="secondary"
+                              className="flex-1 !h-[34px] !text-[12px]"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setAsTarget(o)
+                                setAsReason('')
+                                setAsType('refund')
+                              }}
+                            >
+                              申请售后
+                            </Button>
+                          )}
+                        </>
                       )}
                       {o.shop_id && (
                         <Button
