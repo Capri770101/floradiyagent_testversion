@@ -1133,6 +1133,14 @@ def get_order(order_id: str) -> dict[str, Any] | None:
     }
     d["logistics"] = list_logistics(order_id)
     d["remaining_seconds"] = _order_remaining_seconds(row)
+    # 贺卡分享完整链接：配置了 public_base_url 时用公网地址拼；
+    # 未配置时返回 None，前端用 window.location.origin 兜底（本地联调）。
+    if d.get("card_token"):
+        from backend.config import settings
+        base = (settings.public_base_url or "").rstrip("/")
+        d["share_url"] = f"{base}/card-share/{d['card_token']}" if base else None
+    else:
+        d["share_url"] = None
     return d
 
 

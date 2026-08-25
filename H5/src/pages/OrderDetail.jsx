@@ -269,7 +269,7 @@ export default function OrderDetail() {
                   <button
                     className="mt-2 flex items-center gap-1 rounded-[2px] bg-pink/10 px-3 py-1.5 text-[11px] text-pink"
                     onClick={() => {
-                      const url = `${window.location.origin}/card-share/${order.card_token}`
+                      const url = order.share_url || `${window.location.origin}/card-share/${order.card_token}`
                       navigator.clipboard?.writeText(url).then(
                         () => toast('链接已复制，快去分享给 TA 吧'),
                         () => toast('复制失败，请长按链接手动复制', 'error')

@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    # 公网基础地址（无尾斜杠）。用于生成贺卡分享链接等对外可访问 URL：
+    # 如 https://flora.example.com。留空时回退到请求的 Host（本地联调可用）。
+    public_base_url: str = ""
     cors_origins: list[str] = Field(default_factory=list)
     cors_allow_credentials: bool = False  # 本项目鉴权用 Bearer Token（非 cookie），默认关闭；若确需 cookie 凭证，请将 CORS_ORIGINS 设为具体前端域名再置 True。
     debug: bool = False  # 仅开发用：开启 uvicorn --reload
