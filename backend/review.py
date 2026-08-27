@@ -7,31 +7,35 @@
   返回值固定为 (ok: bool, reason: str)；当前为占位实现（放行 + warning），
   上线前只需替换本模块，无需改动上传端点。
 """
-
 from __future__ import annotations
 
 import logging
 
 from backend.config import settings
 
-logger = logging.getLogger("api")
-
+logger = logging.getLogger('api')
 
 class ReviewError(Exception):
     """内容审核不通过。message 为给调用方展示的违规原因。"""
-
 
 def review_image(data: bytes) -> None:
     """审核图片二进制内容；违规抛 ReviewError，通过则静默返回。
 
     content_review_enabled=False 时零开销直接放行（dev 默认）。
+    content_review_enabled=True 但真实 API 未接入（CONTENT_REVIEW_URL 空）时：
+    - content_review_fail_closed=True → 拒绝并告警（生产推荐，避免占位放行）；
+    - False → 放行 + warning（dev 默认，不干扰联调）。
     """
     if not settings.content_review_enabled:
         return
+    if not settings.content_review_url:
+        if settings.content_review_fail_closed:
+            raise ReviewError('内容审核服务未配置（Fail-Closed），上传已拒绝；请配置 CONTENT_REVIEW_URL 后重试')
+        logger.warning('content_review_enabled=true 但未配置 CONTENT_REVIEW_URL，当前占位放行（fail-closed=false）')
+        return
     ok, reason = _review_remote(data)
     if not ok:
-        raise ReviewError(reason or "内容审核未通过")
-
+        raise ReviewError(reason or '内容审核未通过')
 
 def _review_remote(data: bytes) -> tuple[bool, str]:
     """调用真实内容安全 API（占位实现）。
@@ -39,8 +43,5 @@ def _review_remote(data: bytes) -> tuple[bool, str]:
     TODO(上线前)：按 settings.content_review_url / content_review_api_key 实现，
     将图片（或先压缩/抽样）提交到目标服务，按返回判定违规并给出原因文案。
     """
-    logger.warning(
-        "content_review_enabled=true 但未接入真实内容安全 API（%s），当前放行",
-        settings.content_review_url or "未配置 CONTENT_REVIEW_URL",
-    )
-    return True, ""
+    logger.warning('content_review_enabled=true 但未接入真实内容安全 API（%s），当前放行', settings.content_review_url or '未配置 CONTENT_REVIEW_URL')
+    return (True, '')

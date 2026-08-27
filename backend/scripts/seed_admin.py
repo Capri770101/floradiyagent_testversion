@@ -15,33 +15,26 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
-
-from backend.security import register_user, set_user_role  # noqa: E402
-from backend.storage.db import get_conn, init_db  # noqa: E402
+from backend.security import register_user, set_user_role
+from backend.storage.db import get_conn, init_db
 
 
 def main() -> None:
     init_db()
-    username = os.environ.get("ADMIN_USERNAME", "admin").strip() or "admin"
-    password = os.environ.get("ADMIN_PASSWORD", "admin123456")
-    nickname = "平台管理员"
-
+    username = os.environ.get('ADMIN_USERNAME', 'admin').strip() or 'admin'
+    password = os.environ.get('ADMIN_PASSWORD', 'admin123456')
+    nickname = '平台管理员'
     conn = get_conn()
-    row = conn.execute(
-        "SELECT id, role FROM users WHERE username=?", (username,)
-    ).fetchone()
+    row = conn.execute('SELECT id, role FROM users WHERE username=?', (username,)).fetchone()
     if row:
-        if row["role"] != "admin":
-            set_user_role(row["id"], "admin")
-            print(f"已提权 {username} -> admin")
+        if row['role'] != 'admin':
+            set_user_role(row['id'], 'admin')
+            print(f'已提权 {username} -> admin')
         else:
-            print(f"{username} 已是 admin，跳过")
+            print(f'{username} 已是 admin，跳过')
         return
-
     uid, _token = register_user(username, password, nickname)
-    set_user_role(uid, "admin")
-    print(f"已创建管理员 {username} (role=admin)")
-
-
-if __name__ == "__main__":
+    set_user_role(uid, 'admin')
+    print(f'已创建管理员 {username} (role=admin)')
+if __name__ == '__main__':
     main()

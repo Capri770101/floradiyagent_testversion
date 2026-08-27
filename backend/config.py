@@ -51,6 +51,23 @@ class Settings(BaseSettings):
     llm_timeout: float = 30.0
     llm_max_retries: int = 2
 
+    # ---- LLM 可靠性 / 多 provider / 成本（P6）----
+    # 多 provider 兜底：JSON 数组 [{"name","base_url","api_key","model"}]；
+    # 留空则只用上方单 provider（llm_base_url/key/model）。primary 失败自动切 secondary。
+    llm_providers: str = ""
+    # 熔断：连续失败达阈值进入 OPEN（快速失败 + 降级），半开探测恢复
+    llm_circuit_breaker_enabled: bool = True
+    llm_cb_failure_threshold: int = 5
+    llm_cb_open_seconds: float = 30.0
+    # 重试：指数退避 + 抖动，仅对可重试错误（超时/5xx/限流）生效
+    llm_retry_max_attempts: int = 3
+    llm_retry_base_delay: float = 0.5
+    llm_retry_max_delay: float = 8.0
+    # 成本预算（Redis 计数器，best-effort；0 = 不限制）
+    llm_cost_enabled: bool = False
+    llm_global_daily_token_budget: int = 0
+    llm_user_daily_token_budget: int = 0
+
     # ---- 图像生成（provider 可切换：mock | dashscope | api2img | zhipu）----
     image_provider: str = "mock"  # "mock" | "dashscope" | "api2img" | "zhipu"
     # 通义万相 / DashScope
@@ -129,6 +146,10 @@ class Settings(BaseSettings):
     content_review_url: str = ""
     content_review_api_key: str = ""
     content_review_timeout: float = 5.0
+    # 机审 Fail-Closed：content_review_enabled=True 但真实 API 未接入（CONTENT_REVIEW_URL 空）时，
+    # True=拒绝上传并告警（生产推荐，避免占位放行导致内容风险敞口）；
+    # False=放行 + warning（dev 默认，不干扰联调）。真实 API 接入后本开关不再触发。
+    content_review_fail_closed: bool = False
 
     # ---- 数据源（mock | remote）----
     # mock=内置示例数据（零依赖跑通）；remote=对接真实小程序后端（配置 REMOTE_API_BASE 即可）。
@@ -166,6 +187,32 @@ class Settings(BaseSettings):
 
     # ---- 存储 ----
     db_path: str = str(BASE_DIR / "data" / "agent_service.db")
+    # P1：PostgreSQL 连接串（异步，asyncpg）。留空 → 沿用 db_path 的本地 SQLite（dev/test 零配置）。
+    # 形如：postgresql+asyncpg://user:pass@host:5432/dbname
+    database_url: str = ""
+
+    # ---- 异步任务队列（P3：生图 / 通知 / 机审 移出请求路径）----
+    # False=关闭，生图等耗时任务在请求内同步执行（现状，零依赖）；
+    # True=开启，任务入 Redis 队列由 worker 进程消费（需配置 redis_url）。
+    task_queue_enabled: bool = False
+
+    # ---- Redis（P0 基础设施：限流 / 缓存 / 任务队列统一入口）----
+    # 留空 = 不启用 Redis，相关能力（限流/缓存）自动降级到本地实现（dev/test 默认）。
+    # prod 必须配置，否则启动 fail-fast（见 api.py lifespan 断言）。
+    redis_url: str = ""  # 例：redis://127.0.0.1:6379/0 或 rediss://<host>:6379/0
+    redis_pool_max_connections: int = 50
+    redis_socket_timeout: float = 5.0
+
+    # ---- 对象存储（P0 基础设施：生图 / 上传统一存储后端）----
+    # local = 沿用本地磁盘 + /uploads、/generated 静态托管（dev 默认，零配置）。
+    # s3 / oss = 对象存储 + CDN，生产推荐（避免多实例磁盘不共享、便于备份）。
+    storage_backend: str = "local"          # local | s3 | oss
+    storage_bucket: str = ""
+    storage_endpoint: str = ""              # S3 兼容 / OSS endpoint（oss 可留空走内网）
+    storage_region: str = ""
+    storage_cdn_base: str = ""             # 对外访问基址，如 https://cdn.example.com
+    storage_access_key: str = ""           # 对象存储 AK（prod 建议经密钥服务注入，勿落 .env 明文）
+    storage_secret_key: str = ""
 
     # ---- 智能体参数 ----
     max_iterations: int = 8          # ReAct 单轮最大迭代，超出则中止说明

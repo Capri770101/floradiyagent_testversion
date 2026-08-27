@@ -9,7 +9,6 @@
 
 开发/测试阶段：AUTH_REQUIRED 默认 false，/chat 仍可用 user_id 直接调（兼容 /docs 手测）。
 """
-
 from __future__ import annotations
 
 import hashlib
@@ -26,16 +25,26 @@ from fastapi import HTTPException, Request
 
 from backend.config import settings
 
-logger = logging.getLogger("security")
-
-#: 进程内 dev 兜底密钥：仅在未配置 JWT_SECRET 时随机生成，仅用于本地联调，切勿用于生产。
+logger = logging.getLogger('security')
 _DEV_SECRET = uuid.uuid4().hex + uuid.uuid4().hex
 
+def _run_pg(coro):
+    """在 PG 模式下运行异步协程并返回结果；结束后清理该事件循环创建的引擎，
+    避免 ``_run_async`` 的临时事件循环关闭后残留死连接污染主循环。"""
+    from backend.storage import db_async as _d
+    from backend.storage.db import _run_async
+    async def _wrapper():
+        import asyncio as _asyncio
+        loop = _asyncio.get_running_loop()
+        try:
+            return await coro
+        finally:
+            _d._dispose_loop_engine(loop)
+    return _run_async(_wrapper())
 
 def _jwt_secret() -> str:
     """返回用于签名的密钥：配置了 JWT_SECRET 用配置值，否则用进程内随机兜底。"""
     return settings.jwt_secret or _DEV_SECRET
-
 
 def wx_code2session(code: str) -> dict[str, Any]:
     """调用微信 code2session 用临时 code 换取 openid / session_key。
@@ -49,21 +58,11 @@ def wx_code2session(code: str) -> dict[str, Any]:
     Raises:
         httpx.HTTPError: 网络层错误（由调用方转成 502）。
     """
-    resp = httpx.get(
-        settings.wechat_code2session_url,
-        params={
-            "appid": settings.wechat_appid,
-            "secret": settings.wechat_secret,
-            "js_code": code,
-            "grant_type": "authorization_code",
-        },
-        timeout=settings.remote_timeout,
-    )
+    resp = httpx.get(settings.wechat_code2session_url, params={'appid': settings.wechat_appid, 'secret': settings.wechat_secret, 'js_code': code, 'grant_type': 'authorization_code'}, timeout=settings.remote_timeout)
     resp.raise_for_status()
     return resp.json()
 
-
-def create_token(openid: str, unionid: str | None = None) -> str:
+def create_token(openid: str, unionid: str | None=None) -> str:
     """为指定 openid 签发 HS256 JWT。
 
     Args:
@@ -73,14 +72,8 @@ def create_token(openid: str, unionid: str | None = None) -> str:
     Returns:
         编码后的 JWT 字符串。
     """
-    payload = {
-        "openid": openid,
-        "unionid": unionid,
-        "iat": int(time.time()),
-        "exp": int(time.time()) + settings.jwt_expire_minutes * 60,
-    }
-    return jwt.encode(payload, _jwt_secret(), algorithm="HS256")
-
+    payload = {'openid': openid, 'unionid': unionid, 'iat': int(time.time()), 'exp': int(time.time()) + settings.jwt_expire_minutes * 60}
+    return jwt.encode(payload, _jwt_secret(), algorithm='HS256')
 
 def verify_token(token: str) -> str:
     """校验 JWT 并返回 openid。
@@ -94,9 +87,8 @@ def verify_token(token: str) -> str:
     Raises:
         jwt.PyJWTError: 令牌无效/过期/签名错误。
     """
-    data = jwt.decode(token, _jwt_secret(), algorithms=["HS256"])
-    return str(data["openid"])
-
+    data = jwt.decode(token, _jwt_secret(), algorithms=['HS256'])
+    return str(data['openid'])
 
 async def get_current_user(request: Request) -> str | None:
     """FastAPI 依赖：解析当前请求身份。
@@ -107,21 +99,18 @@ async def get_current_user(request: Request) -> str | None:
     Returns:
         openid 字符串，或 None（dev 模式）。
     """
-    auth = request.headers.get("Authorization", "")
-    token = auth[len("Bearer "):].strip() if auth.startswith("Bearer ") else None
+    auth = request.headers.get('Authorization', '')
+    token = auth[len('Bearer '):].strip() if auth.startswith('Bearer ') else None
     if token:
-        # 鉴权模式或 dev 模式，只要带有效令牌就以令牌身份为准（dev 下仍可被校验）
         try:
             return verify_token(token)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if settings.auth_required:
-                raise HTTPException(status_code=401, detail="令牌无效或已过期") from exc
+                raise HTTPException(status_code=401, detail='令牌无效或已过期') from exc
             return None
-    # 无令牌
     if settings.auth_required:
-        raise HTTPException(status_code=401, detail="缺少 Authorization Bearer 令牌")
+        raise HTTPException(status_code=401, detail='缺少 Authorization Bearer 令牌')
     return None
-
 
 def resolve_strict(request: Request) -> str:
     """严格身份解析：必须携带有效 JWT，否则 401。
@@ -129,76 +118,86 @@ def resolve_strict(request: Request) -> str:
     用于管理/商家等需要「真实身份」的端点——不随 AUTH_REQUIRED 开关放行，
     杜绝匿名/占位身份写入或读取管理数据。
     """
-    auth = request.headers.get("Authorization", "")
-    token = auth[len("Bearer "):].strip() if auth.startswith("Bearer ") else None
+    auth = request.headers.get('Authorization', '')
+    token = auth[len('Bearer '):].strip() if auth.startswith('Bearer ') else None
     if not token:
-        raise HTTPException(status_code=401, detail="需要登录")
+        raise HTTPException(status_code=401, detail='需要登录')
     try:
         uid = verify_token(token)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=401, detail="令牌无效或已过期") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail='令牌无效或已过期') from exc
     if is_banned(uid):
-        raise HTTPException(status_code=403, detail="账号已被禁用")
+        raise HTTPException(status_code=403, detail='账号已被禁用')
     return uid
-
 
 def is_banned(user_id: str) -> bool:
     """判断用户是否被禁用（封禁即时生效，不等令牌过期）。"""
+    from backend.storage import db_async as dba
+    if dba.dialect() == 'postgresql':
+        async def _q() -> bool:
+            async with dba.transaction() as c:
+                rows = await c.execute('SELECT status FROM users WHERE id=?', (user_id,))
+                return bool(rows and rows[0]['status'] == 'banned')
+        return _run_pg(_q())
     from backend.storage.db import get_conn
-
-    row = get_conn().execute(
-        "SELECT status FROM users WHERE id = ?", (user_id,)
-    ).fetchone()
-    return bool(row and row["status"] == "banned")
-
+    row = get_conn().execute('SELECT status FROM users WHERE id = ?', (user_id,)).fetchone()
+    return bool(row and row['status'] == 'banned')
 
 def get_user_role(user_id: str) -> str:
-    """读取用户角色（默认 user）。"""
+    """获取用户角色，默认 user。"""
+    from backend.storage import db_async as dba
+    if dba.dialect() == 'postgresql':
+        from backend.storage import db_async as _d
+        async def _q() -> str:
+            async with _d.transaction() as c:
+                row = await c.execute('SELECT role FROM users WHERE id=?', (user_id,))
+                return str(row[0]['role']) if row and row[0]['role'] else 'user'
+        return _run_pg(_q())
     from backend.storage.db import get_conn
-
     conn = get_conn()
-    row = conn.execute("SELECT role FROM users WHERE id = ?", (user_id,)).fetchone()
-    return str(row["role"]) if row and row["role"] else "user"
-
+    row = conn.execute('SELECT role FROM users WHERE id = ?', (user_id,)).fetchone()
+    return str(row['role']) if row and row['role'] else 'user'
 
 def set_user_role(user_id: str, role: str) -> bool:
-    """设置用户角色（user | merchant | admin）；用户不存在返回 False。"""
+    """设置用户角色（user | merchant | admin），用户不存在返回 False。"""
+    from backend.storage import db_async as dba
+    if role not in ('user', 'merchant', 'admin'):
+        raise ValueError(f'非法角色: {role}')
+    if dba.dialect() == 'postgresql':
+        from backend.storage import db_async as _d
+        async def _up() -> bool:
+            async with _d.transaction() as c:
+                await c.execute('UPDATE users SET role=? WHERE id=?', (role, user_id))
+                return True
+        try:
+            _run_pg(_up())
+            return True
+        except Exception:
+            return False
     from backend.storage.db import get_conn
-
-    if role not in ("user", "merchant", "admin"):
-        raise ValueError(f"非法角色: {role}")
     conn = get_conn()
-    cur = conn.execute("UPDATE users SET role=? WHERE id=?", (role, user_id))
+    cur = conn.execute('UPDATE users SET role=? WHERE id=?', (role, user_id))
     conn.commit()
     return cur.rowcount > 0
-
-
-# --------------------------------------------------------------------------- #
-# 账号密码体系（非微信场景：H5 本地注册/登录，用于验证期与自有小程序账号）
-# 密码使用 pbkdf2_hmac(SHA256) + 随机 salt 存储，不依赖任何第三方库；明文永不落库。
-# --------------------------------------------------------------------------- #
-
 
 def _hash_password(password: str) -> str:
     """pbkdf2 哈希密码，返回 `pbkdf2$<salt_hex>$<dk_hex>` 格式的可存储串。"""
     salt = secrets.token_hex(16)
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 100_000)
-    return f"pbkdf2${salt}${dk.hex()}"
-
+    dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), bytes.fromhex(salt), 100000)
+    return f'pbkdf2${salt}${dk.hex()}'
 
 def _verify_password(password: str, stored: str) -> bool:
     """校验明文密码与存储串是否匹配（恒定时间比较，防时序攻击）。"""
     try:
-        algo, salt, expected = stored.split("$")
+        algo, salt, expected = stored.split('$')
     except ValueError:
         return False
-    if algo != "pbkdf2":
+    if algo != 'pbkdf2':
         return False
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 100_000)
+    dk = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), bytes.fromhex(salt), 100000)
     return secrets.compare_digest(dk.hex(), expected)
 
-
-def register_user(username: str, password: str, nickname: str | None = None) -> tuple[str, str]:
+def register_user(username: str, password: str, nickname: str | None=None) -> tuple[str, str]:
     """注册账号：创建 users 行并签发 JWT。
 
     Args:
@@ -213,31 +212,35 @@ def register_user(username: str, password: str, nickname: str | None = None) -> 
         ValueError: 用户名/密码为空或用户名已存在。
     """
     from backend.storage.db import get_conn, transaction
-
-    username = (username or "").strip()
+    username = (username or '').strip()
     if not username or not password:
-        raise ValueError("用户名和密码不能为空")
+        raise ValueError('用户名和密码不能为空')
     if len(password) < 6:
-        raise ValueError("密码至少 6 位")
+        raise ValueError('密码至少 6 位')
+    from backend.storage import db_async as dba
+    if dba.dialect() == 'postgresql':
+        async def _reg() -> tuple[str, str]:
+            async with dba.transaction() as c:
+                rows = await c.execute('SELECT id FROM users WHERE username=?', (username,))
+                if rows:
+                    raise ValueError('用户名已存在')
+                uid = 'u_' + uuid.uuid4().hex[:12]
+                now = datetime.now(UTC).isoformat(timespec='seconds')
+                pw_hash = _hash_password(password)
+                await c.execute('INSERT INTO users(id, openid, username, nickname, password_hash, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', (uid, uid, username, nickname or username, pw_hash, now, now))
+                return (uid, create_token(uid))
+        return _run_pg(_reg())
     conn = get_conn()
-    if conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone():
-        raise ValueError("用户名已存在")
-    uid = "u_" + uuid.uuid4().hex[:12]
-    now = datetime.now(UTC).isoformat(timespec="seconds")
-    # 明文密码只在本次调用内哈希，绝不落库（防拖库爆明文）
+    if conn.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone():
+        raise ValueError('用户名已存在')
+    uid = 'u_' + uuid.uuid4().hex[:12]
+    now = datetime.now(UTC).isoformat(timespec='seconds')
     pw_hash = _hash_password(password)
     with transaction() as c:
-        c.execute(
-            "INSERT INTO users(id, openid, username, nickname, password_hash, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (uid, uid, username, nickname or username, pw_hash, now, now),
-        )
-    return uid, create_token(uid)
+        c.execute('INSERT INTO users(id, openid, username, nickname, password_hash, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', (uid, uid, username, nickname or username, pw_hash, now, now))
+    return (uid, create_token(uid))
 
-
-def register_merchant(
-    phone: str, password: str, shop_name: str | None = None
-) -> tuple[str, str]:
+def register_merchant(phone: str, password: str, shop_name: str | None=None) -> tuple[str, str]:
     """商家独立注册：创建 role=merchant 的 users 行并签发 JWT（三端架构阶段2）。
 
     手机号全局唯一（硬约束）：已绑定任意角色（user/merchant/admin）的手机号拒绝重复注册，
@@ -250,42 +253,38 @@ def register_merchant(
         ValueError: 手机号/密码为空、密码过短、手机号已被任意角色占用。
     """
     from backend.storage.db import get_conn, transaction
-
-    phone = (phone or "").strip()
+    phone = (phone or '').strip()
     if not phone or not password:
-        raise ValueError("手机号和密码不能为空")
+        raise ValueError('手机号和密码不能为空')
     if len(password) < 6:
-        raise ValueError("密码至少 6 位")
+        raise ValueError('密码至少 6 位')
+    from backend.storage import db_async as dba
+    if dba.dialect() == 'postgresql':
+        async def _reg() -> tuple[str, str]:
+            async with dba.transaction() as c:
+                rows = await c.execute('SELECT id, role FROM users WHERE phone=? OR username=? ORDER BY created_at LIMIT 1', (phone, phone))
+                if rows:
+                    if rows[0]['role'] == 'merchant':
+                        raise ValueError('该手机号已注册商家，请直接登录')
+                    raise ValueError('手机号已被使用')
+                uid = 'u_' + uuid.uuid4().hex[:12]
+                now = datetime.now(UTC).isoformat(timespec='seconds')
+                pw_hash = _hash_password(password)
+                await c.execute('INSERT INTO users(id, openid, username, nickname, phone, password_hash, role, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)', (uid, uid, phone, (shop_name or '').strip()[:30] or '商家' + phone[-4:], phone, pw_hash, 'merchant', now, now))
+                return (uid, create_token(uid))
+        return _run_pg(_reg())
     conn = get_conn()
-    row = conn.execute(
-        "SELECT id, role FROM users WHERE phone = ? OR username = ? ORDER BY created_at LIMIT 1",
-        (phone, phone),
-    ).fetchone()
+    row = conn.execute('SELECT id, role FROM users WHERE phone = ? OR username = ? ORDER BY created_at LIMIT 1', (phone, phone)).fetchone()
     if row:
-        if row["role"] == "merchant":
-            raise ValueError("该手机号已注册商家，请直接登录")
-        raise ValueError("手机号已被使用")
-    uid = "u_" + uuid.uuid4().hex[:12]
-    now = datetime.now(UTC).isoformat(timespec="seconds")
+        if row['role'] == 'merchant':
+            raise ValueError('该手机号已注册商家，请直接登录')
+        raise ValueError('手机号已被使用')
+    uid = 'u_' + uuid.uuid4().hex[:12]
+    now = datetime.now(UTC).isoformat(timespec='seconds')
     pw_hash = _hash_password(password)
     with transaction() as c:
-        c.execute(
-            "INSERT INTO users(id, openid, username, nickname, phone, password_hash, role, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
-            (
-                uid,
-                uid,
-                phone,
-                (shop_name or "").strip()[:30] or "商家" + phone[-4:],
-                phone,
-                pw_hash,
-                "merchant",
-                now,
-                now,
-            ),
-        )
-    return uid, create_token(uid)
-
+        c.execute('INSERT INTO users(id, openid, username, nickname, phone, password_hash, role, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)', (uid, uid, phone, (shop_name or '').strip()[:30] or '商家' + phone[-4:], phone, pw_hash, 'merchant', now, now))
+    return (uid, create_token(uid))
 
 def login_user(username: str, password: str) -> str | None:
     """账号登录：校验凭据并签发 JWT；失败返回 None。
@@ -297,40 +296,45 @@ def login_user(username: str, password: str) -> str | None:
     Returns:
         JWT 字符串，或 None（用户名不存在 / 密码错误 / 未设密码）。
     """
+    from backend.storage import db_async as dba
+    if dba.dialect() == 'postgresql':
+        async def _login() -> str | None:
+            async with dba.transaction() as c:
+                rows = await c.execute('SELECT id, password_hash, status FROM users WHERE username=?', (username.strip(),))
+                row = rows[0] if rows else None
+                if not row or not row['password_hash']:
+                    return None
+                if row['status'] == 'banned':
+                    return None
+                if not _verify_password(password, row['password_hash']):
+                    return None
+                return create_token(row['id'])
+        return _run_pg(_login())
     from backend.storage.db import get_conn
-
     conn = get_conn()
-    row = conn.execute(
-        "SELECT id, password_hash, status FROM users WHERE username = ?", (username.strip(),)
-    ).fetchone()
-    if not row or not row["password_hash"]:
+    row = conn.execute('SELECT id, password_hash, status FROM users WHERE username = ?', (username.strip(),)).fetchone()
+    if not row or not row['password_hash']:
         return None
-    if row["status"] == "banned":
-        return None  # 被禁用账号拒绝登录（管理后台 M2）
-    if not _verify_password(password, row["password_hash"]):
+    if row['status'] == 'banned':
         return None
-    return create_token(row["id"])
-
+    if not _verify_password(password, row['password_hash']):
+        return None
+    return create_token(row['id'])
 
 def get_user_profile(user_id: str) -> dict[str, Any] | None:
     """读取用户资料（不含敏感字段，含角色）。"""
+    from backend.storage import db_async as dba
+    if dba.dialect() == 'postgresql':
+        async def _prof() -> dict[str, Any] | None:
+            async with dba.transaction() as c:
+                rows = await c.execute('SELECT id, username, nickname, avatar, phone, role, created_at FROM users WHERE id=?', (user_id,))
+                return dict(rows[0]) if rows else None
+        return _run_pg(_prof())
     from backend.storage.db import get_conn
-
     conn = get_conn()
-    row = conn.execute(
-        "SELECT id, username, nickname, avatar, phone, role, created_at FROM users WHERE id = ?",
-        (user_id,),
-    ).fetchone()
+    row = conn.execute('SELECT id, username, nickname, avatar, phone, role, created_at FROM users WHERE id = ?', (user_id,)).fetchone()
     return dict(row) if row else None
-
-
-# --------------------------------------------------------------------------- #
-# 手机号注册/登录（验证码）+ 微信绑定
-# --------------------------------------------------------------------------- #
-
-#: 验证码内存存储：phone -> (code, expires_at)。单进程够用；多实例部署应换 Redis/DB。
 _PHONE_CODES: dict[str, tuple[str, float]] = {}
-
 
 def issue_phone_code(phone: str) -> str:
     """为手机号生成验证码（幂等：5 分钟内重复获取沿用旧码，防止短信轰炸）。
@@ -339,23 +343,16 @@ def issue_phone_code(phone: str) -> str:
     sms_provider=real：TODO 在此接入真实短信通道（接口不变）。
     """
     from backend.config import settings
-
     now = time.time()
     old = _PHONE_CODES.get(phone)
     if old and old[1] > now:
         return old[0]
-    code = (
-        settings.sms_dev_code
-        if settings.sms_provider == "dev"
-        else f"{secrets.randbelow(1000000):06d}"
-    )
+    code = settings.sms_dev_code if settings.sms_provider == 'dev' else f'{secrets.randbelow(1000000):06d}'
     _PHONE_CODES[phone] = (code, now + settings.phone_code_ttl_seconds)
     return code
 
-
 def verify_phone_code(phone: str, code: str) -> bool:
     """校验手机号验证码（校验通过即销毁，防止重放）。"""
-
     item = _PHONE_CODES.get(phone)
     if not item:
         return False
@@ -368,7 +365,6 @@ def verify_phone_code(phone: str, code: str) -> bool:
     _PHONE_CODES.pop(phone, None)
     return True
 
-
 def phone_login_user(phone: str) -> tuple[str, str, bool]:
     """手机号验证码登录/注册：按 phone 定位用户，无账号则自动创建。
 
@@ -376,36 +372,36 @@ def phone_login_user(phone: str) -> tuple[str, str, bool]:
         (user_id, token, is_new)。
     """
     from backend.storage.db import get_conn, transaction
-
-    phone = (phone or "").strip()
+    phone = (phone or '').strip()
     if not phone:
-        raise ValueError("手机号不能为空")
+        raise ValueError('手机号不能为空')
+    from backend.storage import db_async as dba
+    if dba.dialect() == 'postgresql':
+        async def _login() -> tuple[str, str, bool]:
+            async with dba.transaction() as c:
+                rows = await c.execute('SELECT id, role FROM users WHERE phone=? OR username=? ORDER BY created_at LIMIT 1', (phone, phone))
+                if rows:
+                    if rows[0]['role'] in ('merchant', 'admin'):
+                        raise ValueError('该手机号已注册商家/管理员，请前往对应后台登录' if rows[0]['role'] == 'merchant' else '该手机号已被管理员账号占用')
+                    return (rows[0]['id'], create_token(rows[0]['id']), False)
+                uid = 'u_' + uuid.uuid4().hex[:12]
+                now = datetime.now(UTC).isoformat(timespec='seconds')
+                nickname = '用户' + phone[-4:]
+                await c.execute('INSERT INTO users(id, openid, username, nickname, phone, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', (uid, uid, phone, nickname, phone, now, now))
+                return (uid, create_token(uid), True)
+        return _run_pg(_login())
     conn = get_conn()
-    row = conn.execute(
-        "SELECT id, role FROM users WHERE phone = ? OR username = ? ORDER BY created_at LIMIT 1",
-        (phone, phone),
-    ).fetchone()
+    row = conn.execute('SELECT id, role FROM users WHERE phone = ? OR username = ? ORDER BY created_at LIMIT 1', (phone, phone)).fetchone()
     if row:
-        # 手机号全局唯一：已被商家/管理员占用时拒绝 C 端登录，引导去对应后台
-        if row["role"] in ("merchant", "admin"):
-            raise ValueError(
-                "该手机号已注册商家/管理员，请前往对应后台登录"
-                if row["role"] == "merchant"
-                else "该手机号已被管理员账号占用"
-            )
-        return row["id"], create_token(row["id"]), False
-
-    uid = "u_" + uuid.uuid4().hex[:12]
-    now = datetime.now(UTC).isoformat(timespec="seconds")
-    nickname = "用户" + phone[-4:]
+        if row['role'] in ('merchant', 'admin'):
+            raise ValueError('该手机号已注册商家/管理员，请前往对应后台登录' if row['role'] == 'merchant' else '该手机号已被管理员账号占用')
+        return (row['id'], create_token(row['id']), False)
+    uid = 'u_' + uuid.uuid4().hex[:12]
+    now = datetime.now(UTC).isoformat(timespec='seconds')
+    nickname = '用户' + phone[-4:]
     with transaction() as c:
-        c.execute(
-            "INSERT INTO users(id, openid, username, nickname, phone, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (uid, uid, phone, nickname, phone, now, now),
-        )
-    return uid, create_token(uid), True
-
+        c.execute('INSERT INTO users(id, openid, username, nickname, phone, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', (uid, uid, phone, nickname, phone, now, now))
+    return (uid, create_token(uid), True)
 
 def bind_wechat(user_id: str, openid: str) -> bool:
     """把微信 openid 绑定到当前账号（users.openid 列）。
@@ -413,41 +409,54 @@ def bind_wechat(user_id: str, openid: str) -> bool:
     Raises:
         ValueError: openid 已被其他账号绑定。
     """
+    from backend.storage import db_async as dba
+    if dba.dialect() == 'postgresql':
+        async def _bind() -> bool:
+            async with dba.transaction() as c:
+                if not await c.execute('SELECT id FROM users WHERE id=?', (user_id,)):
+                    raise ValueError('用户不存在')
+                owned = await c.execute('SELECT id FROM users WHERE openid=? AND id!=?', (openid, user_id))
+                if owned:
+                    raise ValueError('该微信已绑定其他账号')
+                await c.execute('UPDATE users SET openid=?, updated_at=? WHERE id=?', (openid, datetime.now(UTC).isoformat(timespec='seconds'), user_id))
+                await c.execute('DELETE FROM users WHERE id=? AND username IS NULL AND phone IS NULL AND id!=?', (openid, user_id))
+            return True
+        return _run_pg(_bind())
     from backend.storage.db import get_conn, transaction
-
     conn = get_conn()
-    if not conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone():
-        raise ValueError("用户不存在")
-    owned = conn.execute("SELECT id FROM users WHERE openid = ? AND id != ?", (openid, user_id)).fetchone()
+    if not conn.execute('SELECT id FROM users WHERE id = ?', (user_id,)).fetchone():
+        raise ValueError('用户不存在')
+    owned = conn.execute('SELECT id FROM users WHERE openid = ? AND id != ?', (openid, user_id)).fetchone()
     if owned:
-        raise ValueError("该微信已绑定其他账号")
+        raise ValueError('该微信已绑定其他账号')
     with transaction() as c:
-        c.execute("UPDATE users SET openid = ?, updated_at = ? WHERE id = ?",
-                  (openid, datetime.now(UTC).isoformat(timespec="seconds"), user_id))
-        # 清理孤儿行：此前以微信 openid 直接建档（id=openid 且无账号凭据）的临时用户
-        c.execute(
-            "DELETE FROM users WHERE id = ? AND username IS NULL AND phone IS NULL AND id != ?",
-            (openid, user_id),
-        )
+        c.execute('UPDATE users SET openid = ?, updated_at = ? WHERE id = ?', (openid, datetime.now(UTC).isoformat(timespec='seconds'), user_id))
+        c.execute('DELETE FROM users WHERE id = ? AND username IS NULL AND phone IS NULL AND id != ?', (openid, user_id))
     return True
 
-
-def wx_login_user(openid: str, nickname: str | None = None) -> tuple[str, str, bool]:
+def wx_login_user(openid: str, nickname: str | None=None) -> tuple[str, str, bool]:
     """微信 openid 登录：无账号自动建档（id=openid），保证 /auth/me 与业务表可用。
 
     Returns:
         (user_id, token, is_new)。
     """
+    from backend.storage import db_async as dba
+    if dba.dialect() == 'postgresql':
+        async def _login() -> tuple[str, str, bool]:
+            async with dba.transaction() as c:
+                rows = await c.execute('SELECT id FROM users WHERE openid=?', (openid,))
+                if rows:
+                    return (rows[0]['id'], create_token(rows[0]['id']), False)
+                now = datetime.now(UTC).isoformat(timespec='seconds')
+                await c.execute('INSERT INTO users(id, openid, nickname, created_at, updated_at) VALUES (?,?,?,?,?)', (openid, openid, (nickname or '微信用户')[:30], now, now))
+                return (openid, create_token(openid), True)
+        return _run_pg(_login())
     from backend.storage.db import get_conn, transaction
-
     conn = get_conn()
-    row = conn.execute("SELECT id FROM users WHERE openid = ?", (openid,)).fetchone()
+    row = conn.execute('SELECT id FROM users WHERE openid = ?', (openid,)).fetchone()
     if row:
-        return row["id"], create_token(row["id"]), False
-    now = datetime.now(UTC).isoformat(timespec="seconds")
+        return (row['id'], create_token(row['id']), False)
+    now = datetime.now(UTC).isoformat(timespec='seconds')
     with transaction() as c:
-        c.execute(
-            "INSERT INTO users(id, openid, nickname, created_at, updated_at) VALUES (?,?,?,?,?)",
-            (openid, openid, (nickname or "微信用户")[:30], now, now),
-        )
-    return openid, create_token(openid), True
+        c.execute('INSERT INTO users(id, openid, nickname, created_at, updated_at) VALUES (?,?,?,?,?)', (openid, openid, (nickname or '微信用户')[:30], now, now))
+    return (openid, create_token(openid), True)
