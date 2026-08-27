@@ -9,7 +9,7 @@ import { getOrder, orderAction, postReview, publicConfig, updateOrder, orderAfte
 import { generateEffectImage, pollImageTask } from '../api/image'
 import { withApiUrl } from '../api/client'
 import { planImage } from '../assets/imageMap'
-import { statusMeta } from '../utils/status'
+import { merchantConfirmMeta, statusMeta } from '../utils/status'
 import { fmtMoney, calcPayable } from '../utils/price'
 import { toast } from '../utils/toast'
 
@@ -22,6 +22,7 @@ export default function OrderDetail() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [shippingFee, setShippingFee] = useState(0)
+  const [remain, setRemain] = useState(0)
   // 贺卡编辑
   const [editingCard, setEditingCard] = useState(false)
   const [cardMsg, setCardMsg] = useState('')
@@ -39,10 +40,31 @@ export default function OrderDetail() {
   useEffect(() => {
     if (!orderId) return
     getOrder(orderId)
-      .then((o) => setOrder(o || null))
+      .then((o) => {
+        setOrder(o || null)
+        if (o) setRemain(Math.max(0, Number(o.remaining_seconds) || 0))
+      })
       .catch((e) => toast(e.message || '加载失败', 'error'))
       .finally(() => setLoading(false))
   }, [orderId])
+
+  // 待付款订单支付倒计时（超时归零后刷新一次，让后端懒过期把订单转 canceled）
+  useEffect(() => {
+    const isPending = order && (order.status === 'created' || order.status === 'pending_payment')
+    if (!isPending) return undefined
+    const t = setInterval(() => setRemain((r) => (r > 0 ? r - 1 : 0)), 1000)
+    return () => clearInterval(t)
+  }, [order])
+
+  useEffect(() => {
+    if (order && (order.status === 'created' || order.status === 'pending_payment') && remain === 0) {
+      const t = setTimeout(() => {
+        getOrder(orderId).then((o) => setOrder(o || null)).catch(() => {})
+      }, 400)
+      return () => clearTimeout(t)
+    }
+    return undefined
+  }, [remain, order, orderId])
 
   useEffect(() => {
     publicConfig()
@@ -130,6 +152,7 @@ export default function OrderDetail() {
   }
 
   const meta = order ? statusMeta(order.status) : null
+  const merchantMeta = order ? merchantConfirmMeta(order) : null
   const items = order?.items || []
   const plan = order?.plan
   const recipient = order?.recipient || {}
@@ -165,11 +188,18 @@ export default function OrderDetail() {
           {/* 订单概览 */}
           <Reveal>
           <div className="mx-5 mt-4 rounded-card bg-white p-4 border border-line">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <p className="truncate text-[11px] text-sub">{order.order_id}</p>
-              <span className={`shrink-0 rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>
-                {meta.label}
-              </span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {merchantMeta && (
+                  <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${merchantMeta.cls}`}>
+                    {merchantMeta.label}
+                  </span>
+                )}
+                <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>
+                  {meta.label}
+                </span>
+              </div>
             </div>
             <p className="mt-1 text-[10px] text-sub/70">{order.created_at}</p>
             <div className="mt-2 flex items-center justify-between border-t border-line pt-2.5">
@@ -178,6 +208,11 @@ export default function OrderDetail() {
               </p>
               <p className="text-[10px] tracking-[0.15em] text-sub">店铺：{order.shop_id || '—'}</p>
             </div>
+            {order.refund && (
+              <div className="mt-2 rounded-[4px] border border-red-100 bg-red-50/60 px-3 py-2 text-[11px] text-red-600">
+                商家拒单，已退款 {fmtMoney(order.refund.amount)}{order.refund.at ? `（${order.refund.at}）` : ''}
+              </div>
+            )}
           </div>
           </Reveal>
 
@@ -474,14 +509,27 @@ export default function OrderDetail() {
 
           {/* 订单操作 */}
           {(order.status === 'created' || order.status === 'pending_payment') && (
-            <div className="mx-5 mt-4 flex gap-2">
+            <>
+              <div className="mx-5 mt-3 text-center text-[11px] text-sub">
+                {remain > 0 ? (
+                  <span>
+                    支付倒计时{' '}
+                    <span className="font-mono text-pink">{String(Math.floor(remain / 60)).padStart(2, '0')}:{String(remain % 60).padStart(2, '0')}</span>{' '}
+                    超时自动取消
+                  </span>
+                ) : (
+                  <span className="text-burgundy">支付已超时，订单已自动取消</span>
+                )}
+              </div>
+              <div className="mx-5 mt-3 flex gap-2">
               <Button variant="secondary" className="flex-1" disabled={busy} onClick={() => act('cancel')}>
                 取消订单
               </Button>
-              <Button variant="secondary" className="flex-1" onClick={goPay}>
+              <Button variant="secondary" className="flex-1" disabled={remain === 0} onClick={goPay}>
                 去支付
               </Button>
-            </div>
+              </div>
+            </>
           )}
           {order.status === 'shipped' && (
             <div className="mx-5 mt-4">

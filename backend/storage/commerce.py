@@ -595,6 +595,12 @@ async def get_order(order_id: str) -> dict[str, Any] | None:
             d['share_url'] = f"{base}/card-share/{d['card_token']}" if base else None
         else:
             d['share_url'] = None
+        # 商家拒单退款信息（拒单时订单转 canceled + payments refunded）
+        if d.get('merchant_status') == 'rejected':
+            pay = _fetchone(await c.execute("SELECT amount, paid_at FROM payments WHERE order_id=? AND status='refunded'", (order_id,)))
+            d['refund'] = {'amount': float(pay['amount']) if pay else 0.0, 'at': pay['paid_at'] if pay else None}
+        else:
+            d['refund'] = None
         return d
 
 async def list_orders(user_id: str, limit: int=50) -> list[dict[str, Any]]:

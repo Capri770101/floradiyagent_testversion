@@ -8,14 +8,14 @@ import { IconStar } from '../components/icons'
 import { planImage } from '../assets/imageMap'
 import { listOrders, orderAction, orderAftersale, postReview } from '../api/shop'
 import { toast } from '../utils/toast'
-import { statusMeta } from '../utils/status'
+import { merchantConfirmMeta, statusMeta } from '../utils/status'
 import { fmtMoney } from '../utils/price'
 
 // 状态筛选 tab（键与后端 order.status 对齐）
 const STATUS_TABS = [
   { key: 'all', label: '全部' },
   { key: 'created', label: '待付款' },
-  { key: 'paid', label: '待发货' },
+  { key: 'paid', label: '已支付' },
   { key: 'shipped', label: '配送中' },
   { key: 'done', label: '已完成' },
   { key: 'canceled', label: '已取消' },
@@ -183,6 +183,7 @@ export default function Orders() {
           <div className="space-y-3">
             {filtered.map((o, i) => {
               const meta = statusMeta(o.status)
+              const merchantMeta = merchantConfirmMeta(o)
               const items = o.items || []
               const total = o.total_price != null
                 ? o.total_price
@@ -203,9 +204,16 @@ export default function Orders() {
                         <span className="text-[11px] text-sub">{o.order_id}</span>
                         <span className="text-[10px] text-sub/60">{o.created_at}</span>
                       </div>
-                      <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>
-                        {meta.label}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {merchantMeta && (
+                          <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${merchantMeta.cls}`}>
+                            {merchantMeta.label}
+                          </span>
+                        )}
+                        <span className={`rounded-pill px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}>
+                          {meta.label}
+                        </span>
+                      </div>
                     </div>
                     {items.map((it, idx) => (
                       <div key={`${it.plan_id || it.name}-${idx}`} className="flex items-center gap-3 px-4 py-2.5">

@@ -74,7 +74,8 @@ export default function Pay() {
     try {
       await payOrder(orderId, PAY_METHODS[sel].id)
       toast('支付成功！')
-      nav('/profile')
+      // 支付成功后直达订单详情，即时看到「待商家确认 / 商家已接单」等最新状态
+      nav('/orders/' + orderId, { replace: true })
     } catch (e) {
       toast('支付失败：' + e.message, 'error')
     } finally {
