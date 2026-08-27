@@ -6,7 +6,6 @@
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 from pathlib import Path
@@ -50,13 +49,15 @@ async def _assert_order_in_scope(order_id: str, scope: list[str]) -> None:
     if not scope:
         raise HTTPException(status_code=403, detail='无权访问该订单')
 
-    def _shop_names(ids: list[str]) -> set[str]:
+    async def _shop_names(ids: list[str]) -> set[str]:
         if not ids:
             return set()
+        from backend.storage import db_async as _dba
         ph = ','.join('?' * len(ids))
-        rows = get_conn().execute(f'SELECT name FROM shops WHERE id IN ({ph})', ids).fetchall()
+        async with _dba.transaction() as c:
+            rows = await c.execute(f'SELECT name FROM shops WHERE id IN ({ph})', ids)
         return {r['name'] for r in rows}
-    keys = set(scope) | await asyncio.to_thread(_shop_names, scope)
+    keys = set(scope) | await _shop_names(scope)
     o_shop = o.get('shop_id') or ''
     items_shop = {it.get('shop') for it in o.get('items') or [] if it.get('shop')}
     if o_shop not in keys and (not items_shop & keys):

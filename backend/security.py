@@ -29,7 +29,7 @@ logger = logging.getLogger('security')
 _DEV_SECRET = uuid.uuid4().hex + uuid.uuid4().hex
 
 def _run_pg(coro):
-    """在 PG 模式下运行异步协程并返回结果；结束后清理该事件循环创建的引擎，
+    """在 PG 模式下运行异步协程并返回结果；结束后异步 dispose 该事件循环创建的引擎，
     避免 ``_run_async`` 的临时事件循环关闭后残留死连接污染主循环。"""
     from backend.storage import db_async as _d
     from backend.storage.db import _run_async
@@ -39,7 +39,7 @@ def _run_pg(coro):
         try:
             return await coro
         finally:
-            _d._dispose_loop_engine(loop)
+            await _d._async_dispose_loop_engine(loop)
     return _run_async(_wrapper())
 
 def _jwt_secret() -> str:

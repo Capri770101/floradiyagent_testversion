@@ -178,6 +178,23 @@ def _dispose_loop_engine(loop: Any) -> Any:
         pass
     return None
 
+async def _async_dispose_loop_engine(loop: Any) -> None:
+    """异步 dispose 指定事件循环缓存的引擎并移除缓存。
+
+    必须在引擎所属 loop 仍运行时调用（await dispose 真正关闭 asyncpg 连接、
+    回滚悬挂事务并释放锁），供 ``_run_async`` / ``_run_pg`` 等临时 loop 的
+    finally 使用——避免残留连接在 PG 端处于 idle in transaction 持锁。
+    """
+    key = id(loop)
+    entry = _engines.pop(key, None)
+    if entry is None:
+        return
+    _, eng = entry
+    try:
+        await eng.dispose()
+    except Exception:
+        pass
+
 async def _dispose_engine() -> None:
     """异步 dispose 所有缓存引擎并清空缓存（供 _run_async 临时循环结束后调用）。"""
     for _, (_, eng) in _engines.items():

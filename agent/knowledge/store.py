@@ -149,7 +149,7 @@ def _run_async(coro):
         try:
             return await coro
         finally:
-            _dba._dispose_loop_engine(loop)
+            await _dba._async_dispose_loop_engine(loop)
     try:
         asyncio.get_running_loop()
     except RuntimeError:
