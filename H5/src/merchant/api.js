@@ -260,3 +260,16 @@ export async function merchantAftersales(status = '', limit = 50, offset = 0) {
   const data = await request(`/merchant/aftersales?${params.toString()}`)
   return data
 }
+
+export async function merchantWithdrawals(limit = 50, offset = 0) {
+  const params = new URLSearchParams()
+  if (limit) params.set('limit', limit)
+  if (offset) params.set('offset', offset)
+  const data = await request(`/merchant/withdrawals?${params.toString()}`)
+  return data.withdrawals || []
+}
+
+export async function merchantApplyWithdrawal(payload) {
+  const data = await request('/merchant/withdrawals', { method: 'POST', body: payload })
+  return data.withdrawal
+}

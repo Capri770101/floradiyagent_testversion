@@ -28,8 +28,9 @@ from backend.storage import chats as chat_store
 from backend.storage import commerce, diy
 from backend.storage.db import get_conn
 from backend.storage.object_store import save_upload
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
+
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 router = APIRouter(tags=['merchant'])
 logger = logging.getLogger('api')
@@ -86,6 +87,34 @@ async def merchant_aftersales_endpoint(request: Request, status: str='', limit: 
     _, scope = await _merchant_scope(request)
     items, total = await admin_store.list_merchant_aftersales(scope, status, limit, offset)
     return {'aftersales': items, 'total': total, 'limit': limit, 'offset': offset}
+
+class WithdrawalCreateRequest(BaseModel):
+    """商家发起提现申请。"""
+    amount: float = Field(..., gt=0, description='提现金额（元）')
+    account_type: str = Field('wechat', description='wechat | alipay | bank')
+    account: str = Field('', max_length=200, description='收款账号/信息')
+    note: str = Field('', max_length=200, description='备注')
+
+@router.post('/merchant/withdrawals')
+async def merchant_withdrawal_apply(req: WithdrawalCreateRequest, request: Request) -> dict[str, Any]:
+    """商家发起提现申请（资金结算由平台线下完成）。"""
+    uid, _scope = await _merchant_scope(request)
+    shops = await catalog_store.merchant_shops(uid)
+    if not shops:
+        raise HTTPException(status_code=400, detail='您尚未绑定店铺，无法提现')
+    shop_id = shops[0]['id']
+    try:
+        w = await admin_store.create_withdrawal(shop_id, uid, req.amount, req.account_type, req.account, req.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {'withdrawal': w}
+
+@router.get('/merchant/withdrawals')
+async def merchant_withdrawals_endpoint(request: Request, limit: int=50, offset: int=0) -> dict[str, Any]:
+    """商家查看自己的提现申请列表。"""
+    uid, _scope = await _merchant_scope(request)
+    items = await admin_store.list_user_withdrawals(uid, limit)
+    return {'withdrawals': items, 'limit': limit, 'offset': offset}
 
 @router.get('/merchant/orders')
 async def merchant_orders_endpoint(request: Request, shop_id: str='', status: str='', limit: int=50, keyword: str='', date_from: str='', date_to: str='') -> dict[str, Any]:

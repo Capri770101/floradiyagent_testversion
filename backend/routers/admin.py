@@ -11,8 +11,9 @@ from typing import Any
 from backend.routers.common import PlanWriteRequest, ShopWriteRequest, _require_admin, catalog_store
 from backend.storage import admin as admin_store
 from backend.storage import config as config_store
-from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+
+from fastapi import APIRouter, HTTPException, Query, Request
 
 router = APIRouter(tags=['admin'])
 logger = logging.getLogger('api')
@@ -196,6 +197,45 @@ async def admin_refund_aftersale(as_id: str, request: Request, req: AftersaleRef
     if not a:
         raise HTTPException(status_code=404, detail='售后单不存在')
     return {'aftersale': a}
+
+# ---------------- 商家提现审核 ----------------
+
+class WithdrawalActRequest(BaseModel):
+    note: str = Field('', max_length=500, description='审核备注 / 打款凭证号')
+
+@router.get('/admin/withdrawals')
+async def admin_list_withdrawals(request: Request, status: str='', limit: int=Query(50, ge=1, le=200), offset: int=Query(0, ge=0)) -> dict[str, Any]:
+    """提现申请列表（可按状态筛选）。"""
+    await _require_admin(request)
+    items, total = await admin_store.list_withdrawals(status, limit, offset)
+    return {'withdrawals': items, 'total': total, 'limit': limit, 'offset': offset}
+
+@router.post('/admin/withdrawals/{wd_id}/approve')
+async def admin_approve_withdrawal(wd_id: str, request: Request) -> dict[str, Any]:
+    """通过提现申请（待线下打款）。"""
+    admin_uid = await _require_admin(request)
+    w = await admin_store.update_withdrawal(wd_id, 'approved', admin_uid)
+    if not w:
+        raise HTTPException(status_code=404, detail='提现单不存在')
+    return {'withdrawal': w}
+
+@router.post('/admin/withdrawals/{wd_id}/paid')
+async def admin_pay_withdrawal(wd_id: str, req: WithdrawalActRequest, request: Request) -> dict[str, Any]:
+    """标记已打款（线下完成转账后登记凭证号）。"""
+    admin_uid = await _require_admin(request)
+    w = await admin_store.update_withdrawal(wd_id, 'paid', admin_uid, req.note)
+    if not w:
+        raise HTTPException(status_code=404, detail='提现单不存在')
+    return {'withdrawal': w}
+
+@router.post('/admin/withdrawals/{wd_id}/reject')
+async def admin_reject_withdrawal(wd_id: str, req: WithdrawalActRequest, request: Request) -> dict[str, Any]:
+    """拒绝提现申请。"""
+    admin_uid = await _require_admin(request)
+    w = await admin_store.update_withdrawal(wd_id, 'rejected', admin_uid, req.note)
+    if not w:
+        raise HTTPException(status_code=404, detail='提现单不存在')
+    return {'withdrawal': w}
 
 class ApplyRejectRequest(BaseModel):
     note: str = Field('', max_length=500, description='拒绝原因')

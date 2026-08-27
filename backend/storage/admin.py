@@ -224,6 +224,79 @@ async def reject_aftersale(as_id: str, handled_by: str, note: str='') -> dict[st
 async def refund_aftersale(as_id: str, handled_by: str, refund_amount: float | None=None) -> dict[str, Any] | None:
     return await _update_aftersale(as_id, 'refunded', handled_by, refund_amount=refund_amount)
 
+# ---------------- 商家提现 ----------------
+
+WITHDRAWAL_STATUS = {'pending', 'approved', 'paid', 'rejected'}
+
+async def create_withdrawal(shop_id: str, user_id: str, amount: float, account_type: str='wechat', account: str='', note: str='') -> dict[str, Any]:
+    """商家发起提现申请（资金结算由平台线下完成，此处仅登记）。"""
+    if amount <= 0:
+        raise ValueError('提现金额必须大于 0')
+    if account_type not in ('wechat', 'alipay', 'bank'):
+        raise ValueError('非法提现账户类型')
+    wd_id = await _new_id('WD')
+    now = _now()
+    async with dba.transaction() as c:
+        await c.execute(
+            "INSERT INTO merchant_withdrawals\n"
+            "  (id, shop_id, user_id, amount, account_type, account, status, review_note, created_at, updated_at)\n"
+            "  VALUES (?,?,?,?,?,?,'pending','',?,?)",
+            (wd_id, shop_id, user_id, amount, account_type, account or '', now, now),
+        )
+    return await get_withdrawal(wd_id)
+
+async def list_withdrawals(status: str='', limit: int=50, offset: int=0) -> tuple[list[dict[str, Any]], int]:
+    async with dba.transaction() as c:
+        '提现单列表（管理后台）。'
+        where, args = (' WHERE 1=1', [])
+        if status:
+            where += ' AND w.status=?'
+            args.append(status)
+        total = _scalar(await c.execute(f'SELECT COUNT(*) FROM merchant_withdrawals w{where}', args))
+        rows = await c.execute(
+            f'SELECT w.*, s.name AS shop_name, u.nickname, u.phone\n'
+            f'FROM merchant_withdrawals w\n'
+            f'LEFT JOIN shops s ON s.id = w.shop_id\n'
+            f'LEFT JOIN users u ON u.id = w.user_id\n'
+            f'{where} ORDER BY w.created_at DESC LIMIT ? OFFSET ?',
+            args + [limit, offset],
+        )
+        return ([dict(r) for r in rows], int(total))
+
+async def list_user_withdrawals(user_id: str, limit: int=50) -> list[dict[str, Any]]:
+    async with dba.transaction() as c:
+        '商家自身提现单列表。'
+        rows = await c.execute(
+            'SELECT * FROM merchant_withdrawals WHERE user_id=? ORDER BY created_at DESC LIMIT ?',
+            (user_id, limit),
+        )
+        return [dict(r) for r in rows]
+
+async def get_withdrawal(wd_id: str) -> dict[str, Any] | None:
+    async with dba.transaction() as c:
+        row = _fetchone(await c.execute(
+            'SELECT w.*, s.name AS shop_name, u.nickname, u.phone\n'
+            'FROM merchant_withdrawals w\n'
+            'LEFT JOIN shops s ON s.id = w.shop_id\n'
+            'LEFT JOIN users u ON u.id = w.user_id\n'
+            'WHERE w.id=?',
+            (wd_id,),
+        ))
+        return dict(row) if row else None
+
+async def update_withdrawal(wd_id: str, status: str, handled_by: str, note: str='') -> dict[str, Any] | None:
+    """提现单状态流转（pending→approved→paid / pending→rejected）。"""
+    if status not in WITHDRAWAL_STATUS:
+        raise ValueError(f'非法状态: {status}')
+    async with dba.transaction() as c:
+        cur = await c.execute(
+            'UPDATE merchant_withdrawals SET status=?, handled_by=?, review_note=?, updated_at=? WHERE id=? RETURNING id',
+            (status, handled_by, (note or '')[:500], _now(), wd_id),
+        )
+        if len(cur) == 0:
+            return None
+    return await get_withdrawal(wd_id)
+
 async def create_application(user_id: str, shop_name: str, contact_name: str='', contact_phone: str='', license_no: str='', license_img: str='', address: str='', intro: str='') -> dict[str, Any]:
     async with dba.transaction() as c:
         '用户提交入驻申请。'

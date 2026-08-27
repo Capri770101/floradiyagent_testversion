@@ -7,6 +7,7 @@ import { Dashboard } from './pages/Dashboard'
 import { Orders } from './pages/Orders'
 import { Customers } from './pages/Customers'
 import { Aftersale } from './pages/Aftersale'
+import { Withdrawal } from './pages/Withdrawal'
 import { Products } from './pages/Products'
 import { Profile } from './pages/Profile'
 
@@ -15,6 +16,7 @@ const MENU = [
   { key: 'orders', label: '订单管理', sub: '发货 / 物流' },
   { key: 'customers', label: '顾客会话', sub: '售前咨询回复' },
   { key: 'aftersale', label: '售后处理', sub: '退款 / 退货 / 换货' },
+  { key: 'withdrawal', label: '余额提现', sub: '发起 / 查询提现' },
   { key: 'products', label: '商品管理', sub: '上架 / 下架 / 分类' },
   { key: 'profile', label: '店铺设置', sub: '资料 / 装修 / 评价' },
 ]
@@ -82,6 +84,7 @@ export function MerchantApp() {
     orders: Orders,
     customers: Customers,
     aftersale: Aftersale,
+    withdrawal: Withdrawal,
     products: Products,
     profile: Profile,
   }[page]

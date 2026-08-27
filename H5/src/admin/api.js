@@ -69,3 +69,20 @@ export async function fetchProfile() {
   const data = await request('/auth/me')
   return data.user
 }
+
+export async function adminWithdrawals(status = '', limit = 50, offset = 0) {
+  const params = new URLSearchParams()
+  if (status) params.set('status', status)
+  if (limit) params.set('limit', limit)
+  if (offset) params.set('offset', offset)
+  const data = await request(`/admin/withdrawals?${params.toString()}`)
+  return { withdrawals: data.withdrawals || [], total: data.total || 0 }
+}
+
+export async function adminWithdrawalAct(wdId, action, note = '') {
+  const data = await request(`/admin/withdrawals/${encodeURIComponent(wdId)}/${action}`, {
+    method: 'POST',
+    body: { note },
+  })
+  return data.withdrawal
+}

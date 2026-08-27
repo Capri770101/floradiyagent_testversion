@@ -6,6 +6,7 @@ import { Dashboard } from './pages/Dashboard'
 import { Users } from './pages/Users'
 import { Orders } from './pages/Orders'
 import { Aftersales } from './pages/Aftersales'
+import { Withdrawals } from './pages/Withdrawals'
 import { MerchantApply } from './pages/MerchantApply'
 import { Reviews } from './pages/Reviews'
 import { Config } from './pages/Config'
@@ -18,6 +19,7 @@ const MENU = [
   { key: 'users', label: '用户管理', sub: '禁用 / 提权' },
   { key: 'orders', label: '订单管理', sub: '全局视角 / 状态干预' },
   { key: 'aftersales', label: '售后管理', sub: '退款 / 退货 / 换货' },
+  { key: 'withdrawals', label: '提现管理', sub: '商家提现审核' },
   { key: 'apply', label: '商家入驻', sub: '审核申请 / 已入驻' },
   { key: 'reviews', label: '评价审核', sub: '隐藏 / 显示 / 删除' },
   { key: 'config', label: '运营配置', sub: '配送时段 / 运费' },
@@ -87,6 +89,7 @@ export function AdminApp() {
     users: Users,
     orders: Orders,
     aftersales: Aftersales,
+    withdrawals: Withdrawals,
     apply: MerchantApply,
     reviews: Reviews,
     config: Config,

@@ -5,7 +5,7 @@ import { Button } from '../components/Button'
 import SmartImage from '../components/SmartImage'
 import Reveal from '../components/Reveal'
 import { IconPin, IconClock, IconBack } from '../components/icons'
-import { getOrder, orderAction, postReview, publicConfig, updateOrder } from '../api/shop'
+import { getOrder, orderAction, postReview, publicConfig, updateOrder, orderAftersale } from '../api/shop'
 import { generateEffectImage, pollImageTask } from '../api/image'
 import { withApiUrl } from '../api/client'
 import { planImage } from '../assets/imageMap'
@@ -27,6 +27,14 @@ export default function OrderDetail() {
   const [cardMsg, setCardMsg] = useState('')
   const [cardImg, setCardImg] = useState('')
   const [cardBusy, setCardBusy] = useState(false)
+
+  // 申请售后
+  const [showAs, setShowAs] = useState(false)
+  const [asType, setAsType] = useState('refund')
+  const [asReason, setAsReason] = useState('')
+  const [asDesc, setAsDesc] = useState('')
+  const [asImgs, setAsImgs] = useState('')
+  const [asBusy, setAsBusy] = useState(false)
 
   useEffect(() => {
     if (!orderId) return
@@ -93,6 +101,31 @@ export default function OrderDetail() {
       toast('贺卡已保存')
     } catch (e) {
       toast('保存失败：' + e.message, 'error')
+    }
+  }
+
+  const submitAs = async () => {
+    if (asBusy || !orderId) return
+    if (!asReason.trim()) {
+      toast('请填写售后原因', 'error')
+      return
+    }
+    setAsBusy(true)
+    try {
+      const evidence = asImgs.split('\n').map((s) => s.trim()).filter(Boolean)
+      await orderAftersale(orderId, {
+        type: asType,
+        reason: asReason.trim(),
+        description: asDesc.trim(),
+        evidence_imgs: evidence,
+      })
+      toast('售后申请已提交')
+      setShowAs(false)
+      nav('/my-aftersales')
+    } catch (e) {
+      toast(e.message || '提交失败', 'error')
+    } finally {
+      setAsBusy(false)
     }
   }
 
@@ -464,7 +497,94 @@ export default function OrderDetail() {
               </Button>
             </div>
           )}
+          {order.paid && (
+            <div className="mx-5 mt-4">
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => {
+                  setAsType('refund')
+                  setAsReason('')
+                  setAsDesc('')
+                  setAsImgs('')
+                  setShowAs(true)
+                }}
+              >
+                申请售后（退款 / 退货 / 换货）
+              </Button>
+            </div>
+          )}
         </>
+      )}
+      {showAs && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setShowAs(false)}>
+          <div
+            className="w-full max-w-[480px] rounded-t-card bg-white p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-serif-cn text-[17px] font-normal text-ink">申请售后</h3>
+              <button onClick={() => setShowAs(false)} className="press text-[12px] text-sub">关闭 ✕</button>
+            </div>
+            <p className="mt-1 text-[11px] text-sub">{order.order_id} · 合计 {fmtMoney(goodsTotal)}</p>
+
+            <p className="eyebrow mt-4">售后类型</p>
+            <div className="mt-2 flex gap-1.5">
+              {[
+                { k: 'refund', l: '仅退款' },
+                { k: 'return', l: '退货退款' },
+                { k: 'exchange', l: '换货' },
+              ].map((o) => (
+                <button
+                  key={o.k}
+                  onClick={() => setAsType(o.k)}
+                  className={`flex-1 rounded-full border py-1.5 text-center text-[11px] transition ${
+                    asType === o.k ? 'border-gold bg-gold/10 font-medium text-gold' : 'border-line bg-white text-sub'
+                  }`}
+                >
+                  {o.l}
+                </button>
+              ))}
+            </div>
+
+            <p className="eyebrow mt-4">原因</p>
+            <input
+              value={asReason}
+              onChange={(e) => setAsReason(e.target.value)}
+              maxLength={200}
+              placeholder="如：花材不新鲜 / 与描述不符"
+              className="mt-1 w-full rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none focus:border-pink"
+            />
+
+            <p className="eyebrow mt-3">补充说明</p>
+            <textarea
+              value={asDesc}
+              onChange={(e) => setAsDesc(e.target.value)}
+              maxLength={1000}
+              rows={3}
+              placeholder="详细描述问题（选填）"
+              className="mt-1 w-full resize-none rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none focus:border-pink"
+            />
+
+            <p className="eyebrow mt-3">凭证图片链接（每行一个，选填）</p>
+            <textarea
+              value={asImgs}
+              onChange={(e) => setAsImgs(e.target.value)}
+              rows={2}
+              placeholder="https://...&#10;https://..."
+              className="mt-1 w-full resize-none rounded-[4px] border border-line bg-bg px-3 py-2 text-[12px] outline-none focus:border-pink"
+            />
+
+            <div className="mt-5 flex gap-2">
+              <Button variant="secondary" className="flex-1 !h-[34px] !text-[12px]" onClick={() => setShowAs(false)}>
+                取消
+              </Button>
+              <Button variant="primary" className="flex-1 !h-[34px] !text-[12px]" disabled={asBusy} onClick={submitAs}>
+                {asBusy ? '提交中…' : '提交申请'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

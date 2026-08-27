@@ -170,6 +170,20 @@ def transaction() -> sqlite3.Connection:
         conn.rollback()
         raise
 
+
+def _ensure_extra_tables() -> None:
+    """补充 schema 之外的扩展表（如商家提现），sqlite/PG 双模式兼容。"""
+    conn = get_conn()
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS merchant_withdrawals (\n"
+        "  id TEXT PRIMARY KEY, shop_id TEXT NOT NULL, user_id TEXT NOT NULL,\n"
+        "  amount REAL NOT NULL, account_type TEXT NOT NULL DEFAULT 'wechat',\n"
+        "  account TEXT, status TEXT NOT NULL DEFAULT 'pending',\n"
+        "  review_note TEXT, handled_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL\n)"
+    )
+    conn.commit()
+
+
 def init_db() -> None:
     """建表 + 索引 + 旧库迁移；应用启动时调用一次。
 
@@ -189,6 +203,7 @@ def init_db() -> None:
                 _run_async(catalog.seed_catalog())
         except Exception:
             logger.warning('PG 目录种子数据灌入失败（不影响记忆/交易表）', exc_info=True)
+        _ensure_extra_tables()
         logger.info('长期记忆数据库就绪 (PostgreSQL): %s', settings.database_url)
         return
 
@@ -212,6 +227,7 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass
     conn.commit()
+    _ensure_extra_tables()
     try:
         from backend.storage import catalog
         needs_seed = conn.execute('SELECT COUNT(*) FROM plans').fetchone()[0] == 0
