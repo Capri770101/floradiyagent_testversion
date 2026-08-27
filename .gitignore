@@ -43,6 +43,10 @@ profile-*.yml
 
 # 运行时日志
 logs/
+*.log
+
+# opencode 配置
+opencode.json
 
 # 本地调试截图
 order-card.png
