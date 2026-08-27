@@ -1,6 +1,6 @@
 # 前端镜像：multi-stage —— node 构建三端产物 → nginx 托管 + 反代后端
-# 三个入口（index/admin/merchant）同属一个 dist；nginx 用三个端口分别映射，
-# 开发期 localhost:5173/5174/5175 即等价三域名；上线时改 listen 80 + server_name 域名即可。
+# 三个入口（index/admin/merchant）同属一个 dist；nginx 三个 server 块按域名区分，
+# 监听 80（→443 重定向）与 443（HTTPS，证书挂 volume）。上线改 server_name 为真实子域名。
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY H5/package*.json ./
@@ -9,6 +9,8 @@ COPY H5/ ./
 RUN npm run build
 
 FROM nginx:alpine
+# 移除默认站点，避免与 frontends.conf 的 80 端口冲突
+RUN rm -f /etc/nginx/conf.d/default.conf
 COPY misc/nginx/frontends.conf /etc/nginx/conf.d/frontends.conf
 COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 5173 5174 5175
+EXPOSE 80 443

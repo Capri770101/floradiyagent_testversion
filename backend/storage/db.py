@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
+import re
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -47,12 +48,108 @@ def _run_async(coro):
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
         return ex.submit(lambda: asyncio.run(coro)).result()
 _thread_local = threading.local()
+_PG_ENGINE = None
 _SCHEMA = "\n-- 用户（微信 openid 维度；H5 未登录时用本地生成的匿名 uid）\nCREATE TABLE IF NOT EXISTS users (\n    id          TEXT PRIMARY KEY,        -- 与 user_id 同值（openid 或匿名 uid）\n    openid      TEXT UNIQUE,             -- 微信 openid（匿名用户为空）\n    nickname    TEXT,\n    avatar      TEXT,\n    phone       TEXT,\n    role        TEXT NOT NULL DEFAULT 'user',  -- user | merchant | admin（权限模型）\n    status      TEXT NOT NULL DEFAULT 'active', -- active | banned（管理后台禁用）\n    created_at  TEXT NOT NULL,\n    updated_at  TEXT NOT NULL\n);\n\n-- 商品分类\nCREATE TABLE IF NOT EXISTS categories (\n    id          TEXT PRIMARY KEY,\n    name        TEXT NOT NULL,\n    sort        INTEGER NOT NULL DEFAULT 0,\n    created_at  TEXT NOT NULL\n);\n\n-- 花艺方案（商品目录，DB 为唯一来源，init 时从种子数据灌入）\nCREATE TABLE IF NOT EXISTS plans (\n    id               TEXT PRIMARY KEY,           -- plan_id，如 P001\n    name             TEXT NOT NULL,\n    price            REAL NOT NULL DEFAULT 0,\n    desc             TEXT,\n    effect_image_url TEXT,\n    merchant_name    TEXT,                       -- 示例商家名（用于购物车/下单归类展示）\n    tags             TEXT,                       -- JSON 数组字符串\n    style            TEXT,                       -- 风格，如 韩式/日式/田园\n    category_id      TEXT,                       -- -> categories.id\n    rating           REAL NOT NULL DEFAULT 4.8,  -- 评分（种子/商家后台维护，上线前可清空重灌）\n    sold             INTEGER NOT NULL DEFAULT 0, -- 已售（种子演示值，正式上线由订单统计）\n    ai_reason        TEXT,                       -- 推荐理由（种子/商家后台维护，详情页 aiReason 来源）\n    created_at       TEXT NOT NULL\n);\n\n-- 用户 DIY 方案资产库：只收录「用户确认过」的方案（确认→confirmed，成交→ordered）；\n-- 按 user_id + 内容指纹去重，同一用户同一配方不重复落库\nCREATE TABLE IF NOT EXISTS diy_plans (\n    id               TEXT PRIMARY KEY,           -- plan_id，如 DIY_1a2b3c\n    user_id          TEXT NOT NULL,\n    fingerprint      TEXT NOT NULL,              -- 内容指纹（花材/角色/风格/对象/预算/包装）\n    name             TEXT NOT NULL,\n    requirement      TEXT,                       -- 原始需求文本（学习/复用输入）\n    recipient        TEXT,\n    occasion         TEXT,\n    style            TEXT,\n    budget           REAL,\n    color_scheme     TEXT,                       -- JSON 数组\n    flowers          TEXT,                       -- JSON [{bucket,name,ratio}]\n    packaging        TEXT,\n    meaning          TEXT,\n    diy_steps        TEXT,                       -- JSON 数组\n    care_tips        TEXT,\n    card_message     TEXT,\n    card_image_url   TEXT,                       -- AI 生成的贺卡图片\n    budget_breakdown TEXT,                       -- JSON 对象\n    effect_image_url TEXT,\n    -- 卡片内容扩充（模块二）：LLM 设计产出 + 规则兜底，旧方案留空（前端显示 —）\n    difficulty       TEXT,                       -- 制作难度（入门/进阶/高手）\n    est_time         INTEGER,                    -- 预计耗时（分钟）\n    shelf_life       TEXT,                       -- 保鲜期/花期（收到后可养几天）\n    suitable_for     TEXT,                       -- JSON 数组：适宜人群\n    caution          TEXT,                       -- 禁忌/提醒（如花粉过敏慎选）\n    mood_tags        TEXT,                       -- JSON 数组：情绪标签（文字版）\n    status           TEXT NOT NULL DEFAULT 'confirmed',\n    order_count      INTEGER NOT NULL DEFAULT 0,\n    source_user_id   TEXT,                          -- 模板来源用户（成功下单后沉淀为全局模板）\n    created_at       TEXT NOT NULL,\n    confirmed_at     TEXT,\n    UNIQUE (user_id, fingerprint)\n);\n\nCREATE INDEX IF NOT EXISTS idx_diy_plans_user ON diy_plans(user_id);\n\n-- 店铺\nCREATE TABLE IF NOT EXISTS shops (\n    id           TEXT PRIMARY KEY,               -- shop_id，如 S001\n    name         TEXT NOT NULL,\n    rating       REAL NOT NULL DEFAULT 0,\n    distance_km  REAL,                           -- 静态距离（无定位时展示）\n    price_range  TEXT,                           -- '100-300'\n    lat          REAL,                           -- 经纬度，用于真实距离排序\n    lng          REAL,\n    status       TEXT NOT NULL DEFAULT '营业中',\n    intro        TEXT,\n    -- 经营信息（种子/商家后台维护；正式上线由经营数据统计，上线前可清空重灌）\n    sales        INTEGER NOT NULL DEFAULT 0,     -- 月售\n    min_delivery REAL NOT NULL DEFAULT 30,       -- 起送价（元）\n    delivery_fee REAL NOT NULL DEFAULT 5,        -- 配送费（元）\n    hours        TEXT NOT NULL DEFAULT '09:00 - 21:00',  -- 营业时间\n    delivery_time TEXT NOT NULL DEFAULT '30分钟',  -- 配送时长（详情页展示，商家后台维护）\n    address      TEXT,                           -- 门店地址\n    notice       TEXT,                           -- 公告\n    created_at   TEXT NOT NULL\n);\n\n-- 店铺-方案 多对多\nCREATE TABLE IF NOT EXISTS shop_plans (\n    shop_id  TEXT NOT NULL,\n    plan_id  TEXT NOT NULL,\n    status   TEXT NOT NULL DEFAULT 'on',        -- on=在售 off=已下架（商家端上下架）\n    PRIMARY KEY (shop_id, plan_id)\n);\n\n-- 商家-店铺 绑定（商家后台按店隔离的权限来源；admin 不受限）\nCREATE TABLE IF NOT EXISTS merchant_shops (\n    user_id    TEXT NOT NULL,                   -- users.id\n    shop_id    TEXT NOT NULL,                   -- shops.id\n    created_at TEXT NOT NULL,\n    PRIMARY KEY (user_id, shop_id)\n);\n\n-- 商家智库 · 主档（1:1 shops）：以商家为单位沉淀品牌定位/风格/能力等知识，\n-- 供 AI 检索（query_knowledge 的 shop 域）与店铺详情页展示\nCREATE TABLE IF NOT EXISTS shop_profiles (\n    shop_id     TEXT PRIMARY KEY,               -- -> shops.id\n    brand_story TEXT,                           -- 品牌故事 / 定位（自然语言档案）\n    price_level TEXT,                           -- 经济 | 中端 | 高端 | 轻奢\n    packaging   TEXT,                           -- 包装特色（自然语言）\n    services    TEXT,                           -- JSON 数组：服务能力（同城速递/宴会布置/花艺课…）\n    strengths   TEXT,                           -- 卖点 / 特色（自然语言，供向量检索）\n    keywords    TEXT,                           -- 运营补充关键词（逗号分隔，供关键词命中）\n    created_at  TEXT NOT NULL,\n    updated_at  TEXT NOT NULL\n);\n\n-- 商家智库 · 风格（多对多，style_id 引用 knowledge/styles.json 的 S_* 主风格 id）\nCREATE TABLE IF NOT EXISTS shop_styles (\n    shop_id  TEXT NOT NULL,                     -- -> shops.id\n    style_id TEXT NOT NULL,                     -- S_KOREAN / S_NORDIC / ...\n    level    INTEGER NOT NULL DEFAULT 1,        -- 1=主打 2=次要\n    PRIMARY KEY (shop_id, style_id)\n);\n\n-- 商家智库 · 场景（多对多，scene_id 引用 knowledge/scenes.json 的 SC_* 场景 id）\nCREATE TABLE IF NOT EXISTS shop_scenes (\n    shop_id  TEXT NOT NULL,                     -- -> shops.id\n    scene_id TEXT NOT NULL,                     -- SC_VALENTINE / SC_WEDDING / ...\n    level    INTEGER NOT NULL DEFAULT 1,        -- 1=擅长 2=可做\n    PRIMARY KEY (shop_id, scene_id)\n);\n\n-- 会话（= 智能体一次对话；多会话由此表承载，title/preview 供前端列表展示）\nCREATE TABLE IF NOT EXISTS sessions (\n    session_id  TEXT PRIMARY KEY,\n    user_id     TEXT NOT NULL,\n    stage       TEXT NOT NULL DEFAULT 'analyze',  -- 仅 UI 焦点高亮，不参与流程闸门\n    requirement TEXT,                             -- 结构化需求 JSON\n    title       TEXT,                             -- 会话标题（取首条用户消息）\n    preview     TEXT,                             -- 列表预览（取最近一条消息摘要）\n    created_at  TEXT NOT NULL,\n    updated_at  TEXT NOT NULL\n);\n\n-- 消息（会话内消息；role 含 user/assistant/tool；ui/data 供前端回放结构化卡片）\nCREATE TABLE IF NOT EXISTS messages (\n    id           INTEGER PRIMARY KEY AUTOINCREMENT,\n    session_id   TEXT NOT NULL,                   -- -> sessions.session_id\n    role         TEXT NOT NULL,\n    content      TEXT,\n    tool_calls   TEXT,                            -- assistant 工具调用列表，JSON 字符串\n    tool_call_id TEXT,                            -- tool 回执对应的 tool_call_id（OpenAI 规范必填）\n    ui           TEXT,                            -- 前端渲染类型，如 plan_card / text，JSON 字符串\n    data         TEXT,                            -- 前端渲染数据，JSON 字符串\n    created_at   TEXT NOT NULL\n);\n\n-- 会话级控制标记（一次性业务约束，如 image_confirmed）\nCREATE TABLE IF NOT EXISTS session_flags (\n    user_id     TEXT NOT NULL,\n    session_id  TEXT NOT NULL,\n    key         TEXT NOT NULL,\n    value       TEXT NOT NULL,\n    updated_at  TEXT NOT NULL,\n    PRIMARY KEY (user_id, session_id, key)\n);\n\n-- 长期记忆（用户偏好 KV：预算/对象/色系等）\nCREATE TABLE IF NOT EXISTS memories (\n    user_id TEXT NOT NULL,\n    key     TEXT NOT NULL,\n    value   TEXT NOT NULL,\n    PRIMARY KEY (user_id, key)\n);\n\n-- 购物车项（按 user_id 隔离）\nCREATE TABLE IF NOT EXISTS cart_items (\n    item_id    TEXT PRIMARY KEY,\n    user_id    TEXT NOT NULL,\n    plan_id    TEXT NOT NULL,\n    name       TEXT NOT NULL,\n    price      REAL NOT NULL,\n    shop       TEXT,\n    qty        INTEGER NOT NULL DEFAULT 1,\n    selected   INTEGER NOT NULL DEFAULT 1,        -- 1=已勾选结算\n    created_at TEXT NOT NULL,\n    updated_at TEXT NOT NULL\n);\n\n-- 订单\nCREATE TABLE IF NOT EXISTS orders (\n    order_id       TEXT PRIMARY KEY,\n    user_id        TEXT NOT NULL,\n    plan_id        TEXT,\n    plan_type      TEXT,\n    shop_id        TEXT,\n    items          TEXT,                          -- JSON 字符串（快照）\n    total_price    REAL,\n    status         TEXT NOT NULL DEFAULT 'created',  -- created|paid|shipped|done|canceled\n    paid           INTEGER NOT NULL DEFAULT 0,    -- 0=未支付 1=已支付（兼容旧库）\n    paid_at        TEXT,\n    expires_at     TEXT,                          -- 支付超时时间（created/pending_payment 过期自动取消）\n    address_id     TEXT,                          -- -> addresses.id\n    recipient_name  TEXT,\n    recipient_phone TEXT,\n    recipient_address TEXT,\n    delivery_time  TEXT,\n    note           TEXT,\n    card_message   TEXT,                          -- 贺卡寄语\n    card_image_url TEXT,                          -- AI 生成贺卡图片\n    card_token     TEXT,                          -- 贺卡分享 token（唯一，支付后生成）\n    created_at     TEXT NOT NULL\n);\n\n-- 订单明细（与 orders.items 冗余，便于按方案统计/售后）\nCREATE TABLE IF NOT EXISTS order_items (\n    order_id  TEXT NOT NULL,\n    plan_id   TEXT NOT NULL,\n    name      TEXT NOT NULL,\n    price     REAL NOT NULL,\n    qty       INTEGER NOT NULL DEFAULT 1,\n    shop      TEXT,\n    PRIMARY KEY (order_id, plan_id)\n);\n\n-- 支付记录\nCREATE TABLE IF NOT EXISTS payments (\n    id            TEXT PRIMARY KEY,\n    order_id      TEXT NOT NULL,                  -- -> orders.order_id\n    method        TEXT NOT NULL,                 -- wechat|alipay|union|huabei\n    amount        REAL NOT NULL,\n    status        TEXT NOT NULL DEFAULT 'pending',  -- pending|paid|failed|refunded\n    transaction_id TEXT,                         -- 第三方交易号\n    created_at    TEXT NOT NULL,\n    paid_at       TEXT\n);\n\n-- 评价（商家可回复：reply/reply_at；管理后台可隐藏：status）\nCREATE TABLE IF NOT EXISTS reviews (\n    id         TEXT PRIMARY KEY,\n    user_id    TEXT NOT NULL,\n    plan_id    TEXT,\n    order_id   TEXT,\n    rating     INTEGER NOT NULL DEFAULT 5,\n    content    TEXT,\n    created_at TEXT NOT NULL,\n    reply      TEXT,\n    reply_at   TEXT,\n    status     TEXT NOT NULL DEFAULT 'visible'  -- visible | hidden（管理后台审核）\n);\n\n-- 售后单（M4：用户发起退款/退货/换货，管理员审核并触发 sandbox 退款）\nCREATE TABLE IF NOT EXISTS aftersales (\n    id            TEXT PRIMARY KEY,\n    order_id      TEXT NOT NULL,\n    user_id       TEXT NOT NULL,\n    shop_id       TEXT,\n    type          TEXT NOT NULL DEFAULT 'refund',   -- refund|return|exchange\n    reason        TEXT,\n    description   TEXT,\n    evidence_imgs TEXT,                             -- JSON 数组（图片路径）\n    status        TEXT NOT NULL DEFAULT 'pending',  -- pending|approved|rejected|refunded|closed\n    refund_amount REAL,\n    review_note   TEXT,                             -- 审核备注（拒绝原因等）\n    handled_by    TEXT,\n    handled_at    TEXT,\n    created_at    TEXT NOT NULL,\n    updated_at    TEXT NOT NULL\n);\n\n-- 商家入驻申请（M5：用户提交执照等，管理员审核通过后提权并创建店铺）\nCREATE TABLE IF NOT EXISTS merchant_applications (\n    id                TEXT PRIMARY KEY,\n    applicant_user_id TEXT NOT NULL,                -- 申请人 users.id\n    shop_name         TEXT NOT NULL,\n    contact_name      TEXT,\n    contact_phone     TEXT,\n    license_no        TEXT,\n    license_img       TEXT,                         -- 执照图片路径\n    address           TEXT,\n    intro             TEXT,\n    status            TEXT NOT NULL DEFAULT 'pending', -- pending|approved|rejected\n    review_note       TEXT,\n    reviewed_by       TEXT,\n    reviewed_at       TEXT,\n    created_at        TEXT NOT NULL\n);\n\n-- 运营配置（M7/M9：配送时段/运费/优惠券规则/FAQ/公告 后端化，灭前端写死）\nCREATE TABLE IF NOT EXISTS operations_config (\n    key        TEXT PRIMARY KEY,                    -- delivery_options|shipping_fee|coupon_rules|faqs|announcements\n    value      TEXT                                 -- JSON 字符串\n);\n\n-- 生图任务\nCREATE TABLE IF NOT EXISTS image_tasks (\n    task_id    TEXT PRIMARY KEY,\n    status     TEXT NOT NULL,                    -- pending|running|done|failed\n    prompt     TEXT,\n    result_url TEXT,\n    created_at TEXT NOT NULL\n);\n\n-- 订单物流轨迹（时间线事件，按 seq 顺序回放）\nCREATE TABLE IF NOT EXISTS order_logistics (\n    order_id   TEXT NOT NULL,                    -- -> orders.order_id\n    seq        INTEGER NOT NULL,                 -- 事件序号（0 起）\n    text       TEXT NOT NULL,                    -- 事件描述（如「包裹已揽收」）\n    created_at TEXT NOT NULL,\n    PRIMARY KEY (order_id, seq)\n);\n\n-- 收货地址（按用户隔离；仅一个默认地址）\nCREATE TABLE IF NOT EXISTS addresses (\n    id         TEXT PRIMARY KEY,\n    user_id    TEXT NOT NULL,\n    name       TEXT NOT NULL,                 -- 收货人\n    phone      TEXT NOT NULL,\n    address    TEXT NOT NULL,\n    is_default INTEGER NOT NULL DEFAULT 0,    -- 1=默认（同用户仅一条）\n    created_at TEXT NOT NULL,\n    updated_at TEXT NOT NULL\n);\n\n-- 收藏（方案收藏，按用户隔离；user+plan 唯一）\nCREATE TABLE IF NOT EXISTS favorites (\n    user_id    TEXT NOT NULL,\n    plan_id    TEXT NOT NULL,\n    created_at TEXT NOT NULL,\n    PRIMARY KEY (user_id, plan_id)\n);\n\n-- 优惠券（按用户隔离；下单时抵扣，status: unused|used）\nCREATE TABLE IF NOT EXISTS coupons (\n    id         TEXT PRIMARY KEY,\n    user_id    TEXT NOT NULL,\n    title      TEXT NOT NULL,\n    discount   REAL NOT NULL,                    -- 抵扣金额（元）\n    min_spend  REAL NOT NULL DEFAULT 0,          -- 满减门槛（0 表示无门槛）\n    status     TEXT NOT NULL DEFAULT 'unused',   -- unused|used\n    offer_id   TEXT,                             -- 来源（领券中心 offer，可选）\n    order_id   TEXT,                             -- 使用后关联的订单\n    created_at TEXT NOT NULL,\n    used_at    TEXT\n);\n\n-- 领券中心 / 积分商城：可领取/可兑换的券模板\nCREATE TABLE IF NOT EXISTS coupon_offers (\n    id          TEXT PRIMARY KEY,\n    title       TEXT NOT NULL,\n    discount    REAL NOT NULL,                   -- 抵扣金额（元）\n    min_spend   REAL NOT NULL DEFAULT 0,         -- 满减门槛\n    points_cost INTEGER NOT NULL DEFAULT 0,      -- 0=免费领取；>0=积分兑换\n    stock       INTEGER NOT NULL DEFAULT 0,      -- 剩余库存（-1=不限）\n    active      INTEGER NOT NULL DEFAULT 1,      -- 是否上架\n    created_at  TEXT NOT NULL\n);\n\n-- 积分账户 + 流水（支付成功按金额 1:1 发放，如 ¥99 → 99 分）\nCREATE TABLE IF NOT EXISTS user_points (\n    user_id      TEXT PRIMARY KEY,\n    balance      INTEGER NOT NULL DEFAULT 0,\n    total_earned INTEGER NOT NULL DEFAULT 0\n);\n\nCREATE TABLE IF NOT EXISTS point_records (\n    id         TEXT PRIMARY KEY,\n    user_id    TEXT NOT NULL,\n    delta      INTEGER NOT NULL,                 -- 正=获得 负=消费\n    reason     TEXT NOT NULL,\n    order_id   TEXT,\n    created_at TEXT NOT NULL\n);\n\n-- 商家-顾客会话（按店铺+顾客唯一；未读数分侧维护）\nCREATE TABLE IF NOT EXISTS shop_chats (\n    id             TEXT PRIMARY KEY,\n    shop_id        TEXT NOT NULL,                -- -> shops.id\n    user_id        TEXT NOT NULL,                -- -> users.id（顾客）\n    last_msg       TEXT,                         -- 最后一条消息摘要（会话列表展示）\n    last_at        TEXT,                         -- 最后消息时间\n    unread_user    INTEGER NOT NULL DEFAULT 0,   -- 顾客侧未读数（商家回复后 +1）\n    unread_merchant INTEGER NOT NULL DEFAULT 0,  -- 商家侧未读数（顾客发言后 +1）\n    created_at     TEXT NOT NULL,\n    UNIQUE (shop_id, user_id)\n);\n\n-- 会话消息（sender: user=顾客 | merchant=商家）\nCREATE TABLE IF NOT EXISTS chat_messages (\n    id         TEXT PRIMARY KEY,\n    chat_id    TEXT NOT NULL,                    -- -> shop_chats.id\n    sender     TEXT NOT NULL,                    -- user|merchant\n    content    TEXT NOT NULL,\n    created_at TEXT NOT NULL\n);\n\n-- 站内消息通知中心（模块一）：业务动作（下单/支付/发货/签收/评价回复/售后/公告）落一条通知\nCREATE TABLE IF NOT EXISTS notifications (\n    id           TEXT PRIMARY KEY,               -- N_ 前缀\n    user_id      TEXT NOT NULL,                  -- 接收者 -> users.id\n    type         TEXT NOT NULL,                  -- order_status|logistics|review_reply|aftersale|announcement|system\n    title        TEXT NOT NULL,\n    body         TEXT NOT NULL DEFAULT '',\n    ref_type     TEXT,                           -- plan|order|shop|aftersale 等，点击跳转用\n    ref_id       TEXT,                           -- 关联业务 id\n    push_channel TEXT NOT NULL DEFAULT 'inbox',  -- inbox|wechat（预留，本期仅 inbox）\n    is_read      INTEGER NOT NULL DEFAULT 0,     -- 0=未读 1=已读\n    created_at   TEXT NOT NULL\n);\n\n-- 内容举报（阶段5）：C 端用户举报商品/店铺/评价，管理后台处理（passed|rejected|banned）\nCREATE TABLE IF NOT EXISTS reports (\n    id           TEXT PRIMARY KEY,               -- R_ 前缀\n    user_id      TEXT NOT NULL,                  -- 举报人 -> users.id\n    target_type  TEXT NOT NULL,                  -- plan|shop|review\n    target_id    TEXT NOT NULL,\n    reason       TEXT NOT NULL,                  -- 举报原因（简短分类）\n    content      TEXT NOT NULL DEFAULT '',       -- 补充说明\n    status       TEXT NOT NULL DEFAULT 'pending',-- pending|passed|rejected|banned\n    handled_at   TEXT,\n    handled_by   TEXT,                           -- 处理人 -> users.id\n    created_at   TEXT NOT NULL\n);\n"
 _INDEXES = '\nCREATE INDEX IF NOT EXISTS idx_sessions_user        ON sessions(user_id, updated_at DESC);\nCREATE INDEX IF NOT EXISTS idx_messages_session     ON messages(session_id, id ASC);\nCREATE INDEX IF NOT EXISTS idx_session_flags_sid    ON session_flags(session_id);\nCREATE INDEX IF NOT EXISTS idx_cart_user            ON cart_items(user_id);\nCREATE INDEX IF NOT EXISTS idx_orders_user          ON orders(user_id, created_at DESC);\nCREATE INDEX IF NOT EXISTS idx_order_items_order    ON order_items(order_id);\nCREATE INDEX IF NOT EXISTS idx_payments_order       ON payments(order_id);\nCREATE INDEX IF NOT EXISTS idx_logistics_order      ON order_logistics(order_id);\nCREATE INDEX IF NOT EXISTS idx_coupons_user          ON coupons(user_id, status);\nCREATE INDEX IF NOT EXISTS idx_point_records_user    ON point_records(user_id, created_at DESC);\nCREATE INDEX IF NOT EXISTS idx_addresses_user        ON addresses(user_id, is_default);\nCREATE INDEX IF NOT EXISTS idx_shop_plans_plan      ON shop_plans(plan_id);\nCREATE INDEX IF NOT EXISTS idx_merchant_shops_shop  ON merchant_shops(shop_id);\nCREATE INDEX IF NOT EXISTS idx_plans_category       ON plans(category_id);\nCREATE INDEX IF NOT EXISTS idx_shop_styles_style    ON shop_styles(style_id);\nCREATE INDEX IF NOT EXISTS idx_shop_scenes_scene    ON shop_scenes(scene_id);\nCREATE INDEX IF NOT EXISTS idx_chats_shop           ON shop_chats(shop_id, last_at DESC);\nCREATE INDEX IF NOT EXISTS idx_chats_user           ON shop_chats(user_id, last_at DESC);\nCREATE INDEX IF NOT EXISTS idx_chat_messages_chat   ON chat_messages(chat_id, id ASC);\nCREATE INDEX IF NOT EXISTS idx_notifications_user   ON notifications(user_id, created_at DESC);\nCREATE INDEX IF NOT EXISTS idx_reports_status       ON reports(status, created_at DESC);\n'
 _ALTERS = [('users', 'username', 'ALTER TABLE users ADD COLUMN username TEXT'), ('users', 'password_hash', 'ALTER TABLE users ADD COLUMN password_hash TEXT'), ('users', 'role', "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"), ('sessions', 'title', 'ALTER TABLE sessions ADD COLUMN title TEXT'), ('sessions', 'preview', 'ALTER TABLE sessions ADD COLUMN preview TEXT'), ('messages', 'ui', 'ALTER TABLE messages ADD COLUMN ui TEXT'), ('messages', 'data', 'ALTER TABLE messages ADD COLUMN data TEXT'), ('orders', 'status', "ALTER TABLE orders ADD COLUMN status TEXT NOT NULL DEFAULT 'created'"), ('orders', 'paid_at', 'ALTER TABLE orders ADD COLUMN paid_at TEXT'), ('orders', 'address_id', 'ALTER TABLE orders ADD COLUMN address_id TEXT'), ('orders', 'recipient_name', 'ALTER TABLE orders ADD COLUMN recipient_name TEXT'), ('orders', 'recipient_phone', 'ALTER TABLE orders ADD COLUMN recipient_phone TEXT'), ('orders', 'recipient_address', 'ALTER TABLE orders ADD COLUMN recipient_address TEXT'), ('orders', 'delivery_time', 'ALTER TABLE orders ADD COLUMN delivery_time TEXT'), ('orders', 'note', 'ALTER TABLE orders ADD COLUMN note TEXT'), ('orders', 'delivery_lat', 'ALTER TABLE orders ADD COLUMN delivery_lat REAL'), ('orders', 'delivery_lng', 'ALTER TABLE orders ADD COLUMN delivery_lng REAL'), ('orders', 'delivery_address', 'ALTER TABLE orders ADD COLUMN delivery_address TEXT'), ('orders', 'coupon_id', 'ALTER TABLE orders ADD COLUMN coupon_id TEXT'), ('orders', 'discount', 'ALTER TABLE orders ADD COLUMN discount REAL NOT NULL DEFAULT 0'), ('orders', 'expires_at', 'ALTER TABLE orders ADD COLUMN expires_at TEXT'), ('orders', 'card_message', 'ALTER TABLE orders ADD COLUMN card_message TEXT'), ('orders', 'card_image_url', 'ALTER TABLE orders ADD COLUMN card_image_url TEXT'), ('orders', 'card_token', 'ALTER TABLE orders ADD COLUMN card_token TEXT'), ('orders', 'merchant_status', "ALTER TABLE orders ADD COLUMN merchant_status TEXT NOT NULL DEFAULT ''"), ('orders', 'confirmed_at', 'ALTER TABLE orders ADD COLUMN confirmed_at TEXT'), ('coupons', 'offer_id', 'ALTER TABLE coupons ADD COLUMN offer_id TEXT'), ('shop_plans', 'status', "ALTER TABLE shop_plans ADD COLUMN status TEXT NOT NULL DEFAULT 'on'"), ('shops', 'image', 'ALTER TABLE shops ADD COLUMN image TEXT'), ('plans', 'rating', 'ALTER TABLE plans ADD COLUMN rating REAL NOT NULL DEFAULT 4.8'), ('plans', 'sold', 'ALTER TABLE plans ADD COLUMN sold INTEGER NOT NULL DEFAULT 0'), ('plans', 'ai_reason', 'ALTER TABLE plans ADD COLUMN ai_reason TEXT'), ('shops', 'sales', 'ALTER TABLE shops ADD COLUMN sales INTEGER NOT NULL DEFAULT 0'), ('shops', 'min_delivery', 'ALTER TABLE shops ADD COLUMN min_delivery REAL NOT NULL DEFAULT 30'), ('shops', 'delivery_fee', 'ALTER TABLE shops ADD COLUMN delivery_fee REAL NOT NULL DEFAULT 5'), ('shops', 'hours', "ALTER TABLE shops ADD COLUMN hours TEXT NOT NULL DEFAULT '09:00 - 21:00'"), ('shops', 'delivery_time', "ALTER TABLE shops ADD COLUMN delivery_time TEXT NOT NULL DEFAULT '30分钟'"), ('shops', 'address', 'ALTER TABLE shops ADD COLUMN address TEXT'), ('shops', 'notice', 'ALTER TABLE shops ADD COLUMN notice TEXT'), ('shops', 'cover', 'ALTER TABLE shops ADD COLUMN cover TEXT'), ('shops', 'logo', 'ALTER TABLE shops ADD COLUMN logo TEXT'), ('reviews', 'reply', 'ALTER TABLE reviews ADD COLUMN reply TEXT'), ('reviews', 'reply_at', 'ALTER TABLE reviews ADD COLUMN reply_at TEXT'), ('users', 'status', "ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"), ('reviews', 'status', "ALTER TABLE reviews ADD COLUMN status TEXT NOT NULL DEFAULT 'visible'"), ('diy_plans', 'difficulty', 'ALTER TABLE diy_plans ADD COLUMN difficulty TEXT'), ('diy_plans', 'est_time', 'ALTER TABLE diy_plans ADD COLUMN est_time INTEGER'), ('diy_plans', 'shelf_life', 'ALTER TABLE diy_plans ADD COLUMN shelf_life TEXT'), ('diy_plans', 'suitable_for', 'ALTER TABLE diy_plans ADD COLUMN suitable_for TEXT'), ('diy_plans', 'caution', 'ALTER TABLE diy_plans ADD COLUMN caution TEXT'), ('diy_plans', 'mood_tags', 'ALTER TABLE diy_plans ADD COLUMN mood_tags TEXT'), ('diy_plans', 'source_user_id', 'ALTER TABLE diy_plans ADD COLUMN source_user_id TEXT'), ('diy_plans', 'card_image_url', 'ALTER TABLE diy_plans ADD COLUMN card_image_url TEXT')]
 
+def _pg_dialect() -> str:
+    from backend.storage import db_async as _dba
+    return _dba.dialect()
+
+
+def _sync_pg_url() -> str:
+    """把 DATABASE_URL（postgresql+asyncpg://…）转成同步驱动可用的 URL。"""
+    u = settings.database_url or ''
+    u = re.sub(r'\+asyncpg', '', u)
+    if 'postgresql+psycopg' not in u and 'postgresql+psycopg2' not in u:
+        u = u.replace('postgresql://', 'postgresql+psycopg2://', 1)
+    return u
+
+
+def _get_pg_engine():
+    global _PG_ENGINE
+    if _PG_ENGINE is None:
+        from sqlalchemy import create_engine
+        _PG_ENGINE = create_engine(_sync_pg_url(), pool_pre_ping=True, future=True)
+    return _PG_ENGINE
+
+
+class _PGResult:
+    """兼容 sqlite3 Cursor 的读取接口（fetchall/fetchone/rowcount）。"""
+
+    def __init__(self, result):
+        self._r = result
+
+    def fetchall(self):
+        from backend.storage import db_async as _dba
+        return [_dba.Row(dict(r._mapping)) for r in self._r.fetchall()]
+
+    def fetchone(self):
+        from backend.storage import db_async as _dba
+        r = self._r.fetchone()
+        return _dba.Row(dict(r._mapping)) if r is not None else None
+
+    @property
+    def rowcount(self):
+        return self._r.rowcount
+
+
+class _PGConn:
+    """SQLite 风格连接 shim：底层走 SQLAlchemy 同步引擎，SQL 由 normalize_sql 翻译。
+
+    让所有直接调用 db.get_conn()/db.transaction() 的同步存储函数在配置了
+    DATABASE_URL（PostgreSQL）时无缝切换到 RDS，而无需改动调用方代码。
+    """
+
+    def __init__(self, sa_conn):
+        self._conn = sa_conn
+        self.row_factory = None
+
+    def execute(self, sql, params=None):
+        from sqlalchemy import text
+
+        from backend.storage import db_async as _dba
+        if isinstance(sql, str) and sql.strip().upper().startswith('PRAGMA'):
+            return _PGResult(self._conn.execute(text('SELECT 1')))
+        t = _dba.normalize_sql(sql)
+        bind = _dba._bind(params)
+        try:
+            res = self._conn.execute(text(t), bind)
+        except Exception:
+            self._conn.rollback()
+            raise
+        return _PGResult(res)
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type is None:
+            self.commit()
+        else:
+            self.rollback()
+
+
+def _pg_conn() -> _PGConn:
+    if not hasattr(_thread_local, 'pg'):
+        _thread_local.pg = _PGConn(_get_pg_engine().connect())
+    return _thread_local.pg
+
+
 def get_conn() -> sqlite3.Connection:
-    """获取当前线程的 SQLite 连接（懒初始化，线程安全）。"""
+    """获取当前线程的连接：PG 模式返回兼容 shim，否则返回线程局部 SQLite 连接。"""
+    if settings.database_url and _pg_dialect() == 'postgresql':
+        return _pg_conn()
     if not hasattr(_thread_local, 'conn'):
         Path(settings.db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(settings.db_path, check_same_thread=False, timeout=30)
@@ -74,13 +171,27 @@ def transaction() -> sqlite3.Connection:
         raise
 
 def init_db() -> None:
-    """建表 + 索引 + 旧库迁移；应用启动时调用一次。"""
-    if settings.database_url:
+    """建表 + 索引 + 旧库迁移；应用启动时调用一次。
+
+    PG 模式（DATABASE_URL=postgresql+asyncpg://…）：走 db_async 异步建表与目录
+    种子，绝不触碰本地 SQLite 文件；其余同步存储函数经 db.get_conn() 的 shim
+    直接读写 RDS。SQLite 模式保持原行为不变。
+    """
+    if settings.database_url and _pg_dialect() == 'postgresql':
         from backend.storage import db_async as _dba
         _run_async(_dba.init_db_async())
         # dispose 引擎：_run_async 里的临时事件循环已关闭，asyncpg 连接已死，
         # 若不清缓存，后续 lifespan 里的 await init_db_async() 会拿到死连接。
         _run_async(_dba._dispose_engine())
+        try:
+            from backend.storage import catalog
+            if not _run_async(catalog.catalog_ready()):
+                _run_async(catalog.seed_catalog())
+        except Exception:
+            logger.warning('PG 目录种子数据灌入失败（不影响记忆/交易表）', exc_info=True)
+        logger.info('长期记忆数据库就绪 (PostgreSQL): %s', settings.database_url)
+        return
+
     conn = get_conn()
     conn.executescript(_SCHEMA)
     conn.executescript(_INDEXES)
@@ -103,13 +214,7 @@ def init_db() -> None:
     conn.commit()
     try:
         from backend.storage import catalog
-        from backend.storage import db_async as _dba
-        if _dba.dialect() == 'postgresql':
-            # PG 模式下必须按 PG 目录数据判断是否 seed：sqlite 兜底库可能有历史
-            # 数据，按 sqlite 计数判断会误跳过 PG 的种子灌入。
-            needs_seed = not _run_async(catalog.catalog_ready())
-        else:
-            needs_seed = conn.execute('SELECT COUNT(*) FROM plans').fetchone()[0] == 0
+        needs_seed = conn.execute('SELECT COUNT(*) FROM plans').fetchone()[0] == 0
         if needs_seed:
             _run_async(catalog.seed_catalog())
     except Exception:

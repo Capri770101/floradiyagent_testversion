@@ -91,6 +91,12 @@ def normalize_sql(sql: str) -> str:
     # 或表前缀），绝不引用 ``ORDER BY ... DESC`` 的排序关键字（前接 `)`/列名/数字）。
     s = re.sub(r'([,(]\s*)desc\b', r'\1"desc"', s)
     s = re.sub(r'(\w+\.)desc\b', r'\1"desc"', s)
+    # INSERT OR IGNORE → PG 无此语法，等价 ON CONFLICT DO NOTHING（不指定冲突目标）
+    if re.search(r'(?i)\bINSERT\s+OR\s+IGNORE\b', s):
+        s = re.sub(r'(?i)\bINSERT\s+OR\s+IGNORE\s+INTO', 'INSERT INTO', s)
+        s = re.sub(r';\s*$', '', s).rstrip() + ' ON CONFLICT DO NOTHING'
+    # datetime('now', offset) → CURRENT_TIMESTAMP（演示数据的时间偏移忽略）
+    s = re.sub(r"(?i)\bdatetime\s*\(\s*'now'(?:\s*,\s*'[^']*')?\s*\)", 'CURRENT_TIMESTAMP', s)
     return s
 
 def _bind(params: Any) -> dict[str, Any]:

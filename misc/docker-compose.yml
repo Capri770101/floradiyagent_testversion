@@ -1,28 +1,109 @@
+# 生产部署编排（阿里云 ECS 单机 + Docker Compose）
+# 服务：redis（内网） + flora-agent（后端，仅容器网络） + flora-worker（异步任务）
+#        + flora-frontends（nginx 三端，对外只暴露 80/443）
+# 真实密钥从宿主机 misc/.env 读取（env_file），不进镜像（根 .dockerignore 已排除 .env）。
+
 services:
+  # ---- PostgreSQL（自托管，跑在现有 ECS 内，零额外费用；仅容器网络可达，不暴露公网）----
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: flora
+      POSTGRES_PASSWORD: flora_dev_pass   # 内网专用，生产可改强密码；仅 Docker 网络内可达
+      POSTGRES_DB: flora
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flora -d flora"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # 不映射宿主机端口：备份用 `docker exec flora_postgres_1 pg_dump ...` 即可
+
+  # ---- Redis（限流 / 缓存 / 任务队列统一后端，仅内网）----
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---- 后端 API（uvicorn，仅容器网络内可达，不映射宿主机端口）----
   flora-agent:
     build:
       context: ..
       dockerfile: misc/Dockerfile
-    # 真实密钥从宿主机 misc/.env 读取，不进镜像
     env_file:
       - .env
-    ports:
-      - "8000:8000"
-    # 数据持久化（SQLite + 生图落盘），避免容器重建丢数据
+    environment:
+      # 覆盖为容器内服务地址（environment 优先级高于 env_file）
+      DATABASE_URL: postgresql+asyncpg://flora:flora_dev_pass@postgres:5432/flora
+      REDIS_URL: redis://redis:6379/0
+      TASK_QUEUE_ENABLED: "true"
     volumes:
-      - ../data:/app/data
+      - ../data:/app/data          # SQLite(若用) + 生图落盘 + 商家上传，持久化
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3) else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
-  # 三端独立域名（阶段6）：一容器三端口 = 三入口（index/admin/merchant），
-  # /api、/uploads 反代到 flora-agent。开发期 localhost:5173/5174/5175 即等价三域名。
+  # ---- 异步任务 worker（生图 / 通知 / 机审，移出请求路径）----
+  flora-worker:
+    build:
+      context: ..
+      dockerfile: misc/Dockerfile
+    command: ["python", "-m", "backend.tasks.worker"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://flora:flora_dev_pass@postgres:5432/flora
+      REDIS_URL: redis://redis:6379/0
+      TASK_QUEUE_ENABLED: "true"
+    volumes:
+      - ../data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      flora-agent:
+        condition: service_started
+    restart: unless-stopped
+
+  # ---- 前端（nginx 托管三端，对外仅 80/443）----
   flora-frontends:
     build:
       context: ..
       dockerfile: misc/Dockerfile.frontend
     ports:
-      - "5173:5173"   # C 端（顾客端）
-      - "5174:5174"   # 管理端
-      - "5175:5175"   # 商家端
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./certs:/etc/nginx/certs:ro   # 放 fullchain.pem + privkey.pem
     depends_on:
       - flora-agent
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
+
+volumes:
+  redis-data:
+  postgres-data:

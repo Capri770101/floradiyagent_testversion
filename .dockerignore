@@ -1,0 +1,28 @@
+# 构建上下文根目录的 .dockerignore（后端/前端 Dockerfile 都以项目根为 context）
+# 关键：排除 .env（密钥）与 data/（运行时数据），否则会被 COPY . . 烤进镜像。
+
+# 版本控制 / 本地数据 / 缓存 / 备份 / IDE / 工作区元信息
+.git
+.gitignore
+.idea
+.workbuddy
+.pytest_cache
+.ruff_cache
+__pycache__
+*.pyc
+.playwright-mcp
+logs
+
+# 密钥与本地数据：不进镜像（compose 用 env_file 在宿主机读取，数据用 volume 挂载）
+.env
+.env.local
+misc/.env
+data
+
+# 前端依赖（前端镜像内 npm ci 重新安装，无需拷入 context）
+H5/node_modules
+node_modules
+
+# 文档与说明（可选）
+README.md
+INTEGRATION.md

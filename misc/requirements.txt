@@ -39,3 +39,12 @@ typing_extensions==4.16.0
 uvicorn==0.52.1
 watchfiles==1.2.0
 websockets==17.0.1
+
+# ---- P0/P1 基础设施（PG 异步 + Redis，部署必需）----
+# db_async.py 用 SQLAlchemy 异步引擎；DATABASE_URL=postgresql+asyncpg:// 需要 asyncpg 驱动。
+SQLAlchemy==2.0.40
+asyncpg==0.30.0
+# storage/redis.py 用 redis.asyncio；REDIS_URL 配置后需要本包。
+redis==5.2.1
+# 同步 PG shim（get_conn 走 PG 时底层用 SQLAlchemy 同步引擎，需 psycopg2 驱动）。
+psycopg2-binary==2.9.10

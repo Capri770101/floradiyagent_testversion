@@ -20,6 +20,8 @@ from backend.routers.common import (
     _client_ip,
 )
 from backend.security import get_current_user, wx_code2session
+from backend.storage.sms import SmsError, send_sms_async
+
 from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(tags=['auth'])
@@ -57,12 +59,19 @@ async def wx_login(req: WxLoginRequest, request: Request) -> dict[str, Any]:
 
 @router.post('/auth/phone-code')
 async def phone_code(req: PhoneCodeRequest) -> dict[str, Any]:
-    """手机号验证码：dev 模式不真实发送（固定验证码见 .env SMS_DEV_CODE，默认 123456）。
+    """手机号验证码：dev 模式不真实发送（固定验证码见 .env SMS_DEV_CODE，默认 123456）；
+    aliyun 模式走阿里云短信真实下发。
 
-    限流：每手机号每分钟 N 次（防短信轰炸）。
+    限流：每手机号每分钟 N 次（防短信轰炸）。真实发送失败时返回 502。
     """
     _check_rate(f'phone_code:{req.phone}', settings.rate_limit_phone_per_minute)
     code = security.issue_phone_code(req.phone)
+    if settings.sms_provider != 'dev':
+        try:
+            await send_sms_async(req.phone, code)
+        except SmsError as exc:
+            logger.error('[phone-code] 短信下发失败 phone=%s: %s', req.phone, exc)
+            raise HTTPException(status_code=502, detail='短信验证码发送失败，请稍后再试') from exc
     logger.info('[phone-code] phone=%s dev_mode=%s', req.phone, settings.sms_provider == 'dev')
     return {'ok': True, 'dev_code': code if settings.sms_provider == 'dev' else None, 'ttl_seconds': settings.phone_code_ttl_seconds}
 

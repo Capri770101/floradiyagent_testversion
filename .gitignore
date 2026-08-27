@@ -16,6 +16,11 @@ data/
 *.db-wal
 *.db-shm
 
+# SSL 证书私钥/公钥（仅保留 .gitkeep 占位，真实证书切勿入库）
+misc/certs/*.pem
+misc/certs/*.key
+misc/certs/*.crt
+
 # IDE
 .idea/
 

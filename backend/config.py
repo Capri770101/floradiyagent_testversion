@@ -124,11 +124,18 @@ class Settings(BaseSettings):
     auth_required: bool = False  # True=强制鉴权；False=dev 模式（/chat 仍可用 user_id 直连）
 
     # ---- 手机号注册/登录（短信验证码）----
-    # 未接真实短信通道时，dev 模式使用固定验证码（sms_dev_code）即可跑通全链路；
-    # 生产接入通道后，把 issue 验证码的实现替换为真实发送即可（接口不变）。
+    # dev 模式：不真实发送，用固定验证码（sms_dev_code）跑通全链路，接口原样返回 dev_code。
+    # aliyun 模式：走阿里云短信服务（Dysmsapi SendSms），真实下发；未配齐密钥则明确报错。
     sms_dev_code: str = "123456"          # dev 固定验证码（sms_provider=dev 时生效）
-    sms_provider: str = "dev"             # dev | real（real 需自行实现发送通道）
+    sms_provider: str = "dev"             # dev | aliyun
     phone_code_ttl_seconds: int = 300     # 验证码有效期（秒）
+    # 阿里云短信（sms_provider=aliyun 时必填；密钥来自环境变量，不进代码）
+    sms_access_key_id: str = ""
+    sms_access_key_secret: str = ""
+    sms_sign_name: str = ""               # 短信签名（控制台申请）
+    sms_template_code: str = ""           # 模板 CODE，如 SMS_XXXXXXXX（模板需含 ${code} 变量）
+    sms_region: str = "cn-hangzhou"
+    sms_endpoint: str = "https://dysmsapi.aliyuncs.com"
 
     # ---- 腾讯位置服务（地图选点 / 逆地理编码）----
     # 前端 H5/.env 的 VITE_TENCENT_MAP_KEY 用于地图 SDK 加载（前端可见）；
