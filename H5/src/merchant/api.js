@@ -109,6 +109,16 @@ export async function merchantShip(orderId) {
   return data.order
 }
 
+export async function merchantAcceptOrder(orderId) {
+  const data = await request(`/merchant/orders/${encodeURIComponent(orderId)}/accept`, { method: 'POST' })
+  return data.order
+}
+
+export async function merchantRejectOrder(orderId, reason = '') {
+  const data = await request(`/merchant/orders/${encodeURIComponent(orderId)}/reject`, { method: 'POST', body: JSON.stringify({ reason }) })
+  return data.order
+}
+
 export async function merchantOrderDetail(orderId) {
   const data = await request(`/merchant/orders/${encodeURIComponent(orderId)}`)
   return data.order

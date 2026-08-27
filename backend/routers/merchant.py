@@ -126,6 +126,37 @@ async def merchant_ship_endpoint(order_id: str, request: Request) -> dict[str, A
         raise HTTPException(status_code=404, detail='订单不存在')
     return {'order': o}
 
+class MerchantConfirmRequest(BaseModel):
+    """商家接单/拒单请求体。"""
+    reason: str = Field('', max_length=200, description='拒单原因（可选）')
+
+@router.post('/merchant/orders/{order_id}/accept')
+async def merchant_accept_endpoint(order_id: str, request: Request) -> dict[str, Any]:
+    """商家接单：paid 且未处理的订单标记已接单，通知用户备货中。"""
+    _, scope = await _merchant_scope(request)
+    await _assert_order_in_scope(order_id, scope)
+    try:
+        o = await commerce.merchant_accept_order(order_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not o:
+        raise HTTPException(status_code=404, detail='订单不存在')
+    return {'order': o}
+
+@router.post('/merchant/orders/{order_id}/reject')
+async def merchant_reject_endpoint(order_id: str, request: Request, body: MerchantConfirmRequest | None=None) -> dict[str, Any]:
+    """商家拒单：paid 且未处理的订单转取消，退款并返还优惠券，通知用户。"""
+    _, scope = await _merchant_scope(request)
+    await _assert_order_in_scope(order_id, scope)
+    reason = (body.reason if body else '') or ''
+    try:
+        o = await commerce.merchant_reject_order(order_id, reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not o:
+        raise HTTPException(status_code=404, detail='订单不存在')
+    return {'order': o}
+
 class LogisticsWriteRequest(BaseModel):
     """商家追加物流节点请求体。"""
     text: str = Field(..., min_length=1, max_length=200)

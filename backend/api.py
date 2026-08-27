@@ -39,7 +39,7 @@ from backend.routers import (
     recommend,
     report,
 )
-from backend.routers.common import METRICS
+from backend.routers.common import METRICS, _limiter
 from backend.storage import db_async
 from backend.storage.db import init_db
 

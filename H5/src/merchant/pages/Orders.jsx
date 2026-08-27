@@ -1,9 +1,11 @@
 // 商家订单管理：列表筛选 + 订单展开（方案卡）+ 发货 + 物流 + 联系顾客。
 import React, { useCallback, useEffect, useState } from 'react'
 import {
+  merchantAcceptOrder,
   merchantAddLogistics,
   merchantOrderDetail,
   merchantOrders,
+  merchantRejectOrder,
   merchantShip,
   merchantStats,
 } from '../api'
@@ -11,7 +13,7 @@ import { fmtMoney } from '../../utils/price'
 
 const STATUS_TABS = [
   { key: '', label: '全部' },
-  { key: 'paid', label: '待发货' },
+  { key: 'paid', label: '待确认' },
   { key: 'shipped', label: '配送中' },
   { key: 'done', label: '已完成' },
   { key: 'canceled', label: '已取消' },
@@ -20,7 +22,7 @@ const STATUS_TABS = [
 const STATUS_META = {
   created: { label: '待付款', cls: 'bg-bg text-sub' },
   pending_payment: { label: '待付款', cls: 'bg-bg text-sub' },
-  paid: { label: '待发货', cls: 'bg-gold/15 text-gold' },
+  paid: { label: '待确认', cls: 'bg-gold/15 text-gold' },
   shipped: { label: '配送中', cls: 'bg-teal/15 text-teal' },
   done: { label: '已完成', cls: 'bg-ink/10 text-ink' },
   canceled: { label: '已取消', cls: 'bg-burgundy/10 text-burgundy' },
@@ -113,6 +115,34 @@ export function Orders({ onContact }) {
     }
   }
 
+  const accept = async (o) => {
+    if (busyId) return
+    setBusyId(o.order_id)
+    try {
+      await merchantAcceptOrder(o.order_id)
+      await load()
+    } catch (e) {
+      setErr(e.message || '接单失败')
+    } finally {
+      setBusyId('')
+    }
+  }
+
+  const reject = async (o) => {
+    if (busyId) return
+    const reason = window.prompt('拒单原因（可选）：') ?? ''
+    if (reason === null) return
+    setBusyId(o.order_id)
+    try {
+      await merchantRejectOrder(o.order_id, reason.trim())
+      await load()
+    } catch (e) {
+      setErr(e.message || '拒单失败')
+    } finally {
+      setBusyId('')
+    }
+  }
+
   const addLogistics = async (o) => {
     const text = (logiDraft[o.order_id] || '').trim()
     if (!text) return
@@ -131,12 +161,14 @@ export function Orders({ onContact }) {
 
   const pendingShip = orders.filter((o) => o.status === 'paid')
 
+  const pendingConfirm = orders.filter((o) => o.status === 'paid' && !o.merchant_status)
+
   return (
     <div>
       <div className="flex items-baseline justify-between">
         <h2 className="font-serif-cn text-[22px] font-normal text-ink">订单管理</h2>
-        {pendingShip.length > 0 && (
-          <span className="text-[11px] text-gold">待发货 {pendingShip.length} 单</span>
+        {pendingConfirm.length > 0 && (
+          <span className="text-[11px] text-gold">待确认 {pendingConfirm.length} 单</span>
         )}
       </div>
 
@@ -254,7 +286,25 @@ export function Orders({ onContact }) {
                       {o.note && <p className="col-span-2">备注：{o.note}</p>}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {o.status === 'paid' && (
+                      {o.status === 'paid' && !o.merchant_status && (
+                        <>
+                          <button
+                            onClick={() => accept(o)}
+                            disabled={!!busyId}
+                            className="press rounded-[4px] bg-gold px-4 py-2 text-[12px] tracking-[1px] text-[#FAF8F5] disabled:opacity-40"
+                          >
+                            {busyId === o.order_id ? '处理中…' : '接单'}
+                          </button>
+                          <button
+                            onClick={() => reject(o)}
+                            disabled={!!busyId}
+                            className="press rounded-[4px] border border-burgundy/40 px-4 py-2 text-[12px] tracking-[1px] text-burgundy disabled:opacity-40"
+                          >
+                            {busyId === o.order_id ? '处理中…' : '拒单'}
+                          </button>
+                        </>
+                      )}
+                      {o.status === 'paid' && o.merchant_status === 'accepted' && (
                         <button
                           onClick={() => ship(o)}
                           disabled={!!busyId}
@@ -262,6 +312,9 @@ export function Orders({ onContact }) {
                         >
                           {busyId === o.order_id ? '处理中…' : '发货'}
                         </button>
+                      )}
+                      {o.merchant_status === 'rejected' && (
+                        <span className="self-center text-[11px] text-burgundy">已拒单并退款</span>
                       )}
                       {o.user_id && (
                         <button

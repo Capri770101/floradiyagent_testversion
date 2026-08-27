@@ -722,6 +722,7 @@ async def pay_order(order_id: str, method: str='wechat', extra: dict[str, Any] |
                 await c.execute('UPDATE orders SET card_token=? WHERE order_id=?', (token, order_id))
             from backend.storage import notify
             await notify.try_create(order['user_id'], notify.T_ORDER, '支付成功', f'订单 {order_id} 已支付 ¥{intent.amount}，商家备货中', ref_type='order', ref_id=order_id)
+            await _notify_merchants(c, order)
         result = intent.to_dict()
         result['payment_id'] = pay_id
         return result
@@ -754,6 +755,7 @@ async def mark_order_paid(order_id: str, transaction_id: str='') -> bool:
             await c.execute('UPDATE orders SET card_token=? WHERE order_id=?', (token, order_id))
         from backend.storage import notify
         await notify.try_create(row['user_id'], notify.T_ORDER, '支付成功', f'订单 {order_id} 已支付 ¥{payable:.2f}，商家备货中', ref_type='order', ref_id=order_id)
+        await _notify_merchants(c, dict(row))
         return True
 
 async def get_payment_status(order_id: str) -> dict[str, Any] | None:
@@ -763,6 +765,86 @@ async def get_payment_status(order_id: str) -> dict[str, Any] | None:
         if not row:
             return None
         return {'order_id': order_id, 'paid': bool(row['paid']), 'status': row['status']}
+
+async def _notify_merchants(conn, order: dict[str, Any]) -> None:
+    """支付后通知该订单店铺的商家「有新订单待确认」（容错：找不到商家则跳过）。
+
+    orders.shop_id 存的是下单时的店铺 id/名快照；先按 shop_id 查 merchant_shops 绑定，
+    查不到再按店铺名反查 shops.id 后绑定，最后按绑定找商家 user_id。
+    """
+    from backend.storage import notify
+    shop_key = (order.get('shop_id') or '').strip()
+    if not shop_key:
+        return
+    merchant_ids: list[str] = []
+    try:
+        rows = await conn.execute('SELECT user_id FROM merchant_shops WHERE shop_id=?', (shop_key,))
+        merchant_ids = [r['user_id'] for r in rows]
+        if not merchant_ids:
+            shop = _fetchone(await conn.execute('SELECT id FROM shops WHERE name=?', (shop_key,)))
+            if shop:
+                rows = await conn.execute('SELECT user_id FROM merchant_shops WHERE shop_id=?', (shop['id'],))
+                merchant_ids = [r['user_id'] for r in rows]
+    except Exception:
+        logger.exception('[commerce] 查找订单商家失败，跳过通知 order=%s', order.get('order_id'))
+        return
+    for mid in dict.fromkeys(merchant_ids):
+        try:
+            await notify.try_create(mid, notify.T_ORDER, '有新订单待确认',
+                                    f'订单 {order["order_id"]} 已支付，请在商家后台确认接单', ref_type='order', ref_id=order['order_id'])
+        except Exception:
+            logger.warning('[commerce] 通知商家失败 merchant=%s', mid)
+
+async def merchant_accept_order(order_id: str) -> dict[str, Any] | None:
+    """商家接单：paid 且未处理的订单标记已接单（merchant_status='accepted'）。
+
+    Returns:
+        更新后的订单 dict；订单不存在返回 None。
+
+    Raises:
+        ValueError: 状态不满足接单条件（未支付 / 已处理 / 已取消等）。
+    """
+    async with dba.transaction() as c:
+        row = _fetchone(await c.execute('SELECT * FROM orders WHERE order_id=?', (order_id,)))
+        if not row:
+            return None
+        if row['status'] != 'paid':
+            raise ValueError(f"当前状态 {row['status']} 不可接单（仅已支付订单可接单）")
+        if row['merchant_status']:
+            raise ValueError(f"订单已处理（{row['merchant_status']}），不可重复接单")
+        await c.execute("UPDATE orders SET merchant_status='accepted', confirmed_at=? WHERE order_id=? AND merchant_status=''", (_now(), order_id))
+        await _append_logistics(order_id, '商家已接单，正在备货')
+        from backend.storage import notify
+        await notify.try_create(row['user_id'], notify.T_ORDER, '商家已接单', f'订单 {order_id} 已被商家接单，正在备货', ref_type='order', ref_id=order_id)
+        return await get_order(order_id)
+
+async def merchant_reject_order(order_id: str, reason: str='') -> dict[str, Any] | None:
+    """商家拒单：paid 且未处理的订单转取消，退款并返还优惠券，通知用户。
+
+    Returns:
+        更新后的订单 dict；订单不存在返回 None。
+
+    Raises:
+        ValueError: 状态不满足拒单条件。
+    """
+    async with dba.transaction() as c:
+        row = _fetchone(await c.execute('SELECT * FROM orders WHERE order_id=?', (order_id,)))
+        if not row:
+            return None
+        if row['status'] != 'paid':
+            raise ValueError(f"当前状态 {row['status']} 不可拒单（仅已支付订单可拒单）")
+        if row['merchant_status']:
+            raise ValueError(f"订单已处理（{row['merchant_status']}），不可重复拒单")
+        await c.execute("UPDATE orders SET merchant_status='rejected', status='canceled', confirmed_at=? WHERE order_id=? AND merchant_status=''", (_now(), order_id))
+        await c.execute("UPDATE payments SET status='refunded' WHERE order_id=? AND status='paid'", (order_id,))
+        cid = row['coupon_id']
+        if cid:
+            await c.execute("UPDATE coupons SET status='unused', order_id=NULL, used_at=NULL WHERE id=? AND status='used'", (cid,))
+        await _append_logistics(order_id, '商家拒单，订单已取消并退款')
+        from backend.storage import notify
+        note = f'商家拒单（{reason or "无"}），款项已原路退回'
+        await notify.try_create(row['user_id'], notify.T_ORDER, '商家拒单，已退款', f'订单 {order_id} 被商家拒单：{note}', ref_type='order', ref_id=order_id)
+        return await get_order(order_id)
 
 async def get_share_card(token: str) -> dict[str, Any] | None:
     async with dba.transaction() as c:

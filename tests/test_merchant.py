@@ -230,3 +230,72 @@ def test_merchant_update_shop_decoration(client):
     assert d['cover'] == '/uploads/mcover.jpg'
     assert d['logo'] == '/uploads/mlogo.jpg'
     assert d['hours'] == '08:00 - 20:00'
+
+def _user_headers(client, username):
+    r = client.post('/auth/login', json={'username': username, 'password': 'secret123'})
+    assert r.status_code == 200, r.text
+    return {'Authorization': f"Bearer {r.json()['token']}"}
+
+def test_merchant_accept_order_flow(client):
+    """商家接单：paid 待确认 -> accepted，用户收到接单通知。"""
+    user_t = _register(client, 'mer_acc_user', role='user')
+    oid = _create_and_pay(client, user_t, shop='S001')
+    mer_t = _register(client, 'mer_acc', bind='S001')
+    # 接单前：paid + 待确认
+    r = client.get(f'/merchant/orders/{oid}', headers=_merchant_headers(mer_t))
+    assert r.status_code == 200, r.text
+    o = r.json()['order']
+    assert o['status'] == 'paid'
+    assert o['merchant_status'] == ''
+    # 接单
+    r = client.post(f'/merchant/orders/{oid}/accept', headers=_merchant_headers(mer_t))
+    assert r.status_code == 200, r.text
+    assert r.json()['order']['merchant_status'] == 'accepted'
+    # 用户收到「商家已接单」通知
+    uh = _user_headers(client, 'mer_acc_user')
+    r = client.get('/notifications', headers=uh)
+    titles = [n['title'] for n in r.json()['notifications']]
+    assert any('接单' in t for t in titles), titles
+
+def test_merchant_reject_order_refunds_and_notifies(client):
+    """商家拒单：paid -> canceled + payments refunded + 优惠券返还 + 用户收到通知。"""
+    user_t = _register(client, 'mer_rej_user', role='user')
+    oid = _create_and_pay(client, user_t, shop='S001')
+    mer_t = _register(client, 'mer_rej', bind='S001')
+    r = client.post(f'/merchant/orders/{oid}/reject', headers=_merchant_headers(mer_t), json={'reason': '花材不足'})
+    assert r.status_code == 200, r.text
+    o = r.json()['order']
+    assert o['status'] == 'canceled'
+    assert o['merchant_status'] == 'rejected'
+    # payments 已退款
+    from backend.storage import db_async as dba
+    from backend.storage.db import _run_async
+    async def _pay_status():
+        async with dba.transaction() as c:
+            rows = await c.execute('SELECT status FROM payments WHERE order_id=?', (oid,))
+            return rows[0]['status'] if rows else None
+    assert _run_async(_pay_status()) == 'refunded'
+    # 用户收到「拒单退款」通知
+    uh = _user_headers(client, 'mer_rej_user')
+    r = client.get('/notifications', headers=uh)
+    titles = [n['title'] for n in r.json()['notifications']]
+    assert any('拒单' in t for t in titles), titles
+
+def test_merchant_cannot_confirm_out_of_scope_order(client):
+    """越权：未绑定该店铺的商家不能接单/拒单（403）。"""
+    user_t = _register(client, 'mer_scp_user', role='user')
+    oid = _create_and_pay(client, user_t, shop='S001')
+    other_t = _register(client, 'mer_scp', bind='S002')
+    r = client.post(f'/merchant/orders/{oid}/accept', headers=_merchant_headers(other_t))
+    assert r.status_code == 403
+    r = client.post(f'/merchant/orders/{oid}/reject', headers=_merchant_headers(other_t), json={'reason': 'x'})
+    assert r.status_code == 403
+
+def test_merchant_cannot_accept_non_paid_order(client):
+    """未支付订单不可接单（400）。"""
+    _register(client, 'mer_np_user', role='user')
+    r = client.post('/orders', headers=_user_headers(client, 'mer_np_user'), json={'items': [{'plan_id': 'P001', 'name': 'x', 'price': 99, 'qty': 1, 'shop': 'S001'}]})
+    oid = r.json()['order']['order_id']
+    mer_t = _register(client, 'mer_np', bind='S001')
+    r = client.post(f'/merchant/orders/{oid}/accept', headers=_merchant_headers(mer_t))
+    assert r.status_code == 400
