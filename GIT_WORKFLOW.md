@@ -53,6 +53,16 @@ git merge dev-laptop dev-desktop dev-server   # 逐个或一起合
 # 若有冲突：解冲突 → git add → git commit → git push origin main
 ```
 
+## Agent（opencode）代执行授权
+经用户**明确授权**后，agent 可代执行以下操作（默认不主动做，先询问）：
+- 把 `dev-<设备>` 分支快进合并进 `main`：
+  `git checkout main && git merge --ff-only origin/dev-<设备> && git push origin main`。
+- 在 `main` 被意外强推/分叉、且诊断确认安全后，用 `git push --force-with-lease origin main` 恢复正确历史。
+
+授权边界：agent **绝不**在用户未确认的情况下无差别 `git push --force` 到 `main` 或他人分支；
+对**自己的** `dev` 分支 rebase 后同步可用 `git push --force-with-lease origin dev-<设备>`。
+完整操作见 opencode skill `multidevice-git`（仓库内 `.opencode/skills/multidevice-git/SKILL.md`）。
+
 ## 红线
 - 不要 `git push --force` 到 `main` 或他人分支。
 - `main` 上不做直接功能开发。
