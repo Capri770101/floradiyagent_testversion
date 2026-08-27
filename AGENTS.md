@@ -18,3 +18,8 @@
 - 三端入口（本地 dev 同源、路径区分；Docker 部署后为 5173/5174/5175 三端口）：C 端 `http://localhost:5173/`、商家端 `http://localhost:5173/merchant.html`、管理端 `http://localhost:5173/admin.html`。
 - 会话隔离：C 端令牌键 `floradiy_token`、商家端 `floradiy_merchant_token`、管理后台 `floradiy_admin_token`（三端互不干扰）；C 端 `/auth/login`、`/auth/phone-login` 拒绝 merchant/admin 角色，商家走 `/auth/merchant-login`、后台走 `/auth/admin-login`。
 - `recommend_weights` 默认 0.4/0.4/0.2；定位键 `floradiy_location`（localStorage）。
+
+## 多设备并行协作（git 分支策略）
+- 本项目由多台设备并行开发：**禁止在 `main` 上直接开发、禁止 `git push --force`**。
+- 每台设备使用自己的长期分支（如 `dev-laptop` / `dev-desktop` / `dev-server`）开发并推送，由一台设备统一合并进 `main`。完整流程见 `GIT_WORKFLOW.md`，agent 开工前请先阅读。
+- 本仓库已设置 `git config pull.rebase true`；推送前先 `git pull --rebase`。
