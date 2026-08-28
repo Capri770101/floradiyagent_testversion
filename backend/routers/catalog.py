@@ -40,6 +40,12 @@ async def public_config() -> dict[str, Any]:
     """公开运营配置（H5 读：配送时段/运费/FAQ/公告；后端 seed 兜底，前端不做业务兜底）。"""
     return await config_store.public_config()
 
+
+@router.get('/categories')
+async def list_categories_endpoint() -> dict[str, Any]:
+    """公开分类目录（C 端分类页导航；种子分类，无需登录）。"""
+    return {'categories': await catalog_store.list_categories()}
+
 @router.get('/health')
 async def health() -> dict[str, Any]:
     return {'status': 'ok', 'llm_mode': 'live' if settings.llm_enabled else 'mock', 'image_mode': 'live' if settings.image_enabled else 'mock', 'auth': 'required' if settings.auth_required else 'dev', 'data_source': settings.data_source, 'rag_enabled': settings.rag_enabled, 'tools': len(get_tool_specs())}

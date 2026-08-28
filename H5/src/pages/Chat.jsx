@@ -1,14 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useLocation } from 'react-router-dom'
 import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
 import Reveal from '../components/Reveal'
 import { toast } from '../utils/toast'
 import { userChatWithShop, userChatMessages, userSendChatMessage } from '../api/shop'
 
+const QUICK_REPLIES = [
+  '请问可以同城配送吗？',
+  '能指定配送时间吗？',
+  '支持哪些支付方式？',
+  '可以开发票吗？',
+]
+
 // 顾客-商家会话页（/chat/:shopId）：取或建会话 → 气泡对话 → 5s 轮询新消息（契约 4.1）
 export default function Chat() {
   const { shopId } = useParams()
+  const location = useLocation()
+  const ctx = location.state?.context
   const [chat, setChat] = useState(null)
   const [shopName, setShopName] = useState('')
   const [messages, setMessages] = useState([])
@@ -54,13 +63,13 @@ export default function Chat() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages.length])
 
-  const send = async () => {
-    const text = draft.trim()
+  const send = async (textOverride) => {
+    const text = (textOverride ?? draft).trim()
     if (!text || !chat?.id || busy) return
     setBusy(true)
     try {
       await userSendChatMessage(chat.id, text)
-      setDraft('')
+      if (textOverride === undefined) setDraft('')
       const data = await userChatMessages(chat.id)
       setMessages(data.messages || [])
     } catch (e) {
@@ -73,11 +82,31 @@ export default function Chat() {
   return (
     <div className="flex h-full flex-col bg-bg">
       <TopBar title={loading ? '会话' : shopName} />
+      {ctx && (
+        <div className="flex items-center gap-2 bg-gold/10 px-4 py-2 text-[11px] text-gold-dark">
+          <span className="shrink-0 rounded-pill bg-gold/20 px-2 py-0.5">{ctx.kind || '关联'}</span>
+          <span className="truncate text-sub">{ctx.label}</span>
+        </div>
+      )}
       <div className="flex-1 space-y-2.5 overflow-y-auto px-4 py-4">
         {loading ? (
           <p className="py-12 text-center text-[12px] text-sub">加载中…</p>
         ) : messages.length === 0 ? (
-          <p className="py-12 text-center text-[11px] text-sub">还没有消息，向商家打个招呼吧</p>
+          <div className="py-10 text-center">
+            <p className="text-[11px] text-sub">还没有消息，向商家打个招呼吧</p>
+            <div className="mt-4 flex flex-wrap justify-center gap-2 px-4">
+              {QUICK_REPLIES.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => send(q)}
+                  disabled={busy}
+                  className="press rounded-pill border border-line bg-white px-3 py-1.5 text-[11px] text-ink"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
         ) : (
           messages.map((m, i) => (
             <Reveal
@@ -102,6 +131,20 @@ export default function Chat() {
         )}
         <div ref={bottomRef} />
       </div>
+      {messages.length > 0 && (
+        <div className="app-scroll flex gap-2 overflow-x-auto border-t border-line bg-white px-4 py-2">
+          {QUICK_REPLIES.map((q) => (
+            <button
+              key={q}
+              onClick={() => send(q)}
+              disabled={busy}
+              className="press shrink-0 rounded-pill border border-line bg-bg px-3 py-1 text-[11px] text-sub"
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex items-center gap-2 border-t border-line bg-white px-4 py-3">
         <input
           value={draft}
@@ -116,7 +159,11 @@ export default function Chat() {
             }
           }}
         />
-        <Button className="!h-[40px] !text-[12px] !tracking-[1px]" disabled={busy || !draft.trim()} onClick={send}>
+        <Button
+          className="!h-[40px] !text-[12px] !tracking-[1px]"
+          disabled={busy || !draft.trim()}
+          onClick={() => send()}
+        >
           {busy ? '发送中…' : '发送'}
         </Button>
       </div>

@@ -20,7 +20,8 @@ K_COUPON = 'coupon_rules'
 K_FAQS = 'faqs'
 K_ANNOUNCE = 'announcements'
 K_REC_WEIGHTS = 'recommend_weights'
-DEFAULTS: dict[str, Any] = {K_DELIVERY: ['今天 18:00–20:00', '明天 10:00–12:00', '后天 14:00–16:00'], K_SHIPPING: 5, K_COUPON: {'满减示例': '满 199 减 20（sandbox 规则，上线前配置）'}, K_FAQS: [{'q': '下单后多久发货？', 'a': '支付成功后 24 小时内由花店发货，配送时间 1-3 天，节假日顺延。'}, {'q': '花束可以指定配送时间吗？', 'a': '可以，在确认订单页选择配送时段，花店会按选择安排。'}, {'q': '收到的花不满意怎么办？', 'a': '可在订单完成后评价并联系客服，我们将按流程处理退换。'}, {'q': '积分有什么用？', 'a': '每笔支付都会返还积分，未来可在积分商城兑换鲜花券与周边。'}], K_ANNOUNCE: [], K_REC_WEIGHTS: {'w_distance': 0.4, 'w_pref': 0.4, 'w_heat': 0.2}}
+K_SERVICE = 'service'
+DEFAULTS: dict[str, Any] = {K_DELIVERY: ['今天 18:00–20:00', '明天 10:00–12:00', '后天 14:00–16:00'], K_SHIPPING: 5, K_COUPON: {'满减示例': '满 199 减 20（sandbox 规则，上线前配置）'}, K_FAQS: [{'q': '下单后多久发货？', 'a': '支付成功后 24 小时内由花店发货，配送时间 1-3 天，节假日顺延。'}, {'q': '花束可以指定配送时间吗？', 'a': '可以，在确认订单页选择配送时段，花店会按选择安排。'}, {'q': '收到的花不满意怎么办？', 'a': '可在订单完成后评价并联系客服，我们将按流程处理退换。'}, {'q': '积分有什么用？', 'a': '每笔支付都会返还积分，未来可在积分商城兑换鲜花券与周边。'}], K_ANNOUNCE: [], K_REC_WEIGHTS: {'w_distance': 0.4, 'w_pref': 0.4, 'w_heat': 0.2}, K_SERVICE: {'hotline': '400-800-1234', 'email': 'service@tiaowulan.com', 'hours': '每日 9:00 - 21:00', 'wechat': 'tiaowulan_service'}}
 
 async def _load(key: str) -> Any | None:
     async with dba.transaction() as c:
@@ -48,7 +49,7 @@ async def set_config(key: str, value: Any) -> Any:
 
 async def public_config() -> dict[str, Any]:
     """公开聚合配置（H5 消费；未配置项用 seed 默认值，前端不做业务兜底）。"""
-    return {'delivery_options': await get_config(K_DELIVERY, DEFAULTS[K_DELIVERY]), 'shipping_fee': await get_config(K_SHIPPING, DEFAULTS[K_SHIPPING]), 'coupon_rules': await get_config(K_COUPON, DEFAULTS[K_COUPON]), 'faqs': await get_config(K_FAQS, DEFAULTS[K_FAQS]), 'announcements': await get_config(K_ANNOUNCE, DEFAULTS[K_ANNOUNCE]), 'recommend_weights': await get_config(K_REC_WEIGHTS, DEFAULTS[K_REC_WEIGHTS])}
+    return {'delivery_options': await get_config(K_DELIVERY, DEFAULTS[K_DELIVERY]), 'shipping_fee': await get_config(K_SHIPPING, DEFAULTS[K_SHIPPING]), 'coupon_rules': await get_config(K_COUPON, DEFAULTS[K_COUPON]), 'faqs': await get_config(K_FAQS, DEFAULTS[K_FAQS]), 'announcements': await get_config(K_ANNOUNCE, DEFAULTS[K_ANNOUNCE]), 'recommend_weights': await get_config(K_REC_WEIGHTS, DEFAULTS[K_REC_WEIGHTS]), 'service': await get_config(K_SERVICE, DEFAULTS[K_SERVICE])}
 
 async def admin_config() -> dict[str, Any]:
     """管理端配置读取（与公开一致，便于表单回显）。"""

@@ -11,6 +11,11 @@ export async function listPlans(keyword = '') {
   return data.plans
 }
 
+export async function listCategories() {
+  const data = await api('/categories')
+  return data.categories || []
+}
+
 export async function getPlan(id) {
   const data = await api(`/plans/${encodeURIComponent(id)}`)
   return data.plan

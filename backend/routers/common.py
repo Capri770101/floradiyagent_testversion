@@ -249,7 +249,7 @@ def _plan_label(p: dict[str, Any]) -> str:
 
 async def _plan_card(p: dict[str, Any]) -> dict[str, Any]:
     """把仓储方案映射成 H5 列表卡所需字段。"""
-    return {'id': p['plan_id'], 'name': p['name'], 'price': p['price'], 'merchant_name': p.get('merchant_name', ''), 'shop_id': await catalog_store.plan_shop_id(p['plan_id']), 'label': _plan_label(p), 'rating': str(p.get('rating', 4.8)), 'sold': int(p.get('sold', 0)), 'tags': p.get('tags', []), 'desc': p.get('desc', ''), 'image': p.get('effect_image_url')}
+    return {'id': p['plan_id'], 'name': p['name'], 'price': p['price'], 'merchant_name': p.get('merchant_name', ''), 'shop_id': await catalog_store.plan_shop_id(p['plan_id']), 'label': _plan_label(p), 'rating': str(p.get('rating', 4.8)), 'sold': int(p.get('sold', 0)), 'tags': p.get('tags', []), 'desc': p.get('desc', ''), 'image': p.get('effect_image_url'), 'category_id': p.get('category_id')}
 _FLOWER_HINTS = ('康乃馨', '玫瑰', '向日葵', '满天星', '郁金香', '牡丹', '百合', '绣球', '芍药', '雏菊', '洋桔梗', '尤加利叶', '绿萝', '永生花', '竹', '香槟')
 
 def _derive_flowers(p: dict[str, Any]) -> list[str]:
