@@ -27,6 +27,11 @@ export default function Home() {
   const [loc, setLoc] = useState(getLocation)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+
+  // 强制先选位置：未选择定位时进入首页即弹出位置选择器（选完才拉取配送范围内在营店铺）
+  useEffect(() => {
+    if (!getLocation()) setPickerOpen(true)
+  }, [])
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [favs, setFavs] = useState({})

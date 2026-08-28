@@ -175,6 +175,9 @@ class Settings(BaseSettings):
     # ---- 支付跳转页（小程序内页路径，随真实小程序调整）----
     pay_page_path: str = "/pages/order/confirm"
 
+    # ---- 店铺配送范围（km）：C 端仅展示距用户定位 ≤ 该半径且状态=营业中的店 ----
+    delivery_radius_km: float = 5.0
+
     # ---- 支付网关（sandbox | wechat | alipay）----
     # sandbox=演示（无需凭据，下单即标记支付成功，用于端到端验证，绝不真实扣款）；
     # wechat=微信支付 v3 JSAPI（小程序 wx.requestPayment）；alipay=支付宝手机网站支付。

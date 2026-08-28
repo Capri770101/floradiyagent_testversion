@@ -8,6 +8,7 @@ from typing import Any
 from agent.tools import get_tool_specs
 from backend.config import settings
 from backend.routers.common import METRICS, _plan_card, _plan_full, _shop_card, _shop_full, repo
+from backend.storage import catalog as catalog_store
 from backend.storage import config as config_store
 from fastapi import APIRouter, HTTPException
 
@@ -71,10 +72,27 @@ async def plan_detail(plan_id: str) -> dict[str, Any]:
 
 @router.get('/shops')
 async def list_shops_endpoint(lat: float | None=None, lng: float | None=None) -> dict[str, Any]:
-    """店铺列表；传入 lat/lng（用户定位）时按真实经纬度排序并展示计算距离。"""
-    location = {'lat': lat, 'lng': lng} if lat is not None and lng is not None else None
-    shops = await repo.list_shops(None, location)
-    return {'shops': [_shop_card(s, location) for s in shops]}
+    """店铺列表（C 端）。
+
+    强制先选位置：未传 lat/lng 时返回空列表并置 require_location=True，由前端引导用户
+    选择定位后再请求。传入定位时仅返回「状态=营业中 且 距定位 ≤ delivery_radius_km」的店，
+    按距离升序，确保顾客看到的都是可配送、在营的真实店铺。
+    """
+    if lat is None or lng is None:
+        return {'shops': [], 'require_location': True}
+    location = {'lat': lat, 'lng': lng}
+    all_shops = await repo.list_shops(None, location)
+    radius = settings.delivery_radius_km
+    out = []
+    for s in all_shops:
+        if s.get('status') != '营业中':
+            continue
+        if s.get('lat') is not None:
+            d = catalog_store.distance_km(lat, lng, s['lat'], s['lng'])
+            if d > radius:
+                continue
+        out.append(_shop_card(s, location))
+    return {'shops': out, 'require_location': False}
 
 @router.get('/shops/{shop_id}')
 async def shop_detail_endpoint(shop_id: str) -> dict[str, Any]:
