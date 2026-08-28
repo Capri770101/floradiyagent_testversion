@@ -1,18 +1,17 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import QRCode from 'qrcode'
 import { TopBar } from '../components/TopBar'
 import { Button } from '../components/Button'
 import { IconCheckCircle } from '../components/icons'
-import { getOrder, payOrder, publicConfig } from '../api/shop'
+import { getOrder, payOrder, publicConfig, getPaymentStatus } from '../api/shop'
 import { calcPayable } from '../utils/price'
 import { toast } from '../utils/toast'
 import Reveal from '../components/Reveal'
 
 const PAY_METHODS = [
-  { id: 'wechat', name: '微信支付', color: '#B5985A' },
+  { id: 'wechat_native', name: '微信扫码支付', color: '#B5985A' },
   { id: 'alipay', name: '支付宝', color: '#cfcfcf' },
-  { id: 'union', name: '银联云闪付', color: '#cfcfcf' },
-  { id: 'huabei', name: '花呗', color: '#cfcfcf' },
 ]
 
 // 07 支付页
@@ -25,6 +24,8 @@ export default function Pay() {
   const [order, setOrder] = useState(null)
   const [shippingFee, setShippingFee] = useState(0)
   const [paying, setPaying] = useState(false)
+  const [qrCode, setQrCode] = useState(null) // 微信扫码支付二维码 dataURL
+  const [payResult, setPayResult] = useState(null) // 支付成功后的结果
 
   useEffect(() => {
     if (orderId) {
@@ -61,6 +62,26 @@ export default function Pay() {
     }
   }, [remain, order, paying, nav])
 
+  // 微信扫码支付：轮询支付状态，支付成功后跳转订单详情
+  useEffect(() => {
+    if (!qrCode || !payResult) return
+    let timer
+    const poll = async () => {
+      try {
+        const st = await getPaymentStatus(orderId)
+        if (st && st.paid) {
+          clearInterval(timer)
+          toast('支付成功！')
+          nav('/orders/' + orderId, { replace: true })
+        }
+      } catch (e) {
+        // 忽略轮询错误，继续尝试
+      }
+    }
+    timer = setInterval(poll, 2000)
+    return () => clearInterval(timer)
+  }, [qrCode, payResult, orderId, nav])
+
   const mm = String(Math.floor(remain / 60)).padStart(2, '0')
   const ss = String(remain % 60).padStart(2, '0')
   const total = order ? calcPayable(order.total_price, order.discount, shippingFee) : 0
@@ -72,9 +93,27 @@ export default function Pay() {
     if (!orderId || paying) return
     setPaying(true)
     try {
-      await payOrder(orderId, PAY_METHODS[sel].id)
+      const result = await payOrder(orderId, PAY_METHODS[sel].id)
+      // 微信扫码支付（NATIVE）：后端返回 code_url，前端渲染二维码
+      if (result?.pay_params?.code_url) {
+        const dataUrl = await QRCode.toDataURL(result.pay_params.code_url, { width: 220, margin: 1 })
+        setQrCode(dataUrl)
+        setPayResult(result)
+        toast('请使用微信扫一扫完成支付')
+        return
+      }
+      // H5 支付：后端返回 mweb_url，需要跳转到微信支付页面
+      if (result?.pay_params?.mweb_url) {
+        window.location.href = result.pay_params.mweb_url
+        return
+      }
+      // 支付宝支付：后端返回 pay_url，需要跳转
+      if (result?.pay_params?.pay_url) {
+        window.location.href = result.pay_params.pay_url
+        return
+      }
+      // sandbox 或其他模式：直接提示成功
       toast('支付成功！')
-      // 支付成功后直达订单详情，即时看到「待商家确认 / 商家已接单」等最新状态
       nav('/orders/' + orderId, { replace: true })
     } catch (e) {
       toast('支付失败：' + e.message, 'error')
@@ -164,6 +203,18 @@ export default function Pay() {
             收款方 跳舞兰
           </p>
         </Reveal>
+
+        {/* 微信扫码支付：显示二维码 */}
+        {qrCode && (
+          <Reveal delay={80}>
+            <div className="mt-6 flex flex-col items-center rounded-card bg-white p-5 border border-line">
+              <p className="text-[13px] font-medium text-dark">微信扫一扫支付</p>
+              <img src={qrCode} alt="微信支付二维码" className="mt-3 h-[220px] w-[220px]" />
+              <p className="mt-2 text-[11px] text-sub">打开微信 → 扫一扫 → 完成支付</p>
+              <p className="mt-1 text-[10px] text-sub">支付成功后页面将自动跳转</p>
+            </div>
+          </Reveal>
+        )}
 
         <Reveal delay={160}>
           <h2 className="mt-7 px-1 text-[15px] font-medium text-dark">支付方式</h2>

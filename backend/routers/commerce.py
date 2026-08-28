@@ -335,10 +335,11 @@ async def pay_endpoint(req: PayRequest, request: Request) -> dict[str, Any]:
 
 @router.post('/pay/notify/{provider}')
 async def pay_notify(provider: str, request: Request) -> Response:
-    """支付回调（微信 v3 / 支付宝）。验签解密通过后标记订单已支付。
+    """支付回调（微信 v3 / 微信 v2 / 支付宝）。验签解密通过后标记订单已支付。
 
-    微信期望返回 ``200 + {"code":"SUCCESS","message":"成功"}``；支付宝期望返回纯文本 ``success``。
-    验签失败返回渠道约定的「重试」响应（微信 FAIL / 支付宝 failure）。
+    微信 v3 / 沙箱返回 ``200 + {"code":"SUCCESS","message":"成功"}``；微信 v2 回调必须返回
+    ``<xml><return_code>SUCCESS</return_code></xml>``（否则微信持续重试）；支付宝返回纯文本 ``success``。
+    验签失败返回渠道约定的「重试」响应（由各 provider 的 ``notify_ack(False)`` 决定）。
     """
     try:
         prov = payment_module.get_provider(provider)
@@ -357,13 +358,9 @@ async def pay_notify(provider: str, request: Request) -> Response:
             return Response(content='failure', media_type='text/plain')
         return JSONResponse(status_code=500, content={'code': 'FAIL', 'message': '回调处理异常'})
     if not result or not getattr(result, 'paid', False):
-        if provider == 'alipay':
-            return Response(content='failure', media_type='text/plain')
-        return JSONResponse(status_code=400, content={'code': 'FAIL', 'message': '验签失败'})
+        return prov.notify_ack(False)
     await commerce.mark_order_paid(result.order_id, result.transaction_id)
-    if provider == 'alipay':
-        return Response(content='success', media_type='text/plain')
-    return JSONResponse(content={'code': 'SUCCESS', 'message': '成功'})
+    return prov.notify_ack(True)
 
 @router.get('/pay/{order_id}/status')
 async def pay_status(order_id: str, request: Request, user_id: str | None=None) -> dict[str, Any]:

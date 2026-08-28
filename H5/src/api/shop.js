@@ -104,6 +104,12 @@ export async function payOrder(orderId, method = 'wechat') {
   return data.pay
 }
 
+// 轮询订单支付状态（扫码支付回调不可达场景的兜底）
+export async function getPaymentStatus(orderId) {
+  const data = await api(`/pay/${encodeURIComponent(orderId)}/status`)
+  return data
+}
+
 // 更新订单收货信息（收货人 / 配送时间 / 备注）—— review 点名「收货人假交互」的后端真链路
 export async function updateOrder(orderId, patch) {
   const data = await api(`/orders/${encodeURIComponent(orderId)}`, {

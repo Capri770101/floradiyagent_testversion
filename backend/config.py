@@ -180,14 +180,26 @@ class Settings(BaseSettings):
     # wechat=微信支付 v3 JSAPI（小程序 wx.requestPayment）；alipay=支付宝手机网站支付。
     # 真实渠道凭据从环境变量注入，本文件不出现任何密钥字面值；缺凭据时 /pay 明确返回 400。
     payment_provider: str = "sandbox"
-    # 微信支付 v3
+    # 微信支付 v3（JSAPI 小程序）
     wechatpay_mch_id: str = ""            # 商户号
     wechatpay_appid: str = ""            # 小程序 appid（可留空，自动复用 WECHAT_APPID）
     wechatpay_api_v3_key: str = ""       # 32 字节 APIv3 密钥（回调 AES-GCM 解密用）
     wechatpay_serial_no: str = ""        # 商户 API 证书序列号
     wechatpay_private_key: str = ""      # 商户私钥 PEM（内容或文件路径）
-    wechatpay_public_cert: str = ""      # 微信平台证书 PEM（回调验签用，强烈建议配置）
+    wechatpay_public_cert: str = ""       # 微信平台证书 PEM（回调验签用，强烈建议配置）
+    # ---- 微信支付 V2（兼容 legacy 商户密钥：MD5 签名 / unifiedorder / MWEB / NATIVE）----
+    # 与 V3 并存：V3 接口保留，V2 用商户平台「API 密钥」(32 字节) 走 MD5，无需证书。
+    wechatpay_v2_mch_id: str = ""         # 商户号（与 V3 同号）
+    wechatpay_v2_api_key: str = ""        # 商户平台 API 密钥（MD5 签名用，32 字节，非 APIv3 密钥）
+    wechatpay_v2_notify_url: str = ""     # V2 支付回调地址
     wechatpay_notify_url: str = ""       # 支付成功回调地址（如 https://api.xxx.com/pay/notify/wechat）
+    # 微信支付 v2（H5 支付 MWEB）
+    wechatpay_v2_mch_id: str = ""        # 商户号（v2）
+    wechatpay_v2_api_key: str = ""       # APIv2 密钥（32 字节，HMAC-SHA256 签名用）
+    wechatpay_v2_serial_no: str = ""     # 商户证书序列号（v2 回调验签用）
+    wechatpay_v2_private_key: str = ""   # 商户私钥 PEM（v2 回调验签用，内容或文件路径）
+    wechatpay_v2_cert: str = ""          # 商户证书 PEM（v2 回调签名用，内容或文件路径）
+    wechatpay_v2_notify_url: str = ""    # 支付成功回调地址（v2）
     # 支付宝
     alipay_app_id: str = ""
     alipay_private_key: str = ""         # 应用私钥 PEM（内容或文件路径）
@@ -306,6 +318,11 @@ class Settings(BaseSettings):
                 and self.wechatpay_api_v3_key
                 and self.wechatpay_serial_no
                 and self.wechatpay_private_key
+            )
+        if self.payment_provider == "wechat_h5":
+            return bool(
+                self.wechatpay_v2_mch_id
+                and self.wechatpay_v2_api_key
             )
         if self.payment_provider == "alipay":
             return bool(self.alipay_app_id and self.alipay_private_key and self.alipay_public_key)

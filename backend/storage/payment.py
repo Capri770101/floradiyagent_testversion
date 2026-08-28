@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import abc
 import base64
+import hashlib
+import hmac
 import json
 import logging
 import secrets
@@ -33,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from fastapi.responses import JSONResponse, Response
 
 from backend.config import settings
 
@@ -98,6 +101,14 @@ class BaseProvider(abc.ABC):
     @abc.abstractmethod
     def verify_notify(self, body: bytes, headers: Mapping[str, str]) -> NotifyResult | None:
         """校验并解密支付回调；验签失败/无法识别返回 None。"""
+
+    def notify_ack(self, ok: bool) -> "Response":
+        """支付回调的渠道特定应答（成功/失败）。
+
+        微信 V3 / 沙箱返回 JSON；微信 V2 必须返回 XML；支付宝返回纯文本。
+        默认实现 JSON，子类按需覆盖。
+        """
+        return JSONResponse(content={'code': 'SUCCESS', 'message': '成功'} if ok else {'code': 'FAIL', 'message': '验签失败'})
 
 def _load_pem(value: str) -> str:
     """把配置里的 PEM 值归一化为 PEM 文本。
@@ -179,9 +190,18 @@ class WeChatPayProvider(BaseProvider):
         signature = self._rsa_sign(message, creds['private_key'])
         return f'''WECHATPAY2-SHA256-RSA2048 mchid="{creds['mchid']}",nonce_str="{nonce}",signature="{signature}",timestamp="{timestamp}",serial_no="{creds['serial']}"'''
 
-    def _post(self, url_path: str, payload: dict[str, Any], creds: dict[str, str]) -> dict[str, Any]:
-        """统一下单：签名 + POST + 校验，返回微信 JSON。"""
+    def create_payment(self, order: dict[str, Any], method: str, extra: dict[str, Any] | None=None) -> PaymentIntent:
+        creds = self._require_creds()
+        extra = extra or {}
+        openid = extra.get('openid')
+        if not openid:
+            raise PaymentConfigError('微信 JSAPI 支付需要下单用户 openid（extra.openid）')
+        amount_fen = int(round(float(order.get('total_price') or 0) * 100))
+        if amount_fen <= 0:
+            raise PaymentError('订单金额非法（需 > 0）')
+        payload = {'appid': creds['appid'], 'mchid': creds['mchid'], 'description': extra.get('description', f"花艺方案 {order['order_id']}"), 'out_trade_no': order['order_id'], 'notify_url': settings.wechatpay_notify_url or '', 'amount': {'total': amount_fen, 'currency': 'CNY'}, 'payer': {'openid': openid}}
         body_str = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
+        url_path = '/v3/pay/transactions/jsapi'
         auth = self._auth_header('POST', url_path, body_str, creds)
         headers = {'Authorization': auth, 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': 'flora-agent/1.0'}
         try:
@@ -190,59 +210,15 @@ class WeChatPayProvider(BaseProvider):
             raise PaymentGatewayError(f'微信支付下单网络错误: {exc}') from exc
         if resp.status_code != 200:
             raise PaymentGatewayError(f'微信支付下单失败 {resp.status_code}: {resp.text[:200]}')
-        return resp.json()
-
-    def create_payment(self, order: dict[str, Any], method: str, extra: dict[str, Any] | None=None) -> PaymentIntent:
-        """发起微信支付统一下单。
-
-        支持三种交易类型（非小程序 H5 网页场景为主）：
-        - ``jsapi``：公众号/小程序内调起，需 ``extra.openid``；
-        - ``mweb`` ：H5 支付，返回 ``mweb_url`` 由前端 302 跳微信 App 完成（无需 openid）；
-        - ``native``：扫码支付，返回 ``code_url`` 由前端出二维码（无需 openid/公众号）。
-        ``extra.trade_type`` 不填时：带 openid→jsapi，否则→mweb（最通用的网页兜底）。
-        """
-        creds = self._require_creds()
-        extra = extra or {}
-        openid = extra.get('openid')
-        trade_type = (extra.get('trade_type') or ('jsapi' if openid else 'mweb')).lower()
-        amount_fen = int(round(float(order.get('total_price') or 0) * 100))
-        if amount_fen <= 0:
-            raise PaymentError('订单金额非法（需 > 0）')
-        description = extra.get('description', f"花艺方案 {order['order_id']}")
-        base = {'appid': creds['appid'], 'mchid': creds['mchid'], 'description': description, 'out_trade_no': order['order_id'], 'notify_url': settings.wechatpay_notify_url or '', 'amount': {'total': amount_fen, 'currency': 'CNY'}}
-        if trade_type == 'jsapi':
-            if not openid:
-                raise PaymentConfigError('微信 JSAPI 支付需要下单用户 openid（extra.openid）')
-            base['payer'] = {'openid': openid}
-            url_path = '/v3/pay/transactions/jsapi'
-            data = self._post(url_path, base, creds)
-            prepay_id = data.get('prepay_id')
-            if not prepay_id:
-                raise PaymentGatewayError(f'微信支付未返回 prepay_id: {str(data)[:200]}')
-            ts = str(int(time.time()))
-            nonce = secrets.token_hex(16)
-            pkg = f'prepay_id={prepay_id}'
-            sign_msg = f"{creds['appid']}\n{ts}\n{nonce}\n{pkg}\n"
-            pay_sign = self._rsa_sign(sign_msg, creds['private_key'])
-            pay_params = {'trade_type': 'jsapi', 'appId': creds['appid'], 'timeStamp': ts, 'nonceStr': nonce, 'package': pkg, 'signType': 'RSA', 'paySign': pay_sign}
-        elif trade_type == 'mweb':
-            url_path = '/v3/pay/transactions/h5'
-            scene = extra.get('scene_info') or {'h5_info': {'type': 'Wap', 'wap_url': settings.public_base_url or 'https://c.tiaowulan.com', 'wap_name': 'floradiy'}}
-            base['scene_info'] = scene
-            data = self._post(url_path, base, creds)
-            mweb_url = data.get('h5_url')
-            if not mweb_url:
-                raise PaymentGatewayError(f'微信支付未返回 h5_url: {str(data)[:200]}')
-            pay_params = {'trade_type': 'mweb', 'mweb_url': mweb_url, 'redirect': True}
-        elif trade_type == 'native':
-            url_path = '/v3/pay/transactions/native'
-            data = self._post(url_path, base, creds)
-            code_url = data.get('code_url')
-            if not code_url:
-                raise PaymentGatewayError(f'微信支付未返回 code_url: {str(data)[:200]}')
-            pay_params = {'trade_type': 'native', 'code_url': code_url, 'qr': True}
-        else:
-            raise PaymentConfigError(f'不支持的微信交易类型: {trade_type}（可选 jsapi/mweb/native）')
+        prepay_id = resp.json().get('prepay_id')
+        if not prepay_id:
+            raise PaymentGatewayError(f'微信支付未返回 prepay_id: {resp.text[:200]}')
+        ts = str(int(time.time()))
+        nonce = secrets.token_hex(16)
+        pkg = f'prepay_id={prepay_id}'
+        sign_msg = f"{creds['appid']}\n{ts}\n{nonce}\n{pkg}\n"
+        pay_sign = self._rsa_sign(sign_msg, creds['private_key'])
+        pay_params = {'appId': creds['appid'], 'timeStamp': ts, 'nonceStr': nonce, 'package': pkg, 'signType': 'RSA', 'paySign': pay_sign}
         return PaymentIntent(order_id=order['order_id'], method='wechat', amount=amount_fen / 100, paid=False, pay_params=pay_params, page_path=settings.pay_page_path)
 
     def verify_notify(self, body: bytes, headers: Mapping[str, str]) -> NotifyResult | None:
@@ -330,7 +306,164 @@ class AlipayProvider(BaseProvider):
             logger.warning('[alipay notify] 验签失败')
             return None
         return NotifyResult(order_id=params.get('out_trade_no', ''), transaction_id=params.get('trade_no', ''), paid=params.get('trade_status') == 'TRADE_SUCCESS', raw=dict(params))
-PROVIDERS: dict[str, type[BaseProvider]] = {'sandbox': SandboxProvider, 'wechat': WeChatPayProvider, 'alipay': AlipayProvider}
+
+    def notify_ack(self, ok: bool) -> "Response":
+        """支付宝要求回调返回纯文本 success / failure。"""
+        return Response(content='success' if ok else 'failure', media_type='text/plain')
+
+class WeChatPayV2Provider(BaseProvider):
+    """微信支付 v2 H5 支付渠道（MWEB）。
+
+    适用于 H5 网页支付场景，用户在手机浏览器中完成支付。
+    使用 XML 格式 + HMAC-SHA256 签名。
+    """
+    name = 'wechat_h5'
+    API_BASE = 'https://api.mch.weixin.qq.com'
+
+    def _require_creds(self) -> dict[str, str]:
+        mchid = settings.wechatpay_v2_mch_id
+        api_key = settings.wechatpay_v2_api_key
+        if not (mchid and api_key):
+            raise PaymentConfigError('微信支付 v2 未完整配置：需要 WXPAY_V2_MCH_ID / WXPAY_V2_API_KEY')
+        return {'mchid': mchid, 'api_key': api_key}
+
+    def _xml_sign(self, params: dict[str, str], api_key: str) -> str:
+        """HMAC-SHA256 签名。"""
+        items = sorted((k, v) for k, v in params.items() if v and k != 'sign')
+        raw = '&'.join(f'{k}={v}' for k, v in items) + f'&key={api_key}'
+        return hmac.new(api_key.encode('utf-8'), raw.encode('utf-8'), hashlib.sha256).hexdigest().upper()
+
+    def _dict_to_xml(self, data: dict[str, str]) -> str:
+        """字典转 XML。"""
+        parts = ['<xml>']
+        for k, v in data.items():
+            parts.append(f'<{k}><![CDATA[{v}]]></{k}>')
+        parts.append('</xml>')
+        return ''.join(parts)
+
+    def _xml_to_dict(self, xml_str: str) -> dict[str, str]:
+        """XML 转字典（简单解析）。"""
+        import re
+        result = {}
+        for match in re.finditer(r'<(\w+)><!\[CDATA\[(.*?)\]\]></\1>', xml_str):
+            result[match.group(1)] = match.group(2)
+        for match in re.finditer(r'<(\w+)>([^<]+)</\1>', xml_str):
+            result[match.group(1)] = match.group(2)
+        return result
+
+    def create_payment(self, order: dict[str, Any], method: str, extra: dict[str, Any] | None=None) -> PaymentIntent:
+        creds = self._require_creds()
+        extra = extra or {}
+        amount_fen = int(round(float(order.get('total_price') or 0) * 100))
+        if amount_fen <= 0:
+            raise PaymentError('订单金额非法（需 > 0）')
+
+        spbill_create_ip = extra.get('spbill_create_ip', '127.0.0.1')
+
+        # 本系统统一使用扫码支付(NATIVE)：商户号只需开通「扫码支付」产品即可，
+        # 不依赖 H5支付(MWEB) 产品权限；appid 为微信要求必填项（取自 WECHAT_APPID）。
+        trade_type = 'NATIVE'
+
+        params = {
+            'appid': settings.wechat_appid or '',
+            'mch_id': creds['mchid'],
+            'nonce_str': secrets.token_hex(16),
+            'sign_type': 'HMAC-SHA256',
+            'body': extra.get('description', f"花艺方案 {order['order_id']}"),
+            'out_trade_no': order['order_id'],
+            'total_fee': str(amount_fen),
+            'spbill_create_ip': spbill_create_ip,
+            'notify_url': settings.wechatpay_v2_notify_url or '',
+            'trade_type': trade_type,
+        }
+        if settings.wechat_appid:
+            params['appid'] = settings.wechat_appid
+        params['sign'] = self._xml_sign(params, creds['api_key'])
+
+        xml_body = self._dict_to_xml(params)
+        try:
+            resp = httpx.post(
+                self.API_BASE + '/pay/unifiedorder',
+                content=xml_body.encode('utf-8'),
+                headers={'Content-Type': 'application/xml'},
+                timeout=10
+            )
+        except httpx.HTTPError as exc:
+            raise PaymentGatewayError(f'微信支付 v2 下单网络错误: {exc}') from exc
+
+        resp_data = self._xml_to_dict(resp.text)
+        if resp_data.get('return_code') != 'SUCCESS' or resp_data.get('result_code') != 'SUCCESS':
+            err_msg = resp_data.get('err_code_des') or resp_data.get('return_msg') or '未知错误'
+            raise PaymentGatewayError(f'微信支付 v2 下单失败: {err_msg}')
+
+        if trade_type == 'NATIVE':
+            code_url = resp_data.get('code_url')
+            if not code_url:
+                raise PaymentGatewayError(f'微信支付 v2 未返回 code_url: {resp.text[:200]}')
+            return PaymentIntent(
+                order_id=order['order_id'],
+                method='wechat_native',
+                amount=amount_fen / 100,
+                paid=False,
+                pay_params={'code_url': code_url, 'qr': True},
+                page_path=settings.pay_page_path
+            )
+        else:
+            mweb_url = resp_data.get('mweb_url')
+            if not mweb_url:
+                raise PaymentGatewayError(f'微信支付 v2 未返回 mweb_url: {resp.text[:200]}')
+            return PaymentIntent(
+                order_id=order['order_id'],
+                method='wechat_h5',
+                amount=amount_fen / 100,
+                paid=False,
+                pay_params={'mweb_url': mweb_url, 'redirect': True},
+                page_path=settings.pay_page_path
+            )
+
+    def verify_notify(self, body: bytes, headers: Mapping[str, str]) -> NotifyResult | None:
+        """微信 v2 支付回调验签。"""
+        try:
+            xml_str = body.decode('utf-8')
+            data = self._xml_to_dict(xml_str)
+        except Exception:
+            logger.warning('[wechat_h5 notify] XML 解析失败')
+            return None
+
+        if data.get('return_code') != 'SUCCESS':
+            return None
+
+        creds = self._require_creds()
+        sign = data.get('sign')
+        if not sign:
+            return None
+
+        expected_sign = self._xml_sign(data, creds['api_key'])
+        if sign != expected_sign:
+            logger.warning('[wechat_h5 notify] 验签失败')
+            return None
+
+        return NotifyResult(
+            order_id=data.get('out_trade_no', ''),
+            transaction_id=data.get('transaction_id', ''),
+            paid=data.get('result_code') == 'SUCCESS',
+            raw=data
+        )
+
+    def notify_ack(self, ok: bool) -> "Response":
+        """微信 V2 回调应答必须是 XML（否则微信持续重试）。"""
+        code = 'SUCCESS' if ok else 'FAIL'
+        return Response(
+            content=f'<xml><return_code><![CDATA[{code}]]></return_code></xml>',
+            media_type='application/xml',
+        )
+
+PROVIDERS: dict[str, type[BaseProvider]] = {
+    'sandbox': SandboxProvider,
+    'wechat': WeChatPayProvider,
+    'wechat_h5': WeChatPayV2Provider,
+    'alipay': AlipayProvider,
+}
 
 def get_provider(name: str | None=None) -> BaseProvider:
     """按名称取支付渠道实例；默认取 ``settings.payment_provider``（缺省 sandbox）。
