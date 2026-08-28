@@ -323,7 +323,7 @@ class AlipayProvider(BaseProvider):
         except Exception:
             logger.warning('[alipay notify] 验签失败')
             return None
-        return NotifyResult(order_id=params.get('out_trade_no', ''), transaction_id=params.get('trade_no', ''), paid=params.get('trade_status') == 'TRADE_SUCCESS', raw=dict(params))
+        return NotifyResult(order_id=params.get('out_trade_no', ''), transaction_id=params.get('trade_no', ''), paid=params.get('trade_status') in ('TRADE_SUCCESS', 'TRADE_FINISHED'), raw=dict(params))
 
 class WeChatPayV2Provider(BaseProvider):
     """微信支付 v2 H5 支付渠道（MWEB）。
