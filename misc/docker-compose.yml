@@ -93,11 +93,12 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./certs:/etc/nginx/certs:ro   # 放 fullchain.pem + privkey.pem
+      - ./certs:/etc/nginx/certs:ro   # 各域证书 <domain>.pem + <domain>.key
+      - ./nginx/frontends.conf:/etc/nginx/conf.d/frontends.conf:ro   # 按域加载证书（挂载，免重建）
     depends_on:
       - flora-agent
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q --no-check-certificate -O /dev/null https://127.0.0.1/ || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 5

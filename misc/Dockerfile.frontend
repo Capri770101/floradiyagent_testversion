@@ -3,6 +3,7 @@
 # 监听 80（→443 重定向）与 443（HTTPS，证书挂 volume）。上线改 server_name 为真实子域名。
 FROM node:20-alpine AS build
 WORKDIR /app
+ENV npm_config_registry=https://registry.npmmirror.com
 COPY H5/package*.json ./
 RUN npm ci --no-audit --no-fund
 COPY H5/ ./
