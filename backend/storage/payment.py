@@ -35,7 +35,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi.responses import JSONResponse, Response
 
 from backend.config import settings
 
@@ -102,22 +101,18 @@ class BaseProvider(abc.ABC):
     def verify_notify(self, body: bytes, headers: Mapping[str, str]) -> NotifyResult | None:
         """校验并解密支付回调；验签失败/无法识别返回 None。"""
 
-    def notify_ack(self, ok: bool) -> "Response":
-        """支付回调的渠道特定应答（成功/失败）。
-
-        微信 V3 / 沙箱返回 JSON；微信 V2 必须返回 XML；支付宝返回纯文本。
-        默认实现 JSON，子类按需覆盖。
-        """
-        return JSONResponse(content={'code': 'SUCCESS', 'message': '成功'} if ok else {'code': 'FAIL', 'message': '验签失败'})
-
 def _load_pem(value: str) -> str:
     """把配置里的 PEM 值归一化为 PEM 文本。
 
-    支持两种填写方式：① 直接贴 PEM 内容（含 ``-----BEGIN``）；② 填文件路径。
+    支持三种填写方式：
+    ① 直接贴 PEM 内容（含 ``-----BEGIN``，可单行用 ``\\n`` 代替换行）；
+    ② 填文件路径（如 /app/data/alipay_private_key.pem）。
     路径解析失败或值过短则原样返回（交给底层 load_pem_* 报错，错误信息足够定位）。
     """
     if not value:
         return value
+    # .env 中无法写多行，常用 ``\n`` 字面量代替换行，这里还原
+    value = value.replace('\\n', '\n')
     if '-----BEGIN' in value:
         return value
     if len(value) < 400 and ('/' in value or '\\' in value or value.endswith('.pem')):
@@ -259,11 +254,28 @@ class AlipayProvider(BaseProvider):
 
     def _require_creds(self) -> dict[str, str]:
         app_id = settings.alipay_app_id
-        private_key = _load_pem(settings.alipay_private_key)
-        public_key = _load_pem(settings.alipay_public_key)
-        if not (app_id and private_key and public_key):
-            raise PaymentConfigError('支付宝未完整配置：需要 ALIPAY_APP_ID / ALIPAY_PRIVATE_KEY / ALIPAY_PUBLIC_KEY')
+        private_key = self._wrap_key(_load_pem(settings.alipay_private_key), 'private')
+        public_key = self._wrap_key(_load_pem(settings.alipay_public_key), 'public')
+        # 拉起支付只需 app_id + 应用私钥（用于签名）；支付宝公钥仅回调验签时需要。
+        if not (app_id and private_key):
+            raise PaymentConfigError('支付宝未完整配置：需要 ALIPAY_APP_ID / ALIPAY_PRIVATE_KEY')
         return {'app_id': app_id, 'private_key': private_key, 'public_key': public_key}
+
+    @staticmethod
+    def _wrap_key(raw: str, kind: str) -> str:
+        """支付宝平台导出的密钥可能是裸 base64（无 PEM 头），这里自动包裹为 PEM。
+
+        - 私钥：裸 base64 -> PKCS#8（``-----BEGIN PRIVATE KEY-----``）。
+        - 公钥：裸 base64 -> SPKI（``-----BEGIN PUBLIC KEY-----``）。
+        已是 PEM（含 ``-----BEGIN``）则原样返回。
+        """
+        if not raw:
+            return raw
+        if '-----BEGIN' in raw:
+            return raw
+        if kind == 'private':
+            return f"-----BEGIN PRIVATE KEY-----\n{raw}\n-----END PRIVATE KEY-----"
+        return f"-----BEGIN PUBLIC KEY-----\n{raw}\n-----END PUBLIC KEY-----"
 
     def _rsa2_sign(self, raw: str, private_key_pem: str) -> str:
         """支付宝 RSA2 签名（SHA256withRSA，PKCS#1 v1.5）。"""
@@ -283,7 +295,10 @@ class AlipayProvider(BaseProvider):
         creds = self._require_creds()
         extra = extra or {}
         amount = f"{float(order.get('total_price') or 0):.2f}"
-        biz = json.dumps({'out_trade_no': order['order_id'], 'total_amount': amount, 'subject': extra.get('description', f"花艺方案 {order['order_id']}"), 'product_code': 'QUICK_WAP_WAY'}, ensure_ascii=False)
+        biz_dict = {'out_trade_no': order['order_id'], 'total_amount': amount, 'subject': extra.get('description', f"花艺方案 {order['order_id']}"), 'product_code': 'QUICK_WAP_WAY'}
+        if settings.public_base_url:
+            biz_dict['return_url'] = f"{settings.public_base_url.rstrip('/')}/orders/{order['order_id']}"
+        biz = json.dumps(biz_dict, ensure_ascii=False)
         common = {'app_id': creds['app_id'], 'method': 'alipay.trade.wap.pay', 'charset': 'utf-8', 'sign_type': 'RSA2', 'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'), 'version': '1.0', 'notify_url': settings.alipay_notify_url or '', 'biz_content': biz}
         common['sign'] = self._rsa2_sign(self._sorted_sign_str(common), creds['private_key'])
         pay_url = settings.alipay_gateway + '?' + urlencode(common)
@@ -296,6 +311,9 @@ class AlipayProvider(BaseProvider):
         if not sign:
             return None
         creds = self._require_creds()
+        if not creds['public_key']:
+            logger.warning('[alipay notify] 未配置支付宝公钥，验签跳过（请配置 ALIPAY_PUBLIC_KEY）')
+            return None
         raw = self._sorted_sign_str(params)
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import padding
@@ -306,10 +324,6 @@ class AlipayProvider(BaseProvider):
             logger.warning('[alipay notify] 验签失败')
             return None
         return NotifyResult(order_id=params.get('out_trade_no', ''), transaction_id=params.get('trade_no', ''), paid=params.get('trade_status') == 'TRADE_SUCCESS', raw=dict(params))
-
-    def notify_ack(self, ok: bool) -> "Response":
-        """支付宝要求回调返回纯文本 success / failure。"""
-        return Response(content='success' if ok else 'failure', media_type='text/plain')
 
 class WeChatPayV2Provider(BaseProvider):
     """微信支付 v2 H5 支付渠道（MWEB）。
@@ -450,14 +464,6 @@ class WeChatPayV2Provider(BaseProvider):
             raw=data
         )
 
-    def notify_ack(self, ok: bool) -> "Response":
-        """微信 V2 回调应答必须是 XML（否则微信持续重试）。"""
-        code = 'SUCCESS' if ok else 'FAIL'
-        return Response(
-            content=f'<xml><return_code><![CDATA[{code}]]></return_code></xml>',
-            media_type='application/xml',
-        )
-
 PROVIDERS: dict[str, type[BaseProvider]] = {
     'sandbox': SandboxProvider,
     'wechat': WeChatPayProvider,
@@ -465,13 +471,27 @@ PROVIDERS: dict[str, type[BaseProvider]] = {
     'alipay': AlipayProvider,
 }
 
+# 前端 method 名 -> 内部渠道名 别名映射（解耦前端 UI 与后端渠道）
+_METHOD_ALIASES: dict[str, str] = {
+    'wechat': 'wechat_h5',
+    'wechat_native': 'wechat_h5',
+    'wechat_h5': 'wechat_h5',
+    'alipay': 'alipay',
+    'ali': 'alipay',
+}
+
+
 def get_provider(name: str | None=None) -> BaseProvider:
     """按名称取支付渠道实例；默认取 ``settings.payment_provider``（缺省 sandbox）。
+
+    支持前端 method 别名（如 ``wechat_native`` -> ``wechat_h5``），便于同一后端同时
+    提供多种真实支付渠道（微信扫码 + 支付宝）。
 
     Raises:
         PaymentConfigError: 渠道名未知。
     """
     name = (name or settings.payment_provider or 'sandbox').lower()
+    name = _METHOD_ALIASES.get(name, name)
     cls = PROVIDERS.get(name)
     if not cls:
         raise PaymentConfigError(f"未知支付渠道: {name}（可选：{', '.join(PROVIDERS)}）")

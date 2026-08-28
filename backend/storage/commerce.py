@@ -704,7 +704,7 @@ async def pay_order(order_id: str, method: str='wechat', extra: dict[str, Any] |
         pay_order_ctx = dict(order)
         payable = max(0.0, float(order.get('total_price') or 0) + shipping - float(order.get('discount') or 0))
         pay_order_ctx['total_price'] = payable
-        provider = payment_module.get_provider()
+        provider = payment_module.get_provider(method)
         try:
             intent = provider.create_payment(pay_order_ctx, method, extra)
         except payment_module.PaymentError:
