@@ -179,18 +179,9 @@ class WeChatPayProvider(BaseProvider):
         signature = self._rsa_sign(message, creds['private_key'])
         return f'''WECHATPAY2-SHA256-RSA2048 mchid="{creds['mchid']}",nonce_str="{nonce}",signature="{signature}",timestamp="{timestamp}",serial_no="{creds['serial']}"'''
 
-    def create_payment(self, order: dict[str, Any], method: str, extra: dict[str, Any] | None=None) -> PaymentIntent:
-        creds = self._require_creds()
-        extra = extra or {}
-        openid = extra.get('openid')
-        if not openid:
-            raise PaymentConfigError('微信 JSAPI 支付需要下单用户 openid（extra.openid）')
-        amount_fen = int(round(float(order.get('total_price') or 0) * 100))
-        if amount_fen <= 0:
-            raise PaymentError('订单金额非法（需 > 0）')
-        payload = {'appid': creds['appid'], 'mchid': creds['mchid'], 'description': extra.get('description', f"花艺方案 {order['order_id']}"), 'out_trade_no': order['order_id'], 'notify_url': settings.wechatpay_notify_url or '', 'amount': {'total': amount_fen, 'currency': 'CNY'}, 'payer': {'openid': openid}}
+    def _post(self, url_path: str, payload: dict[str, Any], creds: dict[str, str]) -> dict[str, Any]:
+        """统一下单：签名 + POST + 校验，返回微信 JSON。"""
         body_str = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
-        url_path = '/v3/pay/transactions/jsapi'
         auth = self._auth_header('POST', url_path, body_str, creds)
         headers = {'Authorization': auth, 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': 'flora-agent/1.0'}
         try:
@@ -199,15 +190,59 @@ class WeChatPayProvider(BaseProvider):
             raise PaymentGatewayError(f'微信支付下单网络错误: {exc}') from exc
         if resp.status_code != 200:
             raise PaymentGatewayError(f'微信支付下单失败 {resp.status_code}: {resp.text[:200]}')
-        prepay_id = resp.json().get('prepay_id')
-        if not prepay_id:
-            raise PaymentGatewayError(f'微信支付未返回 prepay_id: {resp.text[:200]}')
-        ts = str(int(time.time()))
-        nonce = secrets.token_hex(16)
-        pkg = f'prepay_id={prepay_id}'
-        sign_msg = f"{creds['appid']}\n{ts}\n{nonce}\n{pkg}\n"
-        pay_sign = self._rsa_sign(sign_msg, creds['private_key'])
-        pay_params = {'appId': creds['appid'], 'timeStamp': ts, 'nonceStr': nonce, 'package': pkg, 'signType': 'RSA', 'paySign': pay_sign}
+        return resp.json()
+
+    def create_payment(self, order: dict[str, Any], method: str, extra: dict[str, Any] | None=None) -> PaymentIntent:
+        """发起微信支付统一下单。
+
+        支持三种交易类型（非小程序 H5 网页场景为主）：
+        - ``jsapi``：公众号/小程序内调起，需 ``extra.openid``；
+        - ``mweb`` ：H5 支付，返回 ``mweb_url`` 由前端 302 跳微信 App 完成（无需 openid）；
+        - ``native``：扫码支付，返回 ``code_url`` 由前端出二维码（无需 openid/公众号）。
+        ``extra.trade_type`` 不填时：带 openid→jsapi，否则→mweb（最通用的网页兜底）。
+        """
+        creds = self._require_creds()
+        extra = extra or {}
+        openid = extra.get('openid')
+        trade_type = (extra.get('trade_type') or ('jsapi' if openid else 'mweb')).lower()
+        amount_fen = int(round(float(order.get('total_price') or 0) * 100))
+        if amount_fen <= 0:
+            raise PaymentError('订单金额非法（需 > 0）')
+        description = extra.get('description', f"花艺方案 {order['order_id']}")
+        base = {'appid': creds['appid'], 'mchid': creds['mchid'], 'description': description, 'out_trade_no': order['order_id'], 'notify_url': settings.wechatpay_notify_url or '', 'amount': {'total': amount_fen, 'currency': 'CNY'}}
+        if trade_type == 'jsapi':
+            if not openid:
+                raise PaymentConfigError('微信 JSAPI 支付需要下单用户 openid（extra.openid）')
+            base['payer'] = {'openid': openid}
+            url_path = '/v3/pay/transactions/jsapi'
+            data = self._post(url_path, base, creds)
+            prepay_id = data.get('prepay_id')
+            if not prepay_id:
+                raise PaymentGatewayError(f'微信支付未返回 prepay_id: {str(data)[:200]}')
+            ts = str(int(time.time()))
+            nonce = secrets.token_hex(16)
+            pkg = f'prepay_id={prepay_id}'
+            sign_msg = f"{creds['appid']}\n{ts}\n{nonce}\n{pkg}\n"
+            pay_sign = self._rsa_sign(sign_msg, creds['private_key'])
+            pay_params = {'trade_type': 'jsapi', 'appId': creds['appid'], 'timeStamp': ts, 'nonceStr': nonce, 'package': pkg, 'signType': 'RSA', 'paySign': pay_sign}
+        elif trade_type == 'mweb':
+            url_path = '/v3/pay/transactions/h5'
+            scene = extra.get('scene_info') or {'h5_info': {'type': 'Wap', 'wap_url': settings.public_base_url or 'https://c.tiaowulan.com', 'wap_name': 'floradiy'}}
+            base['scene_info'] = scene
+            data = self._post(url_path, base, creds)
+            mweb_url = data.get('h5_url')
+            if not mweb_url:
+                raise PaymentGatewayError(f'微信支付未返回 h5_url: {str(data)[:200]}')
+            pay_params = {'trade_type': 'mweb', 'mweb_url': mweb_url, 'redirect': True}
+        elif trade_type == 'native':
+            url_path = '/v3/pay/transactions/native'
+            data = self._post(url_path, base, creds)
+            code_url = data.get('code_url')
+            if not code_url:
+                raise PaymentGatewayError(f'微信支付未返回 code_url: {str(data)[:200]}')
+            pay_params = {'trade_type': 'native', 'code_url': code_url, 'qr': True}
+        else:
+            raise PaymentConfigError(f'不支持的微信交易类型: {trade_type}（可选 jsapi/mweb/native）')
         return PaymentIntent(order_id=order['order_id'], method='wechat', amount=amount_fen / 100, paid=False, pay_params=pay_params, page_path=settings.pay_page_path)
 
     def verify_notify(self, body: bytes, headers: Mapping[str, str]) -> NotifyResult | None:

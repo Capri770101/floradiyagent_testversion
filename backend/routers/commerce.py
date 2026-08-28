@@ -317,6 +317,8 @@ async def pay_endpoint(req: PayRequest, request: Request) -> dict[str, Any]:
     extra = {}
     if req.openid:
         extra['openid'] = req.openid
+    if req.trade_type:
+        extra['trade_type'] = req.trade_type
     if req.description:
         extra['description'] = req.description
     try:
