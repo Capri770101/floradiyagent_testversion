@@ -195,21 +195,34 @@ def test_merchant_orders_date_filter(client):
 def test_merchant_categories_crud(client):
     token = _register(client, 'mer_n', bind='S001')
     h = _merchant_headers(token)
-    r = client.get('/merchant/categories', headers=h)
+    r = client.get('/merchant/categories', params={'shop_id': 'S001'}, headers=h)
     assert r.status_code == 200
     cats = r.json()['categories']
     assert cats and 'plan_count' in cats[0]
-    r = client.post('/merchant/categories', json={'name': '测试分类'}, headers=h)
+    # 初始应含平台全局分类（cat_holiday 等），且不包含其他店铺的私有分类
+    global_ids = {c['id'] for c in cats if c.get('shop_id') is None}
+    assert 'cat_daily' in global_ids or 'cat_holiday' in global_ids
+    r = client.post('/merchant/categories', params={'shop_id': 'S001'}, json={'name': '测试分类'}, headers=h)
     assert r.status_code == 200, r.text
     cid = r.json()['category']['id']
-    r = client.post('/merchant/categories', json={'name': '测试分类'}, headers=h)
+    assert cid.startswith('cat_S001_')
+    r = client.post('/merchant/categories', params={'shop_id': 'S001'}, json={'name': '测试分类'}, headers=h)
     assert r.status_code == 400
-    r = client.put(f'/merchant/categories/{cid}', json={'name': '测试分类2'}, headers=h)
+    r = client.put(f'/merchant/categories/{cid}', params={'shop_id': 'S001'}, json={'name': '测试分类2'}, headers=h)
     assert r.status_code == 200
     assert r.json()['category']['name'] == '测试分类2'
-    r = client.delete(f'/merchant/categories/{cid}', headers=h)
+    # 店铺隔离：另一家 S002 的商家看不到 S001 的私有分类，也不能删/改它
+    token2 = _register(client, 'mer_n2', bind='S002')
+    h2 = _merchant_headers(token2)
+    cats2 = client.get('/merchant/categories', params={'shop_id': 'S002'}, headers=h2).json()['categories']
+    assert all(c['id'] != cid for c in cats2)
+    assert client.delete(f'/merchant/categories/{cid}', params={'shop_id': 'S002'}, headers=h2).status_code == 404
+    assert client.put(f'/merchant/categories/{cid}', params={'shop_id': 'S002'}, json={'name': 'x'}, headers=h2).status_code == 400
+    # 越权访问未绑定店铺 403
+    assert client.get('/merchant/categories', params={'shop_id': 'S999'}, headers=h).status_code == 403
+    r = client.delete(f'/merchant/categories/{cid}', params={'shop_id': 'S001'}, headers=h)
     assert r.status_code == 200
-    assert client.get('/merchant/categories').status_code == 401
+    assert client.get('/merchant/categories', params={'shop_id': 'S001'}).status_code == 401
 
 def test_merchant_update_shop_decoration(client):
     token = _register(client, 'mer_o', bind='S001')

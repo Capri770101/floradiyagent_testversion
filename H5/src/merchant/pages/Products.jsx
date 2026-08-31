@@ -59,12 +59,13 @@ export function Products() {
   }, [shopId])
 
   const loadCategories = useCallback(async () => {
+    if (!shopId) return
     try {
-      setCategories(await merchantCategories())
+      setCategories(await merchantCategories(shopId))
     } catch (e) {
       setErr(e.message || '分类加载失败')
     }
-  }, [])
+  }, [shopId])
 
   useEffect(() => {
     loadShops()
@@ -195,7 +196,7 @@ export function Products() {
     if (!name || catBusy) return
     setCatBusy(true)
     try {
-      await merchantCreateCategory(name)
+      await merchantCreateCategory(name, shopId)
       setCatDraft('')
       await loadCategories()
     } catch (e2) {
@@ -210,7 +211,7 @@ export function Products() {
     if (!next || next === cat.name) return
     setCatBusy(true)
     try {
-      await merchantRenameCategory(cat.id, next)
+      await merchantRenameCategory(cat.id, next, shopId)
       setEditingCat(null)
       await loadCategories()
     } catch (e2) {
@@ -225,7 +226,7 @@ export function Products() {
     if (cat.plan_count === 0 && !window.confirm(`确定删除分类「${cat.name}」？`)) return
     setCatBusy(true)
     try {
-      await merchantDeleteCategory(cat.id)
+      await merchantDeleteCategory(cat.id, shopId)
       await loadCategories()
     } catch (e2) {
       setErr(e2.message || '删除失败')

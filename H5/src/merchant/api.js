@@ -204,26 +204,30 @@ export async function merchantUpload(file) {
   return data.url
 }
 
-export async function merchantCategories() {
-  const data = await request('/merchant/categories')
+export async function merchantCategories(shopId) {
+  const data = await request('/merchant/categories', { params: { shop_id: shopId } })
   return data.categories
 }
 
-export async function merchantCreateCategory(name) {
-  const data = await request('/merchant/categories', { method: 'POST', body: { name } })
+export async function merchantCreateCategory(name, shopId) {
+  const data = await request('/merchant/categories', { method: 'POST', params: { shop_id: shopId }, body: { name } })
   return data.category
 }
 
-export async function merchantRenameCategory(catId, name) {
+export async function merchantRenameCategory(catId, name, shopId) {
   const data = await request(`/merchant/categories/${encodeURIComponent(catId)}`, {
     method: 'PUT',
+    params: { shop_id: shopId },
     body: { name },
   })
   return data.category
 }
 
-export async function merchantDeleteCategory(catId) {
-  await request(`/merchant/categories/${encodeURIComponent(catId)}`, { method: 'DELETE' })
+export async function merchantDeleteCategory(catId, shopId) {
+  await request(`/merchant/categories/${encodeURIComponent(catId)}`, {
+    method: 'DELETE',
+    params: { shop_id: shopId },
+  })
 }
 
 export async function merchantChats() {

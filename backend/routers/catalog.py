@@ -43,8 +43,8 @@ async def public_config() -> dict[str, Any]:
 
 @router.get('/categories')
 async def list_categories_endpoint() -> dict[str, Any]:
-    """公开分类目录（C 端分类页导航；种子分类，无需登录）。"""
-    return {'categories': await catalog_store.list_categories()}
+    """公开分类目录（C 端分类页导航；仅平台全局分类，不泄漏各店私有分类）。"""
+    return {'categories': await catalog_store.list_categories(global_only=True)}
 
 @router.get('/health')
 async def health() -> dict[str, Any]:

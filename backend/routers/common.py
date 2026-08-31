@@ -309,7 +309,7 @@ async def _shop_full(s: dict[str, Any]) -> dict[str, Any]:
     """
     raw = await asyncio.gather(*[repo.get_plan(pid) for pid in s.get('plan_ids', [])])
     plans = [p for p in raw if p]
-    cats = await catalog_store.list_categories()
+    cats = await catalog_store.list_categories(s.get('shop_id') or s.get('id', ''))
     cat_map = {c['id']: c['name'] for c in cats}
     menu: list[dict[str, Any]] = []
     for c in cats:

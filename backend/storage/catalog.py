@@ -407,36 +407,46 @@ async def merchant_delete_plan(plan_id: str, shop_id: str) -> bool:
             await c.execute('DELETE FROM plans WHERE id=?', (plan_id,))
     return True
 
-async def create_category(name: str) -> dict[str, Any] | None:
-    """新增分类，返回完整对象；重名返回 None。"""
+async def create_category(name: str, shop_id: str='') -> dict[str, Any] | None:
+    """新增分类，返回完整对象；同店铺内重名返回 None。
+
+    shop_id 为空 = 平台全局分类（admin 用）；非空 = 该店铺私有分类，
+    商家只在自己店铺内管理，互不影响。私有分类 id 带店铺前缀 `cat_{shop}_...`。
+    """
     import uuid as _uuid
     name = (name or '').strip()
     if not name:
         return None
     async with dba.transaction() as c:
-        rows = await c.execute('SELECT 1 FROM categories WHERE name=?', (name,))
+        rows = await c.execute('SELECT 1 FROM categories WHERE name=? AND (shop_id IS NULL OR shop_id=?)', (name, shop_id))
     if rows:
         return None
     cat_id = f'cat_{_uuid.uuid4().hex[:8]}'
+    if shop_id:
+        cat_id = f'cat_{shop_id}_{_uuid.uuid4().hex[:6]}'
     async with dba.transaction() as c:
-        nxt_rows = await c.execute('SELECT COALESCE(MAX(sort),0)+1 AS nxt FROM categories')
+        nxt_rows = await c.execute('SELECT COALESCE(MAX(sort),0)+1 AS nxt FROM categories WHERE shop_id IS NULL OR shop_id=?', (shop_id,))
     nxt = nxt_rows[0]['nxt'] if nxt_rows else 1
     async with dba.transaction() as c:
-        await c.execute('INSERT INTO categories(id, name, sort, created_at) VALUES (?,?,?,?)', (cat_id, name[:20], nxt, _now()))
+        await c.execute('INSERT INTO categories(id, name, sort, shop_id, created_at) VALUES (?,?,?,?,?)', (cat_id, name[:20], nxt, shop_id or None, _now()))
     async with dba.transaction() as c:
         rows = await c.execute('SELECT * FROM categories WHERE id=?', (cat_id,))
     row = rows[0] if rows else None
     return dict(row) if row else None
 
-async def rename_category(cat_id: str, name: str) -> dict[str, Any] | None:
-    """改分类名；重名或不存在返回 None。"""
+async def rename_category(cat_id: str, name: str, shop_id: str='') -> dict[str, Any] | None:
+    """改分类名（仅店铺归属者或全局分类可改）；重名或不存在返回 None。"""
     name = (name or '').strip()
     async with dba.transaction() as c:
-        rows = await c.execute('SELECT 1 FROM categories WHERE id=?', (cat_id,))
+        rows = await c.execute('SELECT * FROM categories WHERE id=?', (cat_id,))
     if not name or not rows:
         return None
+    row = rows[0]
+    owner = row['shop_id'] or ''
+    if owner != shop_id:
+        return None
     async with dba.transaction() as c:
-        dup = await c.execute('SELECT 1 FROM categories WHERE name=? AND id<>?', (name, cat_id))
+        dup = await c.execute('SELECT 1 FROM categories WHERE name=? AND id<>? AND (shop_id IS NULL OR shop_id=?)', (name, cat_id, shop_id))
     if dup:
         return None
     async with dba.transaction() as c:
@@ -446,14 +456,27 @@ async def rename_category(cat_id: str, name: str) -> dict[str, Any] | None:
     row = rows[0] if rows else None
     return dict(row) if row else None
 
-async def delete_category(cat_id: str) -> bool:
-    """删除分类（挂靠商品自动回落到默认分类 cat_daily）。返回是否删到。"""
+async def delete_category(cat_id: str, shop_id: str='') -> bool:
+    """删除分类（挂靠商品回落到默认分类 cat_daily，若属店铺则回落到该店首个分类或全局默认）。
+
+    仅店铺归属者或全局分类可删；返回是否删到。
+    """
     async with dba.transaction() as c:
-        rows = await c.execute('SELECT 1 FROM categories WHERE id=?', (cat_id,))
+        rows = await c.execute('SELECT * FROM categories WHERE id=?', (cat_id,))
     if not rows:
         return False
+    row = rows[0]
+    owner = row['shop_id'] or ''
+    if owner != shop_id:
+        return False
+    fallback = 'cat_daily'
+    if owner:
+        async with dba.transaction() as c:
+            mine = await c.execute('SELECT id FROM categories WHERE shop_id=? AND id<>? ORDER BY sort ASC, id ASC LIMIT 1', (owner, cat_id))
+        if mine:
+            fallback = mine[0]['id']
     async with dba.transaction() as c:
-        await c.execute("UPDATE plans SET category_id='cat_daily' WHERE category_id=?", (cat_id,))
+        await c.execute('UPDATE plans SET category_id=? WHERE category_id=?', (fallback, cat_id))
         await c.execute('DELETE FROM categories WHERE id=?', (cat_id,))
     return True
 
@@ -576,11 +599,33 @@ async def list_plans() -> list[dict[str, Any]]:
         rows = await c.execute('SELECT * FROM plans ORDER BY created_at')
     return [_row_to_plan(r) for r in rows]
 
-async def list_categories() -> list[dict[str, Any]]:
-    """全部分类（按 sort 升序，含挂靠商品数 plan_count），
-    供店铺详情页的分类菜单 / 管理后台 / 商家端分类管理使用。"""
+async def list_categories(shop_id: str='', global_only: bool=False) -> list[dict[str, Any]]:
+    """分类列表（按 sort 升序，含挂靠商品数 plan_count）。
+
+    shop_id 为空且 global_only=False → 全部（管理后台 / 平台全局视角）。
+    shop_id 为空且 global_only=True  → 仅平台全局分类（C 端公开导航）。
+    非空 shop_id → 仅该店铺自己的分类（完全独立，不共享全局分类）。
+    """
+    if shop_id:
+        sql = ("SELECT c.id, c.name, c.sort, c.shop_id,\n"
+               "  (SELECT COUNT(*) FROM plans p JOIN shop_plans sp ON p.id=sp.plan_id\n"
+               "   WHERE p.category_id=c.id AND sp.shop_id=? AND sp.status='on') AS plan_count\n"
+               "FROM categories c WHERE c.shop_id=?\n"
+               "ORDER BY c.sort ASC, c.id ASC")
+        args: tuple = (shop_id, shop_id)
+    elif global_only:
+        sql = ('SELECT c.id, c.name, c.sort, c.shop_id,\n'
+               '  (SELECT COUNT(*) FROM plans p WHERE p.category_id=c.id) AS plan_count\n'
+               'FROM categories c WHERE c.shop_id IS NULL\n'
+               'ORDER BY c.sort ASC, c.id ASC')
+        args = ()
+    else:
+        sql = ('SELECT c.id, c.name, c.sort, c.shop_id,\n'
+               '  (SELECT COUNT(*) FROM plans p WHERE p.category_id=c.id) AS plan_count\n'
+               'FROM categories c ORDER BY c.sort ASC, c.id ASC')
+        args = ()
     async with dba.transaction() as c:
-        rows = await c.execute('SELECT c.id, c.name, c.sort,\n                      (SELECT COUNT(*) FROM plans p WHERE p.category_id=c.id) AS plan_count\n               FROM categories c ORDER BY c.sort ASC, c.id ASC')
+        rows = await c.execute(sql, args)
     return [dict(r) for r in rows]
 
 async def plan_shop_id(plan_id: str) -> str | None:
