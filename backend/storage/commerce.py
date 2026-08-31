@@ -595,6 +595,9 @@ async def get_order(order_id: str) -> dict[str, Any] | None:
             d['share_url'] = f"{base}/card-share/{d['card_token']}" if base else None
         else:
             d['share_url'] = None
+        # 实付金额（payments 表实际支付金额，可能与 total_price 不同）
+        pay_row = _fetchone(await c.execute("SELECT amount FROM payments WHERE order_id=? AND status IN ('paid','refunded') ORDER BY created_at DESC LIMIT 1", (order_id,)))
+        d['paid_amount'] = float(pay_row['amount']) if pay_row else None
         # 商家拒单退款信息（拒单时订单转 canceled + payments refunded）
         if d.get('merchant_status') == 'rejected':
             pay = _fetchone(await c.execute("SELECT amount, paid_at FROM payments WHERE order_id=? AND status='refunded'", (order_id,)))
@@ -764,6 +767,61 @@ async def mark_order_paid(order_id: str, transaction_id: str='') -> bool:
         await _notify_merchants(c, dict(row))
         return True
 
+def _pick_refund_provider(payment_method: str | None=None):
+    """选择退款渠道实例。
+
+    sandbox 模式恒走 SandboxProvider（模拟成功，dev/测试零成本）；
+    否则按支付方式（payments.method）取真实渠道。取不到时按配置渠道兜底。
+    """
+    from backend.config import settings
+    if settings.payment_provider == 'sandbox':
+        return payment_module.SandboxProvider()
+    try:
+        return payment_module.get_provider(payment_method or None)
+    except payment_module.PaymentConfigError:
+        return payment_module.get_provider()
+
+async def _do_refund(conn, order: dict[str, Any], amount: float | None=None, reason: str='') -> dict[str, Any]:
+    """在调用方事务内执行「原路退款」并落库支付记录 + 物流时间线。
+
+    仅对 status='paid' 的 payments 行退款；沙箱模拟成功。返回退款结果 dict。
+    调用方（merchant_reject_order / refund_order / 售后）负责订单侧状态流转。
+    """
+    # 防重复退款：已有 refunded 记录则拒绝
+    already_refunded = _fetchone(await conn.execute("SELECT id FROM payments WHERE order_id=? AND status='refunded' LIMIT 1", (order.get('order_id'),)))
+    if already_refunded:
+        raise ValueError('该订单已退款，请勿重复操作')
+
+    pay = _fetchone(await conn.execute("SELECT * FROM payments WHERE order_id=? AND status='paid' ORDER BY created_at DESC LIMIT 1", (order.get('order_id'),)))
+    if not pay:
+        raise ValueError('订单无已支付记录，无法退款')
+    payment_method = pay['method']
+    paid_amount = float(pay['amount'])
+    prov = _pick_refund_provider(payment_method)
+    # amount=None → 全额退款（用实际支付金额）
+    refund = prov.request_refund(order, amount if amount is not None else paid_amount, reason or '', paid_amount=paid_amount)
+    if refund:
+        await conn.execute("UPDATE payments SET status='refunded' WHERE order_id=? AND status='paid'", (order.get('order_id'),))
+        await _append_logistics(order.get('order_id'), f'已退款 ¥{refund.amount:.2f}，款项将原路退回')
+    return {'order_id': order.get('order_id'), 'refund_id': getattr(refund, 'refund_id', ''), 'amount': getattr(refund, 'amount', 0.0), 'status': getattr(refund, 'status', 'refunded')}
+
+async def refund_order(order_id: str, amount: float | None=None, reason: str='') -> dict[str, Any] | None:
+    """按订单原路退款（用户侧 / 管理侧统一入口）。
+
+    校验订单已支付后执行真实退款（或沙箱模拟），把 payments 标为 refunded，
+    追加物流时间线，返回退款结果 dict；订单不存在返回 None。
+
+    Raises:
+        PaymentConfigError / PaymentGatewayError: 真实渠道凭据缺失或网关失败。
+    """
+    async with dba.transaction() as c:
+        row = _fetchone(await c.execute('SELECT * FROM orders WHERE order_id=?', (order_id,)))
+        if not row:
+            return None
+        if not row['paid']:
+            raise ValueError('订单未支付，无法退款')
+        return await _do_refund(c, dict(row), amount, reason or '订单退款')
+
 async def get_payment_status(order_id: str) -> dict[str, Any] | None:
     async with dba.transaction() as c:
         '查询订单支付状态（客户端轮询兜底，用于回调不可达场景）。\n\n    Returns:\n        含 ``paid`` / ``status`` 的 dict；订单不存在返回 None。\n    '
@@ -842,7 +900,7 @@ async def merchant_reject_order(order_id: str, reason: str='') -> dict[str, Any]
         if row['merchant_status']:
             raise ValueError(f"订单已处理（{row['merchant_status']}），不可重复拒单")
         await c.execute("UPDATE orders SET merchant_status='rejected', status='canceled', confirmed_at=? WHERE order_id=? AND merchant_status=''", (_now(), order_id))
-        await c.execute("UPDATE payments SET status='refunded' WHERE order_id=? AND status='paid'", (order_id,))
+        await _do_refund(c, dict(row), None, reason or '商家拒单')
         cid = row['coupon_id']
         if cid:
             await c.execute("UPDATE coupons SET status='unused', order_id=NULL, used_at=NULL WHERE id=? AND status='used'", (cid,))

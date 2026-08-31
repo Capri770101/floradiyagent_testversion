@@ -11,6 +11,7 @@ from typing import Any
 from backend.routers.common import PlanWriteRequest, ShopWriteRequest, _require_admin, catalog_store
 from backend.storage import admin as admin_store
 from backend.storage import config as config_store
+from backend.storage import payment as payment_module
 from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -190,13 +191,28 @@ async def admin_reject_aftersale(as_id: str, req: AftersaleRejectRequest, reques
 
 @router.post('/admin/aftersales/{as_id}/refund')
 async def admin_refund_aftersale(as_id: str, request: Request, req: AftersaleRefundRequest | None=None) -> dict[str, Any]:
-    """通过并退款（sandbox：翻 payments.status='refunded'；真实网关接入时替换）。"""
+    """通过并退款：真实网关按订单原路退款（微信 v2 / 支付宝），沙箱为模拟，落库支付记录。"""
+    from backend.storage import commerce
     admin_uid = await _require_admin(request)
-    amount = req.refund_amount if req else None
-    a = await admin_store.refund_aftersale(as_id, admin_uid, amount)
+    a = await admin_store.get_aftersale(as_id)
     if not a:
         raise HTTPException(status_code=404, detail='售后单不存在')
-    return {'aftersale': a}
+    amount = req.refund_amount if req else None
+    try:
+        refund = await commerce.refund_order(a['order_id'], amount, '售后审核通过，原路退款')
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except payment_module.PaymentConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except payment_module.PaymentGatewayError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if refund is None:
+        raise HTTPException(status_code=404, detail='订单不存在')
+    a2 = await admin_store.refund_aftersale(as_id, admin_uid, amount)
+    if not a2:
+        raise HTTPException(status_code=404, detail='售后单不存在')
+    a2['refund'] = refund
+    return {'aftersale': a2}
 
 # ---------------- 商家提现审核 ----------------
 

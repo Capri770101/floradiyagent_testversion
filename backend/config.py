@@ -199,9 +199,9 @@ class Settings(BaseSettings):
     # 微信支付 v2（H5 支付 MWEB）
     wechatpay_v2_mch_id: str = ""        # 商户号（v2）
     wechatpay_v2_api_key: str = ""       # APIv2 密钥（32 字节，HMAC-SHA256 签名用）
-    wechatpay_v2_serial_no: str = ""     # 商户证书序列号（v2 回调验签用）
-    wechatpay_v2_private_key: str = ""   # 商户私钥 PEM（v2 回调验签用，内容或文件路径）
-    wechatpay_v2_cert: str = ""          # 商户证书 PEM（v2 回调签名用，内容或文件路径）
+    wechatpay_v2_serial_no: str = ""     # 商户证书序列号（预留）
+    wechatpay_v2_private_key: str = ""   # 商户 API 客户端私钥 PEM（apiclient_key.pem，退款 mTLS 用；内容或文件路径）
+    wechatpay_v2_cert: str = ""          # 商户 API 客户端证书 PEM（apiclient_cert.pem，退款 mTLS 用；内容或文件路径）
     wechatpay_v2_notify_url: str = ""    # 支付成功回调地址（v2）
     # 支付宝
     alipay_app_id: str = ""

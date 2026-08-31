@@ -89,6 +89,56 @@ async def merchant_aftersales_endpoint(request: Request, status: str='', limit: 
     items, total = await admin_store.list_merchant_aftersales(scope, status, limit, offset)
     return {'aftersales': items, 'total': total, 'limit': limit, 'offset': offset}
 
+class AftersaleRejectRequest(BaseModel):
+    note: str = Field('', max_length=500, description='拒绝原因')
+
+async def _merchant_require_aftersale(as_id: str, request: Request):
+    """校验售后单属于本商家店铺，返回 (uid, scope, aftersale)。"""
+    uid, scope = await _merchant_scope(request)
+    a = await admin_store.get_aftersale(as_id)
+    if not a:
+        raise HTTPException(status_code=404, detail='售后单不存在')
+    shop_id = a.get('shop_id')
+    if shop_id and scope and shop_id not in scope:
+        raise HTTPException(status_code=403, detail='无权操作该售后单')
+    return uid, scope, a
+
+@router.post('/merchant/aftersales/{as_id}/approve')
+async def merchant_approve_aftersale(as_id: str, request: Request) -> dict[str, Any]:
+    """商家通过售后申请（仅通过，不退款）。"""
+    uid, _, _ = await _merchant_require_aftersale(as_id, request)
+    a = await admin_store.approve_aftersale(as_id, uid)
+    return {'aftersale': a}
+
+@router.post('/merchant/aftersales/{as_id}/reject')
+async def merchant_reject_aftersale(as_id: str, req: AftersaleRejectRequest, request: Request) -> dict[str, Any]:
+    """商家拒绝售后申请。"""
+    uid, _, _ = await _merchant_require_aftersale(as_id, request)
+    a = await admin_store.reject_aftersale(as_id, uid, req.note)
+    return {'aftersale': a}
+
+@router.post('/merchant/aftersales/{as_id}/refund')
+async def merchant_refund_aftersale(as_id: str, request: Request) -> dict[str, Any]:
+    """商家审核通过并原路退款（真实网关）。"""
+    from backend.storage import commerce
+    import backend.storage.payment as payment_module
+    uid, _, a = await _merchant_require_aftersale(as_id, request)
+    try:
+        refund = await commerce.refund_order(a['order_id'], None, '商家审核通过，原路退款')
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except payment_module.PaymentConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except payment_module.PaymentGatewayError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if refund is None:
+        raise HTTPException(status_code=404, detail='订单不存在')
+    a2 = await admin_store.refund_aftersale(as_id, uid)
+    if not a2:
+        raise HTTPException(status_code=404, detail='售后单不存在')
+    a2['refund'] = refund
+    return {'aftersale': a2}
+
 class WithdrawalCreateRequest(BaseModel):
     """商家发起提现申请。"""
     amount: float = Field(..., gt=0, description='提现金额（元）')

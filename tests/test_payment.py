@@ -18,8 +18,10 @@ from backend.storage.db import init_db
 from backend.storage.payment import (
     AlipayProvider,
     PaymentConfigError,
+    PaymentError,
     SandboxProvider,
     WeChatPayProvider,
+    WeChatPayV2Provider,
     get_provider,
 )
 
@@ -82,6 +84,48 @@ def test_wechat_missing_creds_raises() -> None:
 def test_alipay_missing_creds_raises() -> None:
     with pytest.raises(PaymentConfigError):
         AlipayProvider().create_payment({'order_id': 'O_y', 'total_price': 1.0}, 'alipay')
+
+# ---------------- 退款（Refund）----------------
+
+def test_base_provider_refund_unsupported() -> None:
+    """未实现 request_refund 的渠道默认抛「暂不支持退款」。"""
+    with pytest.raises(PaymentError):
+        AlipayProvider().request_refund({'order_id': 'O_x', 'total_price': 1.0})
+
+def test_sandbox_request_refund_success() -> None:
+    """沙箱退款模拟成功，回填模拟退款单号。"""
+    r = SandboxProvider().request_refund({'order_id': 'O_rf', 'total_price': 99.0})
+    assert r.refund_id.startswith('SANDBOX_REFUND_')
+    assert r.amount == 99.0
+    assert r.status == 'refunded'
+    # 部分退款金额
+    r2 = SandboxProvider().request_refund({'order_id': 'O_rf', 'total_price': 99.0}, amount=30.0)
+    assert r2.amount == 30.0
+
+def test_wechat_v2_refund_missing_creds_raises() -> None:
+    with pytest.raises(PaymentConfigError):
+        WeChatPayV2Provider().request_refund({'order_id': 'O_rf', 'total_price': 1.0})
+
+def test_wechat_v2_refund_missing_cert_raises() -> None:
+    """v2 退款走双向 TLS，未配 apiclient 证书就拒绝（绝不静默成功）。"""
+    from backend.config import settings
+    # 临时清空凭据（包括 .env 里的路径），确保 _load_pem 返回空
+    old_cert = settings.wechatpay_v2_cert
+    old_key = settings.wechatpay_v2_private_key
+    old_mchid = settings.wechatpay_v2_mch_id
+    old_apikey = settings.wechatpay_v2_api_key
+    settings.wechatpay_v2_mch_id = '123'
+    settings.wechatpay_v2_api_key = 'k' * 32
+    settings.wechatpay_v2_cert = ''
+    settings.wechatpay_v2_private_key = ''
+    try:
+        with pytest.raises(PaymentConfigError):
+            WeChatPayV2Provider().request_refund({'order_id': 'O_rf', 'total_price': 1.0})
+    finally:
+        settings.wechatpay_v2_cert = old_cert
+        settings.wechatpay_v2_private_key = old_key
+        settings.wechatpay_v2_mch_id = old_mchid
+        settings.wechatpay_v2_api_key = old_apikey
 
 def _make_order(user_id: str='u_pay') -> str:
     """造一个已落库的测试订单（依赖 commerce.create_order）。
@@ -152,3 +196,49 @@ def test_mark_order_paid_idempotent_no_double_points() -> None:
     assert asyncio.run(commerce.mark_order_paid(order_id, 'TXN_2')) is True
     assert _rec_count() == 1
     assert asyncio.run(commerce.get_order(order_id))['paid'] is True
+
+# ---------------- commerce.refund_order（sandbox）----------------
+
+def _ensure_plan_p001() -> None:
+    """确保测试库有 id=P001 的目录商品（部分 seed 用动态 id，这里按需补一条）。"""
+    if not _fetch('SELECT 1 FROM plans WHERE id=?', ('P001',)):
+        _exec("INSERT INTO plans (id,name,price,desc,effect_image_url,merchant_name,tags,style,rating,sold,ai_reason,created_at)\n           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+              ('P001', '测试花束', 199.0, '', '', '测试店', '[]', '', 4.8, 0, '', '2024-01-01 00:00:00'))
+
+def _make_paid_order(user_id: str = 'u_rf') -> str:
+    """造一个已落库且已支付订单（含 payments 行，status='paid'）。"""
+    from backend.config import settings
+    settings.payment_provider = 'sandbox'
+    _ensure_plan_p001()
+    order = asyncio.run(commerce.create_order(user_id, [{'plan_id': 'P001', 'name': 'x', 'price': 1, 'qty': 1}]))
+    asyncio.run(commerce.mark_order_paid(order['order_id'], 'WX_TXN_MAKE'))
+    return order['order_id']
+
+def test_refund_order_marks_payment_refunded() -> None:
+    """refund_order（sandbox）把已支付 payments 翻为 refunded，返回模拟退款单号。"""
+    order_id = _make_paid_order()
+    res = asyncio.run(commerce.refund_order(order_id))
+    assert res is not None
+    assert res['refund_id'].startswith('SANDBOX_REFUND_')
+    pay_rows = _fetch('SELECT * FROM payments WHERE order_id=?', (order_id,))
+    assert pay_rows[0]['status'] == 'refunded'
+    logs = _fetch('SELECT * FROM order_logistics WHERE order_id=?', (order_id,))
+    assert any('退款' in r['text'] for r in logs)
+
+def test_refund_order_unpaid_raises() -> None:
+    """未支付订单退款应拒绝。"""
+    from backend.config import settings
+    settings.payment_provider = 'sandbox'
+    _ensure_plan_p001()
+    order = asyncio.run(commerce.create_order('u_rf2', [{'plan_id': 'P001', 'name': 'x', 'price': 1, 'qty': 1}]))
+    with pytest.raises(ValueError):
+        asyncio.run(commerce.refund_order(order['order_id']))
+
+def test_merchant_reject_marks_payment_refunded() -> None:
+    """商家拒单触发真实退款：订单 canceled/rejected，payments 翻 refunded。"""
+    order_id = _make_paid_order('u_rf3')
+    o = asyncio.run(commerce.merchant_reject_order(order_id, '拒单测试'))
+    assert o['status'] == 'canceled'
+    assert o['merchant_status'] == 'rejected'
+    pay_rows = _fetch('SELECT * FROM payments WHERE order_id=?', (order_id,))
+    assert pay_rows[0]['status'] == 'refunded'

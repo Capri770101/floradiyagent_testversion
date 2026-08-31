@@ -120,7 +120,7 @@ export function Orders() {
                   <td className="max-w-[220px] px-4 py-3">
                     <p className="truncate">{(o.items || []).map((i) => i.name).join('、')}</p>
                   </td>
-                  <td className="px-4 py-3">{fmtMoney(o.total_price)}</td>
+                  <td className="px-4 py-3">{fmtMoney(o.paid_amount ?? o.total_price)}</td>
                   <td className="px-4 py-3 text-sub">{r.name || '—'}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded-pill px-2 py-0.5 text-[11px] ${meta.cls}`}>{meta.label}</span>
@@ -194,7 +194,7 @@ export function Orders() {
             <p className="eyebrow mt-5">支付与状态</p>
             <div className="mt-2 space-y-1 text-[12px]">
               <p>
-                金额：<span className="text-gold">{fmtMoney(detail.total_price)}</span>
+                金额：<span className="text-gold">{fmtMoney(detail.paid_amount ?? detail.total_price)}</span>
                 {detail.paid ? '（已支付）' : '（未支付）'}
               </p>
               <p>

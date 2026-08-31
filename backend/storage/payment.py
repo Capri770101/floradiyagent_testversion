@@ -89,6 +89,23 @@ class NotifyResult:
     paid: bool = True
     raw: dict[str, Any] | None = None
 
+@dataclass
+class RefundResult:
+    """一次原路退款的结果。
+
+    Attributes:
+        order_id: 本系统订单号。
+        refund_id: 第三方退款单号（微信 v2 回传 refund_id；沙箱为模拟值）。
+        amount: 退款金额（元）。
+        status: 退款状态（refunded=退款成功）。
+        raw: 渠道原始响应（便于审计）。
+    """
+    order_id: str
+    refund_id: str
+    amount: float
+    status: str = 'refunded'
+    raw: dict[str, Any] | None = None
+
 class BaseProvider(abc.ABC):
     """支付渠道抽象基类。"""
     name: str = ''
@@ -100,6 +117,17 @@ class BaseProvider(abc.ABC):
     @abc.abstractmethod
     def verify_notify(self, body: bytes, headers: Mapping[str, str]) -> NotifyResult | None:
         """校验并解密支付回调；验签失败/无法识别返回 None。"""
+
+    def request_refund(self, order: dict[str, Any], amount: float | None=None, reason: str='', paid_amount: float | None=None) -> RefundResult:
+        """原路退款（同步）：按订单号向渠道发起退款，返回退款结果。
+
+        Args:
+            order: 订单 dict（含 order_id / total_price 等）。
+            amount: 退款金额（元）；缺省全额。
+            reason: 退款原因（可供渠道/人工审计）。
+            paid_amount: 原始实际支付金额（元），用于微信退款 total_fee 校验。
+        """
+        raise PaymentError(f'渠道 {self.name or "未知"} 暂不支持退款')
 
 def _load_pem(value: str) -> str:
     """把配置里的 PEM 值归一化为 PEM 文本。
@@ -147,6 +175,15 @@ class SandboxProvider(BaseProvider):
 
     def verify_notify(self, body: bytes, headers: Mapping[str, str]) -> NotifyResult | None:
         return None
+
+    def request_refund(self, order: dict[str, Any], amount: float | None=None, reason: str='') -> RefundResult:
+        """沙箱退款：模拟原路退款成功，回填一个模拟退款单号（用于流程验证，不真实打款）。"""
+        return RefundResult(
+            order_id=order['order_id'],
+            refund_id='SANDBOX_REFUND_' + uuid.uuid4().hex[:16],
+            amount=float(amount if amount is not None else order.get('total_price') or 0),
+            status='refunded',
+        )
 
 class WeChatPayProvider(BaseProvider):
     """微信支付 v3 JSAPI 渠道（小程序）。
@@ -462,6 +499,91 @@ class WeChatPayV2Provider(BaseProvider):
             transaction_id=data.get('transaction_id', ''),
             paid=data.get('result_code') == 'SUCCESS',
             raw=data
+        )
+
+    def request_refund(self, order: dict[str, Any], amount: float | None=None, reason: str='', paid_amount: float | None=None) -> RefundResult:
+        """微信支付 v2 原路退款（/secapi/pay/refund）。
+
+        退款接口走**双向 TLS**：必须在商户平台「账户中心→API安全→API证书」下载
+        apiclient_cert.pem（客户端证书）+ apiclient_key.pem（配套私钥），
+        分别配置到 ``WXPAY_V2_CERT`` / ``WXPAY_V2_PRIVATE_KEY``（内容或文件路径）。
+        未配置时抛 ``PaymentConfigError``（退款绝不能静默成功）。
+
+        同步判断成功：只有 return_code 与 result_code 均为 SUCCESS 才视为退款成功。
+        """
+        creds = self._require_creds()
+        # 私钥签名（_load_pem 读文件内容或原样返回 PEM）
+        cert_raw = _load_pem(settings.wechatpay_v2_cert)
+        key_raw = _load_pem(settings.wechatpay_v2_private_key)
+        if not (cert_raw and key_raw):
+            raise PaymentConfigError('微信退款未配置双向 TLS 客户端证书：需要 WXPAY_V2_CERT（apiclient_cert.pem）与 WXPAY_V2_PRIVATE_KEY（apiclient_key.pem）')
+        # httpx.Client(cert=...) 要求文件路径（非 PEM 内容）。
+        # 若配置值本身是路径（不含 -----BEGIN），直接用；若已是 PEM 内容，写临时文件。
+        import os, tempfile as _tmp
+        _cert_src = settings.wechatpay_v2_cert
+        _key_src = settings.wechatpay_v2_private_key
+        _tmp_files: list[str] = []
+        if '-----BEGIN' in _cert_src:
+            _fd, _cert_src = _tmp.mkstemp(suffix='.pem')
+            os.write(_fd, cert_raw.encode('utf-8')); os.close(_fd)
+            _tmp_files.append(_cert_src)
+        if '-----BEGIN' in _key_src:
+            _fd, _key_src = _tmp.mkstemp(suffix='.pem')
+            os.write(_fd, key_raw.encode('utf-8')); os.close(_fd)
+            _tmp_files.append(_key_src)
+
+        total_fen = int(round(float(paid_amount or order.get('total_price') or 0) * 100))
+        refund_amt = float(amount if amount is not None else paid_amount or order.get('total_price') or 0)
+        refund_fen = int(round(refund_amt * 100))
+        if refund_fen <= 0:
+            raise PaymentError('退款金额非法（需 > 0）')
+
+        params = {
+            'appid': settings.wechat_appid or '',
+            'mch_id': creds['mchid'],
+            'nonce_str': secrets.token_hex(16),
+            'sign_type': 'HMAC-SHA256',
+            'out_trade_no': order['order_id'],
+            'out_refund_no': 'R_' + uuid.uuid4().hex[:20],
+            'total_fee': str(total_fen),
+            'refund_fee': str(refund_fen),
+        }
+        if settings.wechat_appid:
+            params['appid'] = settings.wechat_appid
+        params['sign'] = self._xml_sign(params, creds['api_key'])
+
+        xml_body = self._dict_to_xml(params)
+        try:
+            # httpx 0.28+ 的顶层便捷函数（httpx.post）已移除 cert 参数；
+            # mTLS 客户端证书需通过 httpx.Client(cert=(cert_path, key_path)) 传入。
+            with httpx.Client(cert=(_cert_src, _key_src)) as client:
+                resp = client.post(
+                    self.API_BASE + '/secapi/pay/refund',
+                    content=xml_body.encode('utf-8'),
+                    headers={'Content-Type': 'application/xml'},
+                    timeout=10,
+                )
+        except httpx.HTTPError as exc:
+            raise PaymentGatewayError(f'微信支付 v2 退款网络错误: {exc}') from exc
+
+        data = self._xml_to_dict(resp.text)
+        if data.get('return_code') != 'SUCCESS' or data.get('result_code') != 'SUCCESS':
+            err_msg = data.get('err_code_des') or data.get('return_msg') or '未知错误'
+            raise PaymentGatewayError(f'微信支付 v2 退款失败: {err_msg}')
+
+        # 可选：用 API 密钥校验退款回包签名，杜绝伪造结果
+        if data.get('sign'):
+            expected = self._xml_sign(data, creds['api_key'])
+            if data['sign'] != expected:
+                logger.warning('[wechat_h5 refund] 退款回包验签失败，拒绝')
+                raise PaymentGatewayError('微信支付 v2 退款回包验签失败')
+
+        return RefundResult(
+            order_id=order['order_id'],
+            refund_id=data.get('refund_id', ''),
+            amount=refund_amt,
+            status='refunded',
+            raw=data,
         )
 
 PROVIDERS: dict[str, type[BaseProvider]] = {

@@ -1,6 +1,6 @@
-// 商家售后查看：本店售后单只读列表（处理动作在平台管理端完成）。
+// 商家售后处理：本店售后单列表 + 通过/拒绝/退款操作。
 import React, { useCallback, useEffect, useState } from 'react'
-import { merchantAftersales } from '../api'
+import { merchantAftersales, merchantApproveAftersale, merchantRejectAftersale, merchantRefundAftersale } from '../api'
 import { fmtMoney } from '../../utils/price'
 
 const TYPE_META = {
@@ -30,6 +30,10 @@ export function Aftersale() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
+  const [busy, setBusy] = useState('')
+  const [msg, setMsg] = useState('')
+  const [rejectTarget, setRejectTarget] = useState(null)
+  const [rejectNote, setRejectNote] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -48,12 +52,46 @@ export function Aftersale() {
     load()
   }, [load])
 
+  const act = async (asId, fn, okMsg) => {
+    if (busy) return
+    setBusy(asId)
+    setMsg('')
+    setErr('')
+    try {
+      await fn(asId)
+      setMsg(okMsg)
+      load()
+    } catch (e) {
+      setErr(e.message)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const doApprove = (asId) => act(asId, merchantApproveAftersale, '已通过')
+  const doRefund = (asId) => act(asId, merchantRefundAftersale, '退款成功')
+  const doReject = async () => {
+    if (!rejectTarget || busy) return
+    setBusy(rejectTarget)
+    setMsg('')
+    setErr('')
+    try {
+      await merchantRejectAftersale(rejectTarget, rejectNote)
+      setMsg('已拒绝')
+      setRejectTarget(null)
+      setRejectNote('')
+      load()
+    } catch (e) {
+      setErr(e.message)
+    } finally {
+      setBusy('')
+    }
+  }
+
   return (
     <div>
       <h2 className="font-serif-cn text-[22px] font-normal text-ink">售后处理</h2>
-      <p className="mt-1 text-[12px] text-sub">
-        本店售后单查询（通过/拒绝/退款由平台管理端统一处理）
-      </p>
+      <p className="mt-1 text-[12px] text-sub">本店售后审核：通过 / 拒绝 / 退款</p>
 
       <div className="mt-4 flex gap-1.5">
         {STATUS_TABS.map((t) => (
@@ -69,6 +107,7 @@ export function Aftersale() {
         ))}
       </div>
 
+      {msg && <p className="mt-3 text-[12px] text-[#5b8a6a]">{msg}</p>}
       {err && <p className="mt-3 text-[12px] text-burgundy">{err}</p>}
 
       <div className="mt-4 space-y-3">
@@ -80,6 +119,7 @@ export function Aftersale() {
           items.map((a) => {
             const t = TYPE_META[a.type] || { label: a.type, cls: 'bg-bg text-sub' }
             const s = STATUS_META[a.status] || { label: a.status, cls: 'bg-bg text-sub' }
+            const isPending = a.status === 'pending'
             return (
               <div key={a.id} className="rounded-card border border-line bg-white p-4">
                 <div className="flex items-center justify-between">
@@ -102,11 +142,57 @@ export function Aftersale() {
                     ))}
                   </div>
                 )}
+                {isPending && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      onClick={() => doApprove(a.id)}
+                      disabled={!!busy}
+                      className="press rounded-[2px] border border-[#5b8a6a]/40 bg-white px-3 py-1.5 text-[11px] text-[#5b8a6a] disabled:opacity-40"
+                    >
+                      通过
+                    </button>
+                    <button
+                      onClick={() => doRefund(a.id)}
+                      disabled={!!busy}
+                      className="press rounded-[2px] bg-gold px-3 py-1.5 text-[11px] text-[#FAF8F5] disabled:opacity-40"
+                    >
+                      {busy === a.id ? '处理中…' : '直接退款'}
+                    </button>
+                    <button
+                      onClick={() => { setRejectTarget(a.id); setRejectNote('') }}
+                      disabled={!!busy}
+                      className="press rounded-[2px] border border-burgundy/40 bg-white px-3 py-1.5 text-[11px] text-burgundy disabled:opacity-40"
+                    >
+                      拒绝
+                    </button>
+                  </div>
+                )}
               </div>
             )
           })
         )}
       </div>
+
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setRejectTarget(null)}>
+          <div className="w-[320px] rounded-card bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <p className="text-[14px] font-medium text-ink">拒绝原因</p>
+            <textarea
+              value={rejectNote}
+              onChange={(e) => setRejectNote(e.target.value)}
+              placeholder="填写拒绝原因（选填）"
+              rows={3}
+              className="mt-3 w-full rounded-[2px] border border-line px-3 py-2 text-[12px]"
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button onClick={() => setRejectTarget(null)} className="rounded-[2px] border border-line px-3 py-1.5 text-[11px] text-sub">取消</button>
+              <button onClick={doReject} disabled={!!busy} className="rounded-[2px] bg-burgundy px-3 py-1.5 text-[11px] text-white disabled:opacity-40">
+                {busy ? '提交中…' : '确认拒绝'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
