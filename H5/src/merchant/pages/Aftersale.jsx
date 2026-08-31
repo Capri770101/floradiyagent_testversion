@@ -28,19 +28,26 @@ const STATUS_TABS = [
 export function Aftersale() {
   const [status, setStatus] = useState('')
   const [items, setItems] = useState([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState('')
   const [msg, setMsg] = useState('')
   const [rejectTarget, setRejectTarget] = useState(null)
   const [rejectNote, setRejectNote] = useState('')
+  const LIMIT = 20
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (reset = true) => {
     setLoading(true)
     setErr('')
     try {
-      const data = await merchantAftersales(status)
-      setItems(data.aftersales || [])
+      const data = await merchantAftersales(status, LIMIT, reset ? 0 : items.length)
+      if (reset) {
+        setItems(data.aftersales || [])
+      } else {
+        setItems((prev) => [...prev, ...(data.aftersales || [])])
+      }
+      setTotal(data.total || 0)
     } catch (e) {
       setErr(e.message || '售后单加载失败')
     } finally {
@@ -49,7 +56,7 @@ export function Aftersale() {
   }, [status])
 
   useEffect(() => {
-    load()
+    load(true)
   }, [load])
 
   const act = async (asId, fn, okMsg) => {
@@ -60,7 +67,7 @@ export function Aftersale() {
     try {
       await fn(asId)
       setMsg(okMsg)
-      load()
+      load(true)
     } catch (e) {
       setErr(e.message)
     } finally {
@@ -80,7 +87,7 @@ export function Aftersale() {
       setMsg('已拒绝')
       setRejectTarget(null)
       setRejectNote('')
-      load()
+      load(true)
     } catch (e) {
       setErr(e.message)
     } finally {
@@ -170,6 +177,14 @@ export function Aftersale() {
               </div>
             )
           })
+        )}
+        {!loading && items.length < total && (
+          <button
+            onClick={() => load(false)}
+            className="w-full rounded-card border border-line bg-white py-3 text-center text-[12px] text-sub transition hover:bg-bg"
+          >
+            加载更多（{items.length}/{total}）
+          </button>
         )}
       </div>
 

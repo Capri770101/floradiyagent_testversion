@@ -396,14 +396,16 @@ async def delete_review(review_id: str) -> bool:
 async def dashboard_stats(days: int=7) -> dict[str, Any]:
     async with dba.transaction() as c:
         '平台数据看板聚合：GMV/订单/用户/新用户/热销方案/热门店铺/订单趋势。'
-        gmv = _scalar(await c.execute('SELECT COALESCE(SUM(total_price),0) FROM orders'))
+        # GMV：仅计入已付款（paid/shipped/done）且未退款的订单
+        gmv_where = " AND status IN ('paid','shipped','done') AND NOT EXISTS (SELECT 1 FROM payments WHERE payments.order_id=orders.order_id AND payments.status='refunded')"
+        gmv = _scalar(await c.execute(f'SELECT COALESCE(SUM(total_price),0) FROM orders WHERE 1=1{gmv_where}'))
         order_count = _scalar(await c.execute('SELECT COUNT(*) FROM orders'))
         user_count = _scalar(await c.execute('SELECT COUNT(*) FROM users'))
         new_today = _scalar(await c.execute("SELECT COUNT(*) FROM users WHERE date(created_at)=date('now')"))
         top_plans = [dict(r) for r in await c.execute('SELECT p.id AS plan_id, p.name, p.sold FROM plans p\n               ORDER BY p.sold DESC LIMIT 5')]
         top_shops = [dict(r) for r in await c.execute('SELECT s.id AS shop_id, s.name, s.sales FROM shops s\n               ORDER BY s.sales DESC LIMIT 5')]
         cutoff = (date.today() - timedelta(days=days)).isoformat()
-        trend = [dict(r) for r in await c.execute("SELECT date(created_at) AS date, COUNT(*) AS count, COALESCE(SUM(total_price),0) AS amount\n               FROM orders WHERE date(created_at) >= ?\n               GROUP BY date(created_at) ORDER BY date(created_at) ASC", (cutoff,))]
+        trend = [dict(r) for r in await c.execute(f"SELECT date(created_at) AS date, COUNT(*) AS count, COALESCE(SUM(total_price),0) AS amount\n               FROM orders WHERE date(created_at) >= ?{gmv_where}\n               GROUP BY date(created_at) ORDER BY date(created_at) ASC", (cutoff,))]
         return {'gmv': float(gmv), 'order_count': int(order_count), 'user_count': int(user_count), 'new_users_today': int(new_today), 'top_plans': top_plans, 'top_shops': top_shops, 'order_trend': trend}
 
 def _fetchone(rows):

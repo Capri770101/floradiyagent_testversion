@@ -291,3 +291,25 @@ export async function merchantApplyWithdrawal(payload) {
   const data = await request('/merchant/withdrawals', { method: 'POST', body: payload })
   return data.withdrawal
 }
+
+// ---------------- 通知 ----------------
+
+export async function merchantNotifications(ntype = '', limit = 50, offset = 0) {
+  const params = new URLSearchParams()
+  if (ntype) params.set('type', ntype)
+  if (limit) params.set('limit', limit)
+  if (offset) params.set('offset', offset)
+  const data = await request(`/merchant/notifications?${params.toString()}`)
+  return data.notifications || []
+}
+
+export async function merchantNotificationsUnreadCount() {
+  const data = await request('/merchant/notifications/unread-count')
+  return data.count || 0
+}
+
+export async function merchantMarkNotificationsRead(ids = null, all = false) {
+  const body = all ? { all: true } : { ids }
+  const data = await request('/merchant/notifications/read', { method: 'POST', body })
+  return data.marked || 0
+}

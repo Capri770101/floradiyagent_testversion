@@ -24,7 +24,7 @@ from backend.routers.common import (
 )
 from backend.storage import admin as admin_store
 from backend.storage import chats as chat_store
-from backend.storage import commerce, diy
+from backend.storage import commerce, diy, notify
 from backend.storage.db import get_conn
 from backend.storage.object_store import save_upload
 from pydantic import BaseModel, Field
@@ -120,16 +120,15 @@ async def merchant_reject_aftersale(as_id: str, req: AftersaleRejectRequest, req
 @router.post('/merchant/aftersales/{as_id}/refund')
 async def merchant_refund_aftersale(as_id: str, request: Request) -> dict[str, Any]:
     """商家审核通过并原路退款（真实网关）。"""
-    from backend.storage import commerce
-    import backend.storage.payment as payment_module
+    import backend.storage.payment as _payment
     uid, _, a = await _merchant_require_aftersale(as_id, request)
     try:
         refund = await commerce.refund_order(a['order_id'], None, '商家审核通过，原路退款')
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except payment_module.PaymentConfigError as exc:
+    except _payment.PaymentConfigError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except payment_module.PaymentGatewayError as exc:
+    except _payment.PaymentGatewayError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     if refund is None:
         raise HTTPException(status_code=404, detail='订单不存在')
@@ -467,6 +466,29 @@ async def merchant_apply_endpoint(req: MerchantApplyRequest, request: Request) -
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {'application': app}
+
+@router.get('/merchant/notifications')
+async def merchant_notifications_endpoint(request: Request, ntype: str='', limit: int=50, offset: int=0) -> dict[str, Any]:
+    """商家通知列表（按接收者隔离）。"""
+    uid, _ = await _merchant_scope(request)
+    items = await notify.list_notifications(uid, ntype, limit=limit, offset=offset)
+    return {'notifications': items}
+
+@router.get('/merchant/notifications/unread-count')
+async def merchant_notifications_unread_endpoint(request: Request) -> dict[str, Any]:
+    """商家未读通知数（顶栏红点）。"""
+    uid, _ = await _merchant_scope(request)
+    count = await notify.count_unread(uid)
+    return {'count': count}
+
+@router.post('/merchant/notifications/read')
+async def merchant_notifications_read_endpoint(request: Request, body: dict | None=None) -> dict[str, Any]:
+    """商家标记通知已读（传 ids 数组或 all=true）。"""
+    uid, _ = await _merchant_scope(request)
+    ids = (body or {}).get('ids')
+    all_ = (body or {}).get('all', False)
+    n = await notify.mark_read(uid, ids=ids, all_=all_)
+    return {'marked': n}
 
 @router.get('/me/merchant-application')
 async def my_merchant_application_endpoint(request: Request) -> dict[str, Any]:

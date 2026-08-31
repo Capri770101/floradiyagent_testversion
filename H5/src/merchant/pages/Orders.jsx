@@ -273,7 +273,17 @@ export function Orders({ onContact }) {
                   </div>
                   <div className="mt-2 flex items-baseline justify-between text-[11px] text-sub">
                     <span>{o.created_at?.replace('T', ' ').slice(0, 16) || ''}</span>
-                    <span className="text-[13px] text-ink">{fmtMoney(o.total_price)}</span>
+                    <span className="text-[13px] text-ink">
+                      {o.paid_amount != null && o.paid_amount !== o.total_price ? (
+                        <>
+                          <span className="text-sub line-through">{fmtMoney(o.total_price)}</span>
+                          {' '}
+                          <span className="text-gold">{fmtMoney(o.paid_amount)}</span>
+                        </>
+                      ) : (
+                        fmtMoney(o.total_price)
+                      )}
+                    </span>
                   </div>
                 </button>
 

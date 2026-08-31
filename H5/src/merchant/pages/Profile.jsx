@@ -1,4 +1,4 @@
-// 商家店铺设置：资料编辑（含封面/Logo/图片上传）+ 评价回复管理。
+// 商家店铺设置：资料编辑 + 店铺预览（顾客视角）+ 评价回复。
 import React, { useCallback, useEffect, useState } from 'react'
 import {
   merchantReplyReview,
@@ -7,6 +7,7 @@ import {
   merchantUpdateShop,
   merchantUpload,
 } from '../api'
+import { shopImage } from '../../assets/imageMap'
 
 function Field({ label, hint, value, onChange, textarea }) {
   return (
@@ -145,7 +146,12 @@ export function Profile() {
     <div>
       <p className="text-[12px] text-sub">{label}</p>
       {shop?.[field] ? (
-        <img src={shop[field]} alt={label} className={`mt-1 rounded-[2px] border border-line object-cover ${previewCls || 'h-20 w-32'}`} />
+        <img
+          src={shop[field]}
+          alt={label}
+          onError={(e) => { e.target.src = `/images/shops/${field === 'cover' ? 'cover.jpg' : 'logo.jpg'}` }}
+          className={`mt-1 rounded-[2px] border border-line object-cover ${previewCls || 'h-20 w-32'}`}
+        />
       ) : (
         <div className={`mt-1 flex items-center justify-center rounded-[2px] bg-bg text-[10px] text-sub ${previewCls || 'h-20 w-32'}`}>暂无图片</div>
       )}
@@ -193,9 +199,10 @@ export function Profile() {
           暂无绑定店铺，请联系平台管理员开通
         </p>
       ) : (
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          {/* 资料 */}
-          <div className="rounded-card border border-line bg-white p-5">
+        <>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            {/* 资料 */}
+            <div className="rounded-card border border-line bg-white p-5">
             <p className="text-[13px] font-medium text-ink">店铺资料</p>
             <div className="mt-4 space-y-3">
               <Field label="店铺名称" value={shop.name} onChange={(e) => setShop({ ...shop, name: e.target.value })} />
@@ -221,8 +228,70 @@ export function Profile() {
             </button>
           </div>
 
-          {/* 评价回复 */}
+          {/* 店铺预览（顾客视角） */}
           <div className="rounded-card border border-line bg-white p-5">
+            <div className="flex items-center justify-between">
+              <p className="text-[13px] font-medium text-ink">店铺预览</p>
+              <span className="text-[10px] text-sub">顾客视角</span>
+            </div>
+
+            {/* 封面 */}
+            <img
+              src={shopImage(shop)}
+              alt="封面"
+              onError={(e) => { e.target.src = '/images/shops/cover.jpg' }}
+              className="mt-3 h-[120px] w-full rounded-[2px] border border-line object-cover"
+            />
+
+            {/* 店铺信息 */}
+            <div className="mt-3 flex items-start gap-3">
+              {shop.logo ? (
+                <img
+                  src={shop.logo}
+                  alt="Logo"
+                  onError={(e) => { e.target.src = '/images/shops/logo.jpg' }}
+                  className="h-[44px] w-[44px] shrink-0 rounded-full border border-line object-cover"
+                />
+              ) : (
+                <div className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-full bg-sand text-[14px] text-gold-dark font-serif-cn">
+                  {(shop.name || '花')[0]}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-serif-cn text-[17px] text-ink">{shop.name || '未命名店铺'}</p>
+                <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-sub">
+                  <span>★ {shop.rating || '5.0'}</span>
+                  <span>·</span>
+                  <span>{shop.price_range || '¥50-100'}</span>
+                  <span>·</span>
+                  <span className={shop.status === '营业中' ? 'text-[#5b8a6a]' : 'text-sub'}>{shop.status || '营业中'}</span>
+                </p>
+              </div>
+            </div>
+
+            {/* 营业时间 / 地址 */}
+            <div className="mt-2.5 flex items-center gap-3 border-t border-line pt-2.5 text-[11px] text-sub">
+              {shop.hours && <span>🕐 {shop.hours}</span>}
+              {shop.address && <span className="truncate">📍 {shop.address}</span>}
+            </div>
+
+            {/* 公告 */}
+            {shop.notice && (
+              <div className="mt-2 rounded-[2px] bg-pink-2/30 px-2.5 py-1.5 text-[11px] text-pink">
+                <span className="mr-1 rounded bg-pink-2 px-1 text-[10px]">公告</span>
+                {shop.notice}
+              </div>
+            )}
+
+            {/* 联系商家按钮 */}
+            <button className="press mt-3 w-full rounded-[2px] border border-gold/40 bg-gold/5 py-2 text-[12px] tracking-[1px] text-gold">
+              联系商家
+            </button>
+          </div>
+        </div>
+
+        {/* 评价回复管理 */}
+        <div className="mt-4 rounded-card border border-line bg-white p-5">
             <p className="text-[13px] font-medium text-ink">顾客评价</p>
             {reviews.length === 0 ? (
               <p className="mt-4 text-center text-[12px] text-sub">暂无评价</p>
@@ -272,7 +341,7 @@ export function Profile() {
               </ul>
             )}
           </div>
-        </div>
+        </>
       )}
     </div>
   )

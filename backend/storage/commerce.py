@@ -267,7 +267,16 @@ async def merchant_stats(shop_ids: list[str] | None=None, shop_id: str='') -> di
         done = _scalar(await c.execute(f'SELECT COUNT(*) FROM orders WHERE 1=1{where}{and_sql}', args))
         and_sql = " AND status='canceled'"
         canceled = _scalar(await c.execute(f'SELECT COUNT(*) FROM orders WHERE 1=1{where}{and_sql}', args))
-        total = _fetchone(await c.execute(f'SELECT COUNT(*), COALESCE(SUM(total_price),0) FROM orders WHERE 1=1{where}', args))
+        # GMV：仅计入已付款（paid/shipped/done）且未退款的订单
+        gmv_where = where + " AND status IN ('paid','shipped','done')"
+        if args:
+            ph = ','.join('?' * len(args))
+            gmv_where += f" AND NOT EXISTS (SELECT 1 FROM payments WHERE payments.order_id=orders.order_id AND payments.status='refunded' AND (payments.order_id IN (SELECT order_id FROM order_items WHERE shop IN ({ph}))))"
+            gmv_args = args + args
+        else:
+            gmv_where += " AND NOT EXISTS (SELECT 1 FROM payments WHERE payments.order_id=orders.order_id AND payments.status='refunded')"
+            gmv_args = args
+        total = _fetchone(await c.execute(f'SELECT COUNT(*), COALESCE(SUM(total_price),0) FROM orders WHERE 1=1{gmv_where}', gmv_args))
         ph = ','.join('?' * (len(args) // 2)) if args else ''
         rev_where, rev_args = ('', [])
         if shop_ids == []:
@@ -276,7 +285,7 @@ async def merchant_stats(shop_ids: list[str] | None=None, shop_id: str='') -> di
             rev_where = f' AND (o.shop_id IN ({ph}) OR o.order_id IN (SELECT order_id FROM order_items WHERE shop IN ({ph})))'
             rev_args = list(args)
         rev = _fetchone(await c.execute(f'SELECT COUNT(*), COALESCE(AVG(r.rating),0) FROM reviews r\n           JOIN orders o ON o.order_id = r.order_id WHERE 1=1{rev_where}', rev_args))
-        today = _fetchone(await c.execute(f"SELECT COUNT(*), COALESCE(SUM(total_price),0) FROM orders WHERE 1=1{where} AND date(created_at)=date('now')", args))
+        today = _fetchone(await c.execute(f"SELECT COUNT(*), COALESCE(SUM(total_price),0) FROM orders WHERE 1=1{gmv_where} AND date(created_at)=date('now')", gmv_args))
         pending_payment = _scalar(await c.execute(f"SELECT COUNT(*) FROM orders WHERE 1=1{where} AND status IN ('created','pending_payment')", args))
         if shop_ids:
             shops = await c.execute(f"SELECT * FROM shops WHERE id IN ({','.join('?' * len(shop_ids))}) ORDER BY created_at", shop_ids)
