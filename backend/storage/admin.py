@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import uuid
@@ -84,11 +85,11 @@ async def list_all_orders(status: str='', user_id: str='', shop_id: str='', keyw
             where += ' AND (order_id LIKE ? OR recipient_name LIKE ? OR recipient_phone LIKE ? OR items LIKE ?)'
             args += [like, like, like, like]
         if date_from:
-            where += ' AND date(created_at) >= ?'
+            where += ' AND created_at >= ?'
             args.append(date_from.strip()[:10])
         if date_to:
-            where += ' AND date(created_at) <= ?'
-            args.append(date_to.strip()[:10])
+            where += ' AND created_at <= ?'
+            args.append(date_to.strip()[:10] + ' 23:59:59')
         total = _scalar(await c.execute(f'SELECT COUNT(*) FROM orders{where}', args))
         rows = await c.execute(f'SELECT order_id FROM orders{where} ORDER BY created_at DESC LIMIT ? OFFSET ?', args + [limit, offset])
         ids = [r['order_id'] for r in rows]
@@ -222,7 +223,48 @@ async def reject_aftersale(as_id: str, handled_by: str, note: str='') -> dict[st
     return await _update_aftersale(as_id, 'rejected', handled_by, note)
 
 async def refund_aftersale(as_id: str, handled_by: str, refund_amount: float | None=None) -> dict[str, Any] | None:
-    return await _update_aftersale(as_id, 'refunded', handled_by, refund_amount=refund_amount)
+    """售后退款：真实渠道先调网关退款，成功后才翻转本地状态。
+
+    - 微信 v2 等真实渠道：调用原生退款接口并校验回执，网关受理后才改
+      ``payments.status='refunded'``；网关拒绝则抛错、状态保持原样。
+    - 沙箱/未实现渠道：走 ``payment.try_refund`` 的本地模拟，直接翻转。
+    """
+    a = await get_aftersale(as_id)
+    if not a:
+        return None
+    order_id = a.get('order_id') or ''
+    try:
+        order_total = float(a.get('order_total') or 0)
+    except (TypeError, ValueError):
+        order_total = 0.0
+    amount = float(refund_amount) if refund_amount is not None else order_total
+    reason = f"售后退款(单号 {as_id})"
+
+    # 取该订单实际支付方式（method）与实付金额
+    pay_method, pay_amount = 'sandbox', amount
+    async with dba.transaction() as c:
+        pm = _fetchone(await c.execute("SELECT method, amount FROM payments WHERE order_id=? AND status='paid' ORDER BY created_at DESC LIMIT 1", (order_id,)))
+        if pm:
+            pay_method = pm['method'] or 'sandbox'
+            try:
+                pay_amount = float(pm['amount'])
+            except (TypeError, ValueError):
+                pay_amount = amount
+
+    from backend.storage import payment as payment_module
+    order_ctx = {
+        'order_id': order_id,
+        'total_price': pay_amount,
+        'method': pay_method,
+    }
+    try:
+        await asyncio.to_thread(payment_module.try_refund, order_ctx, amount, reason)
+    except payment_module.PaymentError:
+        raise
+    except payment_module.PaymentGatewayError:
+        raise
+
+    return await _update_aftersale(as_id, 'refunded', handled_by, refund_amount=amount)
 
 # ---------------- 商家提现 ----------------
 
@@ -399,11 +441,12 @@ async def dashboard_stats(days: int=7) -> dict[str, Any]:
         gmv = _scalar(await c.execute('SELECT COALESCE(SUM(total_price),0) FROM orders'))
         order_count = _scalar(await c.execute('SELECT COUNT(*) FROM orders'))
         user_count = _scalar(await c.execute('SELECT COUNT(*) FROM users'))
-        new_today = _scalar(await c.execute("SELECT COUNT(*) FROM users WHERE date(created_at)=date('now')"))
+        today_start = date.today().isoformat()
+        new_today = _scalar(await c.execute("SELECT COUNT(*) FROM users WHERE created_at >= ? AND created_at < ?", (today_start, today_start + ' 23:59:59')))
         top_plans = [dict(r) for r in await c.execute('SELECT p.id AS plan_id, p.name, p.sold FROM plans p\n               ORDER BY p.sold DESC LIMIT 5')]
         top_shops = [dict(r) for r in await c.execute('SELECT s.id AS shop_id, s.name, s.sales FROM shops s\n               ORDER BY s.sales DESC LIMIT 5')]
         cutoff = (date.today() - timedelta(days=days)).isoformat()
-        trend = [dict(r) for r in await c.execute("SELECT date(created_at) AS date, COUNT(*) AS count, COALESCE(SUM(total_price),0) AS amount\n               FROM orders WHERE date(created_at) >= ?\n               GROUP BY date(created_at) ORDER BY date(created_at) ASC", (cutoff,))]
+        trend = [dict(r) for r in await c.execute("SELECT date(created_at) AS date, COUNT(*) AS count, COALESCE(SUM(total_price),0) AS amount\n               FROM orders WHERE created_at >= ?\n               GROUP BY date(created_at) ORDER BY date(created_at) ASC", (cutoff,))]
         return {'gmv': float(gmv), 'order_count': int(order_count), 'user_count': int(user_count), 'new_users_today': int(new_today), 'top_plans': top_plans, 'top_shops': top_shops, 'order_trend': trend}
 
 def _fetchone(rows):

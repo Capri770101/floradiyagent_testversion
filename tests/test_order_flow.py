@@ -24,7 +24,7 @@ def _create_order(client, token):
     return r.json()['order']['order_id']
 
 def _pay(client, token, oid):
-    r = client.post('/pay', headers={'Authorization': f'Bearer {token}'}, json={'order_id': oid, 'method': 'wechat'})
+    r = client.post('/pay', headers={'Authorization': f'Bearer {token}'}, json={'order_id': oid, 'method': 'sandbox'})
     assert r.status_code == 200, r.text
 
 def _action(client, token, oid, action):

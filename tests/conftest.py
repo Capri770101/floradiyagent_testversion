@@ -22,6 +22,12 @@ os.environ['DB_PATH'] = _TMP_DB
 os.environ['IMAGE_PROVIDER'] = 'mock'
 if not _LIVE:
     os.environ['LLM_API_KEY'] = ''
+# 支付网关测试隔离：强制 sandbox 并清空真实凭据，保证纯逻辑单测零网络、可复现
+# （真实微信/支付宝凭据在 misc/.env，仅线上环境被读取；这里避免误发真实请求）
+os.environ['PAYMENT_PROVIDER'] = 'sandbox'
+for _k in ['WECHATPAY_V2_MCH_ID', 'WECHATPAY_V2_API_KEY', 'WECHATPAY_V2_CERT',
+           'WECHATPAY_V2_PRIVATE_KEY', 'ALIPAY_APP_ID', 'ALIPAY_PRIVATE_KEY']:
+    os.environ[_k] = ''
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)

@@ -56,7 +56,7 @@ def test_order_auto_applies_best_coupon(client):
 def test_pay_awards_points(client):
     token = _register(client, 'cp_c')
     order = _create_order(client, token, price=99)
-    r = client.post('/pay', headers={'Authorization': f'Bearer {token}'}, json={'order_id': order['order_id'], 'method': 'wechat'})
+    r = client.post('/pay', headers={'Authorization': f'Bearer {token}'}, json={'order_id': order['order_id'], 'method': 'sandbox'})
     assert r.status_code == 200
     points = client.get('/points', headers={'Authorization': f'Bearer {token}'}).json()
     assert points['balance'] == 194

@@ -18,9 +18,12 @@ from backend.storage.db import init_db
 from backend.storage.payment import (
     AlipayProvider,
     PaymentConfigError,
+    PaymentError,
     SandboxProvider,
     WeChatPayProvider,
+    WeChatPayV2Provider,
     get_provider,
+    try_refund,
 )
 
 
@@ -94,7 +97,7 @@ def _make_order(user_id: str='u_pay') -> str:
 
 def test_pay_order_sandbox_records_payment_and_marks_paid() -> None:
     order_id = _make_order()
-    result = asyncio.run(commerce.pay_order(order_id, 'wechat'))
+    result = asyncio.run(commerce.pay_order(order_id, 'sandbox'))
     assert result is not None
     assert result['paid'] is True
     assert result['payment_id']
@@ -107,7 +110,7 @@ def test_pay_order_sandbox_records_payment_and_marks_paid() -> None:
     pay_row = pay_rows[0] if pay_rows else None
     assert pay_row is not None
     assert pay_row['status'] == 'paid'
-    assert pay_row['method'] == 'wechat'
+    assert pay_row['method'] == 'sandbox'
     assert float(pay_row['amount']) == 393.0
 
 def test_pay_order_unknown_order_returns_none() -> None:
@@ -133,7 +136,7 @@ def test_get_payment_status_polling() -> None:
     assert status is not None
     assert status['order_id'] == order_id
     assert status['paid'] is False
-    asyncio.run(commerce.pay_order(order_id, 'wechat'))
+    asyncio.run(commerce.pay_order(order_id, 'sandbox'))
     assert asyncio.run(commerce.get_payment_status(order_id))['paid'] is True
     assert asyncio.run(commerce.get_payment_status('O_not_exist')) is None
 
@@ -152,3 +155,23 @@ def test_mark_order_paid_idempotent_no_double_points() -> None:
     assert asyncio.run(commerce.mark_order_paid(order_id, 'TXN_2')) is True
     assert _rec_count() == 1
     assert asyncio.run(commerce.get_order(order_id))['paid'] is True
+
+def test_sandbox_refund_returns_none() -> None:
+    """沙箱渠道不实现真实退款：refund 返回 None，供 try_refund 走本地模拟。"""
+    assert SandboxProvider().refund({'order_id': 'O_r', 'total_price': 10.0}, 10.0) is None
+
+def test_try_refund_sandbox_simulates_success() -> None:
+    """未实现真实退款的渠道：try_refund 返回模拟成功结果。"""
+    result = try_refund({'order_id': 'O_sim', 'total_price': 20.0, 'method': 'sandbox'}, 20.0, '测试')
+    assert result is not None
+    assert result.success is True
+    assert result.refund_id.startswith('SIM_')
+
+def test_try_refund_invalid_amount_raises() -> None:
+    with pytest.raises(PaymentError):
+        try_refund({'order_id': 'O_sim', 'total_price': 20.0, 'method': 'sandbox'}, 0, '')
+
+def test_wechat_v2_refund_missing_certs_raises() -> None:
+    """测试环境未配置 v2 商户证书：发起真实退款应抛 PaymentConfigError。"""
+    with pytest.raises(PaymentConfigError):
+        WeChatPayV2Provider().refund({'order_id': 'O_real', 'total_price': 30.0}, 30.0, '测试')

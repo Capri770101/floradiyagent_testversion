@@ -34,6 +34,7 @@ from backend.routers import (
     chat,
     chats,
     commerce,
+    knowledge,
     merchant,
     notify,
     recommend,
@@ -129,6 +130,7 @@ app.include_router(chat.router)
 app.include_router(chats.router)
 app.include_router(catalog.router)
 app.include_router(commerce.router)
+app.include_router(knowledge.router)
 app.include_router(merchant.router)
 app.include_router(admin.router)
 app.include_router(notify.router)

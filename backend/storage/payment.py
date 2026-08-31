@@ -89,6 +89,21 @@ class NotifyResult:
     paid: bool = True
     raw: dict[str, Any] | None = None
 
+@dataclass
+class RefundResult:
+    """一次退款的结果。
+
+    Attributes:
+        refund_id: 本系统/渠道退款单号。
+        out_refund_no: 商户退款单号。
+        success: 退款是否已受理/成功。
+        raw: 渠道原始应答（便于审计）。
+    """
+    refund_id: str
+    out_refund_no: str
+    success: bool = True
+    raw: dict[str, Any] | None = None
+
 class BaseProvider(abc.ABC):
     """支付渠道抽象基类。"""
     name: str = ''
@@ -100,6 +115,10 @@ class BaseProvider(abc.ABC):
     @abc.abstractmethod
     def verify_notify(self, body: bytes, headers: Mapping[str, str]) -> NotifyResult | None:
         """校验并解密支付回调；验签失败/无法识别返回 None。"""
+
+    def refund(self, order: dict[str, Any], amount: float, reason: str='') -> RefundResult | None:
+        """退款。未实现的渠道返回 None（调用方走本地沙箱标记）；真实渠道由子类覆盖。"""
+        return None
 
 def _load_pem(value: str) -> str:
     """把配置里的 PEM 值归一化为 PEM 文本。
@@ -464,6 +483,79 @@ class WeChatPayV2Provider(BaseProvider):
             raw=data
         )
 
+    def _refund_creds(self) -> dict[str, str]:
+        """返回退款所需的双向 TLS 证书凭据；缺失即抛错。"""
+        mchid = settings.wechatpay_v2_mch_id
+        api_key = settings.wechatpay_v2_api_key
+        client_cert = _load_pem(settings.wechatpay_v2_cert)
+        client_key = _load_pem(settings.wechatpay_v2_private_key)
+        if not (mchid and api_key and client_cert and client_key):
+            raise PaymentConfigError(
+                '微信支付 v2 退款未完整配置：需要 WXPAY_V2_MCH_ID / WXPAY_V2_API_KEY '
+                '/ WXPAY_V2_CERT / WXPAY_V2_PRIVATE_KEY（退款需商户证书双向TLS）'
+            )
+        return {'mchid': mchid, 'api_key': api_key, 'cert': client_cert, 'key': client_key}
+
+    def refund(self, order: dict[str, Any], amount: float, reason: str='') -> RefundResult | None:
+        """微信支付 v2 原生退款（/secapi/pay/refund，需双向 TLS 证书）。
+
+        out_refund_no 用商户号+时间戳+随机串生成以保证唯一。
+        校验与签名均用 HMAC-SHA256；退款接口使用客户端证书做双向 TLS。
+        """
+        creds = self._refund_creds()
+        amount_fen = int(round(float(amount) * 100))
+        old = float(order.get('total_price') or 0)
+        total_fen = int(round(old * 100))
+        if amount_fen <= 0 or total_fen <= 0:
+            raise PaymentError('退款/订单金额非法')
+
+        out_refund_no = f"R{int(time.time())}{secrets.token_hex(4).upper()}"
+        params = {
+            'appid': settings.wechat_appid or '',
+            'mch_id': creds['mchid'],
+            'nonce_str': secrets.token_hex(16),
+            'sign_type': 'HMAC-SHA256',
+            'out_trade_no': order['order_id'],
+            'out_refund_no': out_refund_no,
+            'total_fee': str(total_fen),
+            'refund_fee': str(amount_fen),
+            'refund_desc': (reason or '用户申请退款')[:80],
+            'notify_url': settings.wechatpay_v2_notify_url or settings.wechatpay_notify_url or '',
+        }
+        params['sign'] = self._xml_sign(params, creds['api_key'])
+        xml_body = self._dict_to_xml(params)
+
+        # 客户端证书（PEM 字符串）写入临时文件供 httpx 双向 TLS 使用
+        import tempfile
+        from pathlib import Path as PPath
+        with tempfile.TemporaryDirectory() as td:
+            cert_path = PPath(td) / 'apiclient_cert.pem'
+            key_path = PPath(td) / 'apiclient_key.pem'
+            cert_path.write_text(creds['cert'], encoding='utf-8')
+            key_path.write_text(creds['key'], encoding='utf-8')
+            try:
+                with httpx.Client(
+                    cert=(str(cert_path), str(key_path)),
+                    headers={'Content-Type': 'application/xml'},
+                    timeout=15,
+                ) as client:
+                    resp = client.post(self.API_BASE + '/secapi/pay/refund', content=xml_body.encode('utf-8'))
+            except httpx.HTTPError as exc:
+                raise PaymentGatewayError(f'微信支付 v2 退款网络错误: {exc}') from exc
+
+        resp_data = self._xml_to_dict(resp.text)
+        if resp_data.get('return_code') != 'SUCCESS':
+            raise PaymentGatewayError(f'微信支付 v2 退款失败: {resp_data.get("return_msg") or resp.text[:200]}')
+        if resp_data.get('result_code') != 'SUCCESS':
+            raise PaymentGatewayError(f'微信支付 v2 退款被拒: {resp_data.get("err_code_des") or resp_data.get("err_code") or resp.text[:200]}')
+
+        return RefundResult(
+            refund_id=resp_data.get('refund_id', ''),
+            out_refund_no=out_refund_no,
+            success=True,
+            raw=resp_data,
+        )
+
 PROVIDERS: dict[str, type[BaseProvider]] = {
     'sandbox': SandboxProvider,
     'wechat': WeChatPayProvider,
@@ -496,3 +588,36 @@ def get_provider(name: str | None=None) -> BaseProvider:
     if not cls:
         raise PaymentConfigError(f"未知支付渠道: {name}（可选：{', '.join(PROVIDERS)}）")
     return cls()
+
+def try_refund(order: dict[str, Any], amount: float, reason: str='') -> RefundResult:
+    """按订单发起真实退款（若当前渠道支持），否则本地模拟成功。
+
+    供售后/拒单等退款入口使用：真实渠道（微信 v2）调用原生退款接口并校验回执；
+    沙箱/未实现渠道直接返回模拟的 ``RefundResult``，由调用方本地翻转状态。
+
+    Args:
+        order: 订单行（需含 order_id / total_price / method 等字段）。
+        amount: 退款金额（元）。
+        reason: 退款原因说明。
+
+    Raises:
+        PaymentError: 金额非法。
+        PaymentGatewayError: 真实渠道调用失败（退款未受理，状态不变）。
+    """
+    if float(amount or 0) <= 0:
+        raise PaymentError('退款金额必须大于 0')
+    method = (order.get('method') or order.get('payment_method') or settings.payment_provider or 'sandbox').lower()
+    try:
+        provider = get_provider(method)
+    except PaymentConfigError:
+        provider = SandboxProvider()
+    result = provider.refund(order, float(amount), reason)
+    if result is not None:
+        return result
+    # 渠道未实现真实退款：本地模拟受理
+    return RefundResult(
+        refund_id=f'SIM_{secrets.token_hex(6).upper()}',
+        out_refund_no=f'SIM_{secrets.token_hex(4).upper()}',
+        success=True,
+        raw={'simulated': True, 'reason': reason},
+    )

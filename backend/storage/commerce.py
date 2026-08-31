@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -87,14 +88,18 @@ async def claim_coupon_offer(user_id: str, offer_id: str) -> dict[str, Any]:
         already = _fetchone(await c.execute('SELECT 1 FROM coupons WHERE user_id=? AND offer_id=? LIMIT 1', (user_id, offer_id)))
         if already:
             raise ValueError('每人限领一张，你已经领过了')
-        stock = int(offer['stock'])
-        if stock == 0:
-            raise ValueError('库存不足，已抢光')
         cost = int(offer['points_cost'])
         if cost > 0:
             balance = _fetchone(await c.execute('SELECT balance FROM user_points WHERE user_id=?', (user_id,)))
             if not balance or int(balance['balance']) < cost:
                 raise ValueError(f'积分不足，需要 {cost} 积分')
+        # 原子库存递减：先检查再递减，避免并发超领
+        offer_rows = await c.execute('SELECT stock FROM coupon_offers WHERE id=?', (offer_id,))
+        offer_row = _fetchone(offer_rows)
+        stock = int(offer_row['stock']) if offer_row else 0
+        # stock = -1 表示无限库存，无需递减
+        if stock == 0:
+            raise ValueError('库存不足，已抢光')
         if stock > 0:
             await c.execute('UPDATE coupon_offers SET stock=stock-1 WHERE id=?', (offer_id,))
         cid = 'C_' + uuid.uuid4().hex[:10]
@@ -276,7 +281,7 @@ async def merchant_stats(shop_ids: list[str] | None=None, shop_id: str='') -> di
             rev_where = f' AND (o.shop_id IN ({ph}) OR o.order_id IN (SELECT order_id FROM order_items WHERE shop IN ({ph})))'
             rev_args = list(args)
         rev = _fetchone(await c.execute(f'SELECT COUNT(*), COALESCE(AVG(r.rating),0) FROM reviews r\n           JOIN orders o ON o.order_id = r.order_id WHERE 1=1{rev_where}', rev_args))
-        today = _fetchone(await c.execute(f"SELECT COUNT(*), COALESCE(SUM(total_price),0) FROM orders WHERE 1=1{where} AND date(created_at)=date('now')", args))
+        today = _fetchone(await c.execute(f"SELECT COUNT(*), COALESCE(SUM(total_price),0) FROM orders WHERE 1=1{where} AND created_at >= date('now', 'start of day')", args))
         pending_payment = _scalar(await c.execute(f"SELECT COUNT(*) FROM orders WHERE 1=1{where} AND status IN ('created','pending_payment')", args))
         if shop_ids:
             shops = await c.execute(f"SELECT * FROM shops WHERE id IN ({','.join('?' * len(shop_ids))}) ORDER BY created_at", shop_ids)
@@ -304,11 +309,11 @@ async def merchant_orders(shop_ids: list[str] | None=None, shop_id: str='', stat
             where += ' AND (order_id LIKE ? OR recipient_name LIKE ? OR recipient_phone LIKE ? OR items LIKE ? OR order_id IN (SELECT order_id FROM order_items WHERE name LIKE ?))'
             args += [like, like, like, like, like]
         if date_from:
-            where += ' AND date(created_at) >= ?'
+            where += ' AND created_at >= ?'
             args.append(date_from.strip()[:10])
         if date_to:
-            where += ' AND date(created_at) <= ?'
-            args.append(date_to.strip()[:10])
+            where += ' AND created_at <= ?'
+            args.append(date_to.strip()[:10] + ' 23:59:59')
         sql = f'SELECT order_id FROM orders WHERE 1=1{where} ORDER BY created_at DESC LIMIT ?'
         args.append(limit)
         rows = await c.execute(sql, args)
@@ -688,7 +693,8 @@ async def cancel_order(order_id: str) -> dict[str, Any] | None:
         await notify.try_create(row['user_id'], notify.T_ORDER, '订单已取消', f'订单 {order_id} 已取消，如已使用优惠券将自动返还', ref_type='order', ref_id=order_id)
         return await get_order(order_id)
 
-async def pay_order(order_id: str, method: str='wechat', extra: dict[str, Any] | None=None) -> dict[str, Any] | None:
+async def pay_order(order_id: str, method: str='', extra: dict[str, Any] | None=None) -> dict[str, Any] | None:
+    method = (method or payment_module.settings.payment_provider or 'sandbox')
     async with dba.transaction() as c:
         '发起支付：按配置的支付渠道（默认 sandbox）调统一下单，记录 payments 行并归一化返回。\n\n    - 沙箱渠道：下单即模拟支付成功，订单直接标记为已支付。\n    - 真实渠道（微信/支付宝）：下单成功后订单保持 pending，仅当 ``mark_order_paid``\n      被支付回调（验签通过）调用后才标记已支付——状态变更必须来自可信回调。\n\n    Args:\n        order_id: 本系统订单号。\n        method: 支付方式（wechat/alipay/union/huabei），透传给渠道。\n        extra: 渠道额外参数，如微信需 ``{"openid": ...}``、``{"description": ...}``。\n\n    Returns:\n        归一化的支付意图 dict（含 pay_params / paid / page_path / payment_id）；\n        订单不存在返回 None。\n\n    Raises:\n        PaymentConfigError: 真实渠道凭据未配置（由 payment 层抛出，API 层转 4xx/5xx）。\n        PaymentGatewayError: 调第三方网关网络/返回异常。\n    '
         row = _fetchone(await c.execute('SELECT * FROM orders WHERE order_id=?', (order_id,)))
@@ -832,7 +838,32 @@ async def merchant_reject_order(order_id: str, reason: str='') -> dict[str, Any]
 
     Raises:
         ValueError: 状态不满足拒单条件。
+        PaymentGatewayError: 真实渠道退款失败（状态不变）。
     """
+    async with dba.transaction() as c:
+        row = _fetchone(await c.execute('SELECT * FROM orders WHERE order_id=?', (order_id,)))
+        if not row:
+            return None
+        if row['status'] != 'paid':
+            raise ValueError(f"当前状态 {row['status']} 不可拒单（仅已支付订单可拒单）")
+        if row['merchant_status']:
+            raise ValueError(f"订单已处理（{row['merchant_status']}），不可重复拒单")
+        # 取支付方式与实付金额，用于真实退款
+        pm = _fetchone(await c.execute("SELECT method, amount FROM payments WHERE order_id=? AND status='paid' ORDER BY created_at DESC LIMIT 1", (order_id,)))
+        pay_method = pm['method'] if pm and pm['method'] else 'sandbox'
+        try:
+            pay_amount = float(pm['amount']) if pm else float(row['total_price'] or 0)
+        except (TypeError, ValueError):
+            pay_amount = float(row['total_price'] or 0)
+
+    # 真实渠道先发起退款，受理成功后才翻转本地状态
+    from backend.storage import payment as payment_module
+    order_ctx = {'order_id': order_id, 'total_price': pay_amount, 'method': pay_method}
+    try:
+        await asyncio.to_thread(payment_module.try_refund, order_ctx, pay_amount, reason or '商家拒单退款')
+    except payment_module.PaymentGatewayError:
+        raise
+
     async with dba.transaction() as c:
         row = _fetchone(await c.execute('SELECT * FROM orders WHERE order_id=?', (order_id,)))
         if not row:

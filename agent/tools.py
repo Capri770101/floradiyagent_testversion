@@ -197,7 +197,16 @@ def _build_scene_map() -> dict[str, str]:
         for kw in s.get('keywords', []):
             m[kw] = s['id']
     return m
-_SCENE_MAP = _build_scene_map()
+
+# 懒加载：避免模块导入时查询数据库
+_SCENE_MAP: dict[str, str] | None = None
+
+def _get_scene_map() -> dict[str, str]:
+    """懒加载获取场景映射。"""
+    global _SCENE_MAP
+    if _SCENE_MAP is None:
+        _SCENE_MAP = _build_scene_map()
+    return _SCENE_MAP
 
 def _get_style_full(style_id: str | None) -> tuple[dict | None, dict | None]:
     """解析风格（含子风格）：返回 (resolved_style, parent_style)。
@@ -262,7 +271,16 @@ def _match_style(style_name: str | None) -> tuple[str | None, str | None, str | 
         return hit
     hit = _lookup(sub)
     return hit or (None, None, None)
-_ALL_FLOWER_NAMES: list[str] = [f['name'] for f in query_knowledge('flower', '')['results']]
+
+# 懒加载：避免模块导入时查询数据库
+_ALL_FLOWER_NAMES: list[str] | None = None
+
+def _get_all_flower_names() -> list[str]:
+    """懒加载获取所有花材名称。"""
+    global _ALL_FLOWER_NAMES
+    if _ALL_FLOWER_NAMES is None:
+        _ALL_FLOWER_NAMES = [f['name'] for f in query_knowledge('flower', '')['results']]
+    return _ALL_FLOWER_NAMES
 
 def _get_tier(budget_num: int | None, scene_anchor: str | None) -> dict:
     """解析预算档：显式预算优先 → 场景锚点 → 默认「精致/送礼」档。"""
@@ -362,7 +380,7 @@ def _extract_feedback(feedback: str) -> dict[str, Any]:
         if kw in feedback:
             dims['mood'] = val
             break
-    for name in _ALL_FLOWER_NAMES:
+    for name in _get_all_flower_names():
         if any(seg in feedback for seg in (f'不要{name}', f'去掉{name}', f'别用{name}', f'换掉{name}', f'去掉{name}花')):
             exclude.add(name)
     return {'dims': dims, 'exclude': exclude}
@@ -405,7 +423,7 @@ def extract_requirement(text: str) -> FlowerRequirement:
                 req.colors = [table[best_kw]]
             else:
                 setattr(req, key, table[best_kw])
-    for kw, sid in _SCENE_MAP.items():
+    for kw, sid in _get_scene_map().items():
         if kw in text:
             req.scene = sid
             break
@@ -1063,18 +1081,24 @@ def generate_tool_manual() -> str:
     return '\n'.join(lines)
 
 async def execute_tool(name: str, arguments: dict[str, Any] | None, context: dict[str, Any] | None=None) -> tuple[str, str]:
-    """执行工具，返回 (结果字符串, 状态 ok|error)。"""
+    """执行工具，返回 (结果字符串, 状态 ok|error)。超时 30 秒自动中断。"""
+    import asyncio
+
     spec = TOOL_REGISTRY.get(name)
     if not spec:
         return (f'未知工具: {name}', 'error')
-    try:
+
+    async def _run_tool() -> str:
         kwargs = dict(arguments or {})
         if spec.inject_context:
             kwargs['_context'] = context
         if inspect.iscoroutinefunction(spec.func):
-            result = await spec.func(**kwargs)
+            return await spec.func(**kwargs)
         else:
-            result = spec.func(**kwargs)
+            return spec.func(**kwargs)
+
+    try:
+        result = await asyncio.wait_for(_run_tool(), timeout=30.0)
         if not isinstance(result, str):
             result = json.dumps(result, ensure_ascii=False)
         try:
@@ -1084,6 +1108,9 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, context: dic
         except (json.JSONDecodeError, TypeError):
             pass
         return (result, 'ok')
+    except asyncio.TimeoutError:
+        logger.warning('[tools] 执行 %s 超时（30s）', name)
+        return (f'工具执行超时（30s）: {name}', 'error')
     except Exception as exc:
         logger.exception('[tools] 执行 %s 失败', name)
         return (f'工具执行失败: {exc}', 'error')

@@ -195,7 +195,7 @@ class OrderCreateRequest(BaseModel):
 
 class PayRequest(BaseModel):
     order_id: str = Field(..., min_length=1, max_length=64)
-    method: str = Field('wechat', description='wechat | alipay | union | huabei')
+    method: str | None = Field(None, description='wechat_native(微信扫码) | alipay(支付宝) | 留空=用配置默认渠道(sandbox)')
     openid: str | None = Field(None, description='微信 JSAPI 必填：支付用户 openid（公众号网页授权 / 小程序登录获取）')
     trade_type: str | None = Field(None, description='微信交易类型：jsapi(公众号/小程序,需openid) | mweb(H5跳转微信App) | native(扫码). 不填则由后端按是否带 openid 推断(带=jsapi,不带=mweb)')
     description: str | None = Field(None, description='订单描述（支付凭证展示）')

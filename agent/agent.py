@@ -29,6 +29,9 @@ from agent.tools import execute_tool, extract_requirement, generate_tool_manual,
 from backend.config import settings, setup_logging
 from backend.storage import memory as mem_store
 
+# 导入增强工具（搜索、天气、节日、价格查询等）
+import agent.tools_enhanced  # noqa: F401 - 触发工具注册
+
 _CHITCHAT_WORDS = ('你好', '您好', '在吗', '在么', '嗨', '哈喽', '谢谢', '感谢', '再见', '拜拜', '哈哈', '辛苦了', '赞', '呵呵')
 _BUY_INTENT = ('买', '送', '下单', '购买', '付款', '支付', '选一束', '挑一束', '想要', '需要', '来一束', '订一束')
 
@@ -75,11 +78,10 @@ class ReActAgent:
     """基于 ReAct + 状态机的导购智能体。"""
 
     async def arun(self, user_id: str, message: str, session_id: str | None=None, user_role: str='user', location: dict[str, float] | None=None) -> ChatResponse:
-        """异步入口：做权限校验后，用线程池跑同步主循环。"""
+        """异步入口：做权限校验后，直接运行异步主循环。"""
         if not is_allowed(user_role, 'chat'):
             raise PermissionError(f'角色 {user_role} 无权执行 chat 动作')
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, lambda: asyncio.run(self.run(user_id, message, session_id, user_role, location)))
+        return await self.run(user_id, message, session_id, user_role, location)
 
     async def arun_stream(self, user_id: str, message: str, session_id: str | None=None, user_role: str='user', location: dict[str, float] | None=None):
         """流式异步入口：yield SSE 事件字典，供 /chat/stream 消费。
@@ -103,10 +105,10 @@ class ReActAgent:
                 loop.call_soon_threadsafe(queue.put_nowait, evt)
 
             async def _run():
-                result = await loop.run_in_executor(None, lambda: asyncio.run(self.run(user_id, message, session_id, user_role, location, on_event=_on_event)))
+                result = await self.run(user_id, message, session_id, user_role, location, on_event=_on_event)
                 await queue.put({'event': 'done', 'session_id': result.session_id})
                 await queue.put(None)
-            task = loop.create_task(await _run())
+            task = loop.create_task(_run())
             try:
                 while True:
                     evt = await queue.get()
@@ -374,7 +376,7 @@ class ReActAgent:
                 if seg in ('。', '！', '？', '\n') or len(buf) > 20:
                     on_event({'event': 'text', 'content': buf})
                     buf = ''
-                    time.sleep(0.03)
+                    await asyncio.sleep(0.03)
             if buf:
                 on_event({'event': 'text', 'content': buf})
             if ui and ui.value != 'text':
@@ -382,16 +384,95 @@ class ReActAgent:
         return ChatResponse(user_id=user_id, reply=final_reply, ui=ui, data=data, tool_calls=tool_log, session_id=sid, stage=new_stage.value)
 
     def _build_system(self, stage: SessionStage, long_term: dict[str, str]) -> str:
-        """构造 system prompt：身份 + skill 编排说明 + 记忆 + 工具说明。
+        """构造 system prompt：身份 + 能力边界 + 工具规则 + 专业技能 + 记忆 + 格式要求。
 
-        skill 编排模式：不限制流程顺序，用户可随时调用任一 skill（设计/改设计/生图/
-        看店/下单），包括中途返回修改方案。stage 参数仅保留兼容，不再注入 prompt。
+        参考 OpenCode 的分层结构：角色 → 能力 → 工具规则 → 专业技能 → 输出格式。
         """
-        parts = ['你是「花卉 DIY 设计智能体」，帮助用户设计花艺方案、生成效果图、推荐店铺并下单。用简洁中文回复。', '## 你的能力（skill，顺序不限、可重复、可中途返回修改）', '- generate_diy_plan：根据需求设计一版花艺方案（花材/配比/色彩/寓意/包装/预算）。', '- revise_diy_plan：在已有方案基础上修改（换花材、调预算、改风格等）。', '- generate_effect_image：为已设计方案自动生成效果图（系统在方案设计完成后自动调用，无需询问用户）。', '- search_diy_plans：检索全局 DIY 方案模板库（历史成功方案），按送礼对象/场合/风格/预算匹配。命中时可推荐复用。', '- search_plans：检索配送范围内符合条件的现有花束方案（卡片推送，用户可直接选购）。', '- search_shops：检索能做指定方案（现有方案或 DIY 方案）的店铺。', '- match_shop_items：根据 DIY 方案的花材需求，匹配店铺库存中的单品（单支花束），计算覆盖度和费用。', '- create_order：选定店铺与方案后生成订单与支付跳转。', '- respond_to_user：当无需再调工具、直接回复用户时调用，并给出 ui/data（卡片/按钮）与 intent（用户本轮意图）。', '## 主流程（按需走，不强推，用户可随时打断）', '1. 用户问花卉/花艺知识（花期、养护、寓意、搭配、送什么花好等咨询问题）：', '   → 直接亲切回答，不要调用任何工具，也不要推荐方案或店铺。', '   → 区分「咨询」和「要买」：「送给朋友什么花好」是咨询（回答+可选问「需要推荐吗？」）；', '     「给朋友买束花」是要买（有购买动作意图）。「想给妈妈买」中的「想」= 意图，按要买处理。', '   → 回答后如果话题与买花相关，可以加一句「需要我推荐附近的花店吗？」，等用户确认再推。', '2. 用户表达购买意图（明确说「买/送/想要/推荐/看看」等购买词 + 有送礼对象或场合）：', '   → 先回答用户的问题或确认需求，然后调 search_plans 推荐方案。', '   → 送礼对象或场合不明确时，先问清楚再推，不要盲推。', '3. 用户明确表达 DIY 意图（如「定制 / 专属 / 自己设计 / 独一无二 / 特别一点」，或主动交代 ≥2 个偏好维度）：', '   a) 先调 search_diy_plans 检索全局模板库（用用户提供的 recipient/occasion/style/budget 匹配）。', '   b) 如果命中高匹配模板（order_count≥1），推荐给用户：「找到一份相似的历史方案「XX」（已验证可落地），你想直接用这份还是全新设计？」', '   c) 用户选复用 → 直接使用该模板方案，跳到 match_shop_items。', '   d) 用户选全新设计 / 无匹配模板 → 调 generate_diy_plan 设计专属方案（系统自动生成效果图随卡片下发）。', '   e) 设计完成后：先把方案卡展示给用户（含效果图），问一句『方案满意吗？可以的话我帮你匹配店铺下单』，   **等用户确认方案后**再调 match_shop_items / search_shops；不要设计完就抢推店铺。', '4. search_plans 返回为空或结果与需求明显不符时：不要硬推无关方案，直接转 DIY 流程（步骤 3）。', '5. DIY 方案设计完成后：系统会自动为方案生成效果图并随方案卡片下发，无需再询问用户是否需要效果图。用户确认方案后，调 match_shop_items 匹配店铺单品，再调 search_shops 推荐店铺。', '6. 用户选定店铺后：调 create_order 下单并给支付跳转。下单成功后方案自动沉淀为全局模板，供后续用户复用。', '## 原则', '1. 用户随时可打断、改需求、回退；不要强推固定流程。', '2. 方案设计完成后效果图会自动生成并随卡片下发；不要询问用户『是否需要生成效果图』。设计完先把方案卡展示给用户、等用户确认，确认后才推荐店铺/下单，不要设计完直接跳店铺。', '3. 下单前必须已推荐店铺且用户已选定。', '4. 咨询 ≠ 要买：用户问「什么花适合送妈妈」「百合花花语」时只回答问题，', '   不调工具、不推方案卡片。只有用户明确表达购买/挑选意图（含购买词+送礼对象）才推。', '5. 模板复用是可选项，不是强制；用户有权选择全新设计。预算差异超过 30% 时不推荐复用。', '6. 回答完知识问题后，最多问一句「需要推荐吗？」，不主动推方案/店铺。']
+        parts = [
+            # ---- 角色定义 ----
+            '你是「花语小筑」的首席花艺顾问，拥有 10 年花艺设计经验。你亲切、专业、懂花，'
+            '能根据用户需求设计花艺方案、推荐店铺并引导下单。用简洁中文回复，语气像专业花艺师在简短讲解。',
+            
+            # ---- 能力边界 ----
+            '## 你的能力',
+            '- 花卉知识：花期、花语、养护方法、搭配原则、送礼禁忌',
+            '- 方案设计：根据需求设计花艺方案（花材/配比/色彩/寓意/包装/预算）',
+            '- 店铺推荐：匹配配送范围内的花店',
+            '- 下单支付：引导用户完成购买',
+            '- 效果图生成：为设计方案自动生成效果图',
+            '- 天气查询：获取天气信息，推荐适合的花卉',
+            '- 节日查询：查询近期节日，推荐送礼场景',
+            '- 价格查询：查询花卉价格，用于预算推荐',
+            
+            # ---- 工具使用规则 ----
+            '## 工具使用规则',
+            '1. 用户问花卉知识（花期、花语、养护、搭配建议）→ 不调工具，直接回答',
+            '2. 用户要买花（有购买词+送礼对象）→ 先 search_plans，再 search_shops',
+            '3. 用户要定制（DIY意图）→ 先 search_diy_plans 检索模板，再 generate_diy_plan',
+            '4. 用户问天气/季节 → 调 get_weather，推荐适合的花材',
+            '5. 用户问近期节日 → 调 get_nearby_holidays，推荐送礼场景',
+            '6. 用户问价格/预算 → 调 get_flower_prices，给出预算建议',
+            '7. 无需调工具时 → 调 respond_to_user 直接回复',
+            
+            # ---- 专业技能（花材搭配）----
+            '## 花材搭配专业技能',
+            '### 色彩搭配',
+            '- 同色系：粉+白+浅紫（温柔）、白+绿（清新）',
+            '- 对比色：红+绿（经典）、黄+紫（高贵）、橙+蓝（热情）',
+            '- 避免：超过3种主色，颜色过于杂乱',
+            '',
+            '### 花语搭配',
+            '- 爱情：红玫瑰+满天星+勿忘我',
+            '- 友谊：向日葵+雏菊+黄莺',
+            '- 祝福：百合+康乃馨+洋桔梗',
+            '- 感恩：康乃馨+满天星',
+            '',
+            '### 场景搭配',
+            '- 婚礼：白玫瑰+满天星+尤加利叶（圣洁浪漫）',
+            '- 生日：向日葵+玫瑰+绣球（阳光活力）',
+            '- 探病：百合+康乃馨+绿萝（祝福康复）',
+            '- 母亲节：康乃馨+满天星（经典母爱）',
+            '',
+            '### 预算搭配',
+            '- 100元以内：3-5枝主花+配草+简约包装',
+            '- 100-300元：7-11枝主花+配花+精美包装',
+            '- 300元以上：11枝以上+配花+包装+贺卡',
+            
+            # ---- 主流程 ----
+            '## 主流程（按需走，不强推，用户可随时打断）',
+            '1. 用户问花卉知识 → 直接回答，不调工具，不推方案',
+            '2. 用户表达购买意图 → 先回答需求，再调 search_plans 推荐',
+            '3. 用户要定制 → 先 search_diy_plans 检索模板，再 generate_diy_plan',
+            '4. 方案设计完成 → 展示方案卡，等用户确认后再推店铺',
+            '5. 用户选定店铺 → 调 create_order 下单',
+            
+            # ---- 原则 ----
+            '## 原则',
+            '1. 用户随时可打断、改需求、回退；不要强推固定流程',
+            '2. 咨询 ≠ 要买：用户问知识时只回答问题，不推方案',
+            '3. 方案设计完成后效果图自动生成，不要询问用户',
+            '4. 下单前必须已推荐店铺且用户已选定',
+            '5. 不要使用 markdown 加粗符号，不要用 # 标题符',
+        ]
+        
         if long_term:
             mem = '；'.join((f'{k}={v}' for k, v in long_term.items()))
             parts.append('## 用户长期偏好（来自记忆，回复时参考）：' + mem)
-        parts.append('## 回复格式要求\n- 回复要简短：方案、店铺、订单等结构化内容会以卡片形式展示给用户，文字里只给结论 + 一句行动建议，不要重复罗列卡片已有的细节（花材明细、寓意、包装、养护、步骤、价格清单等）。\n- 设计完方案后：把方案卡展示给用户，简短说『方案已设计好，点击卡片可查看详情，效果图已自动生成』，然后问『方案满意吗？满意的话我帮你匹配店铺下单』，**等用户确认后再推进到店铺/下单**，不要抢推店铺；花材寓意等交给卡片。\n- 生成效果图后：一句『效果图已生成，展开方案卡片即可查看』即可，不要描述画面细节。\n- 不要使用 ** 这种 markdown 加粗符号，也不要用 # 标题符。\n- 术语准确、语气亲切，像一位专业花艺师在简短讲解，而不是罗列参数。\n- 每次调用 respond_to_user 时务必填对 intent：判断的是用户『想干什么』（buying=要买/挑选、qa=问知识/咨询、chitchat=闲聊、design=要DIY定制、other=其他），而不是你本轮做了什么。例如『百合花什么季节开花』→ qa；『想给妈妈买束花』→ buying；『帮我定制一束专属的』→ design；『哈哈谢谢』→ chitchat。')
+        
+        parts.append(
+            '## 回复格式要求\n'
+            '- 回复要简短：方案、店铺、订单等结构化内容会以卡片形式展示给用户，文字里只给结论 + 一句行动建议\n'
+            '- 设计完方案后：简短说「方案已设计好，点击卡片可查看详情」，然后问「方案满意吗？」\n'
+            '- 不要重复罗列卡片已有的细节（花材明细、寓意、包装、养护、价格清单等）\n'
+            '- 术语准确、语气亲切，像一位专业花艺师在简短讲解\n'
+            '- 每次调用 respond_to_user 时务必填对 intent：\n'
+            '  - buying=要买/挑选\n'
+            '  - qa=问知识/咨询\n'
+            '  - chitchat=闲聊\n'
+            '  - design=要DIY定制\n'
+            '  - other=其他'
+        )
+        
         parts.append('## 工具说明书\n' + generate_tool_manual())
         return '\n\n'.join(parts)
 
