@@ -74,14 +74,14 @@ def is_allowed(role: str, action: str) -> bool:
 class ReActAgent:
     """基于 ReAct + 状态机的导购智能体。"""
 
-    async def arun(self, user_id: str, message: str, session_id: str | None=None, user_role: str='user', location: dict[str, float] | None=None) -> ChatResponse:
+    async def arun(self, user_id: str, message: str, session_id: str | None=None, user_role: str='user', location: dict[str, float] | None=None, shop_id: str | None=None) -> ChatResponse:
         """异步入口：做权限校验后，用线程池跑同步主循环。"""
         if not is_allowed(user_role, 'chat'):
             raise PermissionError(f'角色 {user_role} 无权执行 chat 动作')
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, lambda: asyncio.run(self.run(user_id, message, session_id, user_role, location)))
+        return await loop.run_in_executor(None, lambda: asyncio.run(self.run(user_id, message, session_id, user_role, location, shop_id=shop_id)))
 
-    async def arun_stream(self, user_id: str, message: str, session_id: str | None=None, user_role: str='user', location: dict[str, float] | None=None):
+    async def arun_stream(self, user_id: str, message: str, session_id: str | None=None, user_role: str='user', location: dict[str, float] | None=None, shop_id: str | None=None):
         """流式异步入口：yield SSE 事件字典，供 /chat/stream 消费。
 
         事件类型：
@@ -103,7 +103,7 @@ class ReActAgent:
                 loop.call_soon_threadsafe(queue.put_nowait, evt)
 
             async def _run():
-                result = await loop.run_in_executor(None, lambda: asyncio.run(self.run(user_id, message, session_id, user_role, location, on_event=_on_event)))
+                result = await loop.run_in_executor(None, lambda: asyncio.run(self.run(user_id, message, session_id, user_role, location, on_event=_on_event, shop_id=shop_id)))
                 await queue.put({'event': 'done', 'session_id': result.session_id})
                 await queue.put(None)
             task = loop.create_task(await _run())
@@ -123,7 +123,7 @@ class ReActAgent:
             logger.exception('[agent] arun_stream 异常')
             yield {'event': 'error', 'message': f'智能体执行失败: {type(exc).__name__}'}
 
-    async def run(self, user_id: str, message: str, session_id: str | None, user_role: str, location: dict[str, float] | None, on_event: Callable[[dict], None] | None=None) -> ChatResponse:
+    async def run(self, user_id: str, message: str, session_id: str | None, user_role: str, location: dict[str, float] | None, on_event: Callable[[dict], None] | None=None, shop_id: str | None=None) -> ChatResponse:
         t0 = time.perf_counter()
         sid = await mem_store.get_or_create_session(user_id, session_id)
         stage = SessionStage(await mem_store.get_stage(sid))
@@ -142,7 +142,7 @@ class ReActAgent:
             await mem_store.set_session_flag(user_id, sid, 'image_confirmed', '1')
         long_term = await mem_store.get_long_term(user_id)
         history = await mem_store.load_history(sid, settings.history_limit)
-        system = self._build_system(stage, long_term)
+        system = self._build_system(stage, long_term, shop_id=shop_id)
         messages: list[dict[str, Any]] = [{'role': 'system', 'content': system}]
         messages += history
         messages.append({'role': 'user', 'content': message})
@@ -171,7 +171,7 @@ class ReActAgent:
                         messages.append({'role': 'tool', 'content': obs, 'tool_call_id': tc.get('id', '')})
                         new_msgs.append({'role': 'tool', 'content': obs, 'tool_call_id': tc.get('id', '')})
                         continue
-                    result, status = await execute_tool(tc['name'], tc['arguments'], {'user_id': user_id, 'session_id': sid, 'location': location, 'requirement': req})
+                    result, status = await execute_tool(tc['name'], tc['arguments'], {'user_id': user_id, 'session_id': sid, 'location': location, 'requirement': req, 'shop_id': shop_id})
                     record = ToolCallRecord(name=tc['name'], arguments=tc['arguments'], result=result, status=status)
                     tool_log.append(record)
                     if on_event:
@@ -381,7 +381,7 @@ class ReActAgent:
                 on_event({'event': 'card', 'ui': ui.value, 'data': data})
         return ChatResponse(user_id=user_id, reply=final_reply, ui=ui, data=data, tool_calls=tool_log, session_id=sid, stage=new_stage.value)
 
-    def _build_system(self, stage: SessionStage, long_term: dict[str, str]) -> str:
+    def _build_system(self, stage: SessionStage, long_term: dict[str, str], shop_id: str | None=None) -> str:
         """构造 system prompt：身份 + skill 编排说明 + 记忆 + 工具说明。
 
         skill 编排模式：不限制流程顺序，用户可随时调用任一 skill（设计/改设计/生图/
@@ -391,6 +391,8 @@ class ReActAgent:
         if long_term:
             mem = '；'.join((f'{k}={v}' for k, v in long_term.items()))
             parts.append('## 用户长期偏好（来自记忆，回复时参考）：' + mem)
+        if shop_id:
+            parts.append(f'## 当前店铺锁定（用户已选定店铺 {shop_id}）\n- search_plans：仅搜索 {shop_id} 的方案，忽略其他店铺。\n- search_shops：仅推荐 {shop_id}，不再搜索其他店铺。\n- match_shop_items：仅匹配 {shop_id} 的库存。\n- create_order：店铺默认 {shop_id}，无需再问用户选哪家。\n- 用户未主动要求切换店铺时，不要推荐其他店铺。用户明确说「换一家」「其他店」时，清除锁定并恢复全局搜索。')
         parts.append('## 回复格式要求\n- 回复要简短：方案、店铺、订单等结构化内容会以卡片形式展示给用户，文字里只给结论 + 一句行动建议，不要重复罗列卡片已有的细节（花材明细、寓意、包装、养护、步骤、价格清单等）。\n- 设计完方案后：把方案卡展示给用户，简短说『方案已设计好，点击卡片可查看详情，效果图已自动生成』，然后问『方案满意吗？满意的话我帮你匹配店铺下单』，**等用户确认后再推进到店铺/下单**，不要抢推店铺；花材寓意等交给卡片。\n- 生成效果图后：一句『效果图已生成，展开方案卡片即可查看』即可，不要描述画面细节。\n- 不要使用 ** 这种 markdown 加粗符号，也不要用 # 标题符。\n- 术语准确、语气亲切，像一位专业花艺师在简短讲解，而不是罗列参数。\n- 每次调用 respond_to_user 时务必填对 intent：判断的是用户『想干什么』（buying=要买/挑选、qa=问知识/咨询、chitchat=闲聊、design=要DIY定制、other=其他），而不是你本轮做了什么。例如『百合花什么季节开花』→ qa；『想给妈妈买束花』→ buying；『帮我定制一束专属的』→ design；『哈哈谢谢』→ chitchat。')
         parts.append('## 工具说明书\n' + generate_tool_manual())
         return '\n\n'.join(parts)

@@ -9,13 +9,14 @@ import { API_BASE, withApiUrl } from './client'
 export { getUserId }
 export { withApiUrl }
 
-export async function sendChat({ message, sessionId, userId }) {
+export async function sendChat({ message, sessionId, userId, shopId }) {
   const loc = getLocation()
   const body = {
     user_id: userId,
     message,
     session_id: sessionId || undefined,
   }
+  if (shopId) body.shop_id = shopId
   if (loc?.lat != null && loc?.lng != null) body.location = { lat: loc.lat, lng: loc.lng }
   const res = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
@@ -44,13 +45,14 @@ export async function sendChat({ message, sessionId, userId }) {
  * @param {function} [params.onError] - 错误回调 (message: string) => void
  * @returns {function} abort - 调用可中断 SSE 连接
  */
-export function sendChatStream({ message, sessionId, userId, onText, onToolCall, onCard, onDone, onError }) {
+export function sendChatStream({ message, sessionId, userId, shopId, onText, onToolCall, onCard, onDone, onError }) {
   const loc = getLocation()
   const body = {
     user_id: userId,
     message,
     session_id: sessionId || undefined,
   }
+  if (shopId) body.shop_id = shopId
   if (loc?.lat != null && loc?.lng != null) body.location = { lat: loc.lat, lng: loc.lng }
 
   const ctrl = new AbortController()

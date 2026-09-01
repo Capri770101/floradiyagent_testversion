@@ -51,7 +51,7 @@ async def chat(req: ChatRequest, request: Request) -> Any:
     if not sid:
         sid = await mem_store.create_conversation(user_id, title=req.message[:20])
     try:
-        result = await asyncio.wait_for(agent.arun(user_id, req.message, sid, req.user_role, req.location), timeout=settings.request_timeout)
+        result = await asyncio.wait_for(agent.arun(user_id, req.message, sid, req.user_role, req.location, shop_id=req.shop_id), timeout=settings.request_timeout)
     except TimeoutError:
         logger.error('[%s] 处理超时 >%.0fs', request_id, settings.request_timeout)
         raise HTTPException(status_code=504, detail=f'处理超时（>{settings.request_timeout:.0f}s），请简化问题后重试') from None
@@ -94,7 +94,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
     async def event_generator():
         """SSE 事件生成器：消费 agent.arun_stream 的 yield 事件。"""
         try:
-            async for evt in agent.arun_stream(user_id, req.message, sid, req.user_role, req.location):
+            async for evt in agent.arun_stream(user_id, req.message, sid, req.user_role, req.location, shop_id=req.shop_id):
                 event_type = evt.get('event', 'text')
                 data = {k: v for k, v in evt.items() if k != 'event'}
                 yield f'event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n'

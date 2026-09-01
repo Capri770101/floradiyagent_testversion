@@ -134,6 +134,7 @@ async def search_plans(keyword: str, _context: dict | None=None) -> str:
     命中结果按相关性排序并截断到 3 款（预算/色系/对象命中者优先）。
     首条结果同步写入 selected_plan，保证后续 search_shops / create_order
     的 latest 占位符解析到用户看到的方案（而非数据库随机首条）。
+    当 context 含 shop_id 时，限定该店铺的方案。
     """
     req = _requirement_from_context(_context)
     if not _req_clear(req):
@@ -141,7 +142,13 @@ async def search_plans(keyword: str, _context: dict | None=None) -> str:
     location = None
     if _context:
         location = _context.get('location') or (req.location if req else None)
-    plans = await repo.search_plans(keyword, requirement=req, location=location)
+    locked_shop = (_context or {}).get('shop_id')
+    if locked_shop:
+        # 锁定店铺：直接查该店铺的方案，跳过全局搜索
+        plans = await repo.search_plans(keyword, requirement=req, location=None)
+        plans = [p for p in plans if p.get('shop_id') == locked_shop]
+    else:
+        plans = await repo.search_plans(keyword, requirement=req, location=location)
     uid = (_context or {}).get('user_id', '')
     sid = (_context or {}).get('session_id', '')
     diy_hits: list[dict] = []
@@ -994,6 +1001,7 @@ async def search_shops(plan: str='latest', _context: dict | None=None) -> str:
     方案引用经 _resolve_session_plan 解析到「会话最近引用方案」（不再取全局首方案），
     解析结果写回 selected_plan，保证后续 create_order(plan_id="latest") 下单到同一方案。
     需求不明确时不推荐（返回引导文案），防止闲聊/知识问答被硬塞店铺卡片。
+    当 context 含 shop_id 时，仅返回该锁定店铺。
     """
     req = _requirement_from_context(_context)
     if not _req_clear(req):
@@ -1006,6 +1014,15 @@ async def search_shops(plan: str='latest', _context: dict | None=None) -> str:
     uid = (_context or {}).get('user_id', '')
     if plan_obj and sid:
         await memory.set_session_json(uid, sid, 'selected_plan', plan_obj)
+    locked_shop = (_context or {}).get('shop_id')
+    if locked_shop:
+        # 锁定店铺：仅返回该店铺（跳过全局搜索）
+        from backend.storage.catalog import DBCatalogRepository as _Repo
+        _repo = _Repo()
+        shop = await _repo.get_shop(locked_shop)
+        if shop:
+            return json.dumps([shop], ensure_ascii=False)
+        return json.dumps([], ensure_ascii=False)
     shops = await repo.list_shops(plan_obj, location, requirement=req)
     return json.dumps(shops[:3], ensure_ascii=False)
 
@@ -1016,6 +1033,7 @@ def match_shop_items(flowers: str, shop_id: str | None=None, _context: dict | No
     返回每家店的匹配详情：matched（已匹配的花材→商品映射）、
     missing（缺少的花材）、coverage（覆盖率 0-1）、estimated_cost（已匹配商品总价）。
     使用精确匹配（花材名完整出现在商品名或标签中），避免 "粉玫瑰" 错误匹配 "红玫瑰"。
+    当 context 含 shop_id 且未显式指定 shop_id 时，使用锁定店铺。
     """
     from agent.skills.skill_order import _match_flowers_to_shop
     from backend.storage.db import get_conn as _get_conn
@@ -1029,8 +1047,9 @@ def match_shop_items(flowers: str, shop_id: str | None=None, _context: dict | No
     if not flower_list:
         return json.dumps({'error': '花材列表为空'}, ensure_ascii=False)
     conn = _get_conn()
-    if shop_id:
-        shops = conn.execute('SELECT * FROM shops WHERE id=?', (shop_id,)).fetchall()
+    effective_shop = shop_id or ((_context or {}).get('shop_id') if _context else None)
+    if effective_shop:
+        shops = conn.execute('SELECT * FROM shops WHERE id=?', (effective_shop,)).fetchall()
     else:
         shops = conn.execute('SELECT * FROM shops').fetchall()
     results = []

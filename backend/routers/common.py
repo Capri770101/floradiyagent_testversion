@@ -121,6 +121,7 @@ class ChatRequest(BaseModel):
     session_id: str | None = Field(None, description='可选，不传则服务端生成')
     user_role: str = Field('user', description='user | merchant | admin（本期仅 user）')
     location: dict[str, float] | None = Field(None, description='可选，{lat, lng} 用于距离计算')
+    shop_id: str | None = Field(None, description='可选，用户选定的店铺 ID；锁定后工具结果限定该店铺')
 
 class ResetRequest(BaseModel):
     user_id: str | None = Field(None, min_length=1, max_length=64)

@@ -376,6 +376,7 @@ export default function Agent() {
   const [error, setError] = useState(null)
   const scrollRef = useRef(null)
   const abortRef = useRef(null)
+  const [shopId, setShopId] = useState(() => searchParams.get('shop') || null)
 
   // 进入页面：拉取会话列表；若有历史则自动打开最近的会话（保留对话记录）
   const [sessionReady, setSessionReady] = useState(false)
@@ -576,6 +577,7 @@ export default function Agent() {
       message: msg,
       sessionId: sid,
       userId: getUserId(),
+      shopId: shopId || undefined,
       onText: (chunk) => {
         replyText += chunk
         setMessages((prev) => {
@@ -750,7 +752,7 @@ export default function Agent() {
             {m.ui === 'shop_card' && m.data?.shops?.length > 0 && (
               <ShopCard
                 shops={m.data.shops}
-                onPick={(s) => send(`选择 ${s.name} 帮我下单`)}
+                onPick={(s) => { const sid = s.shop_id || s.id; setShopId(sid); setSearchParams((p) => { p.set('shop', sid); return p }, { replace: true }); send(`选择 ${s.name} 帮我下单`) }}
               />
             )}
             {m.ui === 'order_card' && (
@@ -812,6 +814,15 @@ export default function Agent() {
           <span className="text-[16px] font-medium text-dark">小兰</span>
         </span>
         <span className="ml-2 text-[9px] text-sub">AI花艺师</span>
+        {shopId && (
+          <button
+            onClick={() => { setShopId(null); setSearchParams((p) => { p.delete('shop'); return p }, { replace: true }) }}
+            className="ml-2 rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[10px] text-gold-dark"
+            title="点击解除店铺锁定"
+          >
+            🔒 {shopId}
+          </button>
+        )}
         <button
           onClick={openNewChat}
           className="press absolute right-3 text-pink text-[13px]"
