@@ -390,6 +390,8 @@ export default function Agent() {
         if (convs.length > 0) {
           const latest = convs[0]
           setActiveId(latest.id)
+          // 如果最新会话有绑定 shop_id，同步到状态
+          if (latest.shop_id && !shopId) setShopId(latest.shop_id)
           const msgs = await getMessages(latest.id, getUserId())
           if (alive) setMessages(msgs.length ? msgs : [GREETING])
         }
@@ -423,7 +425,7 @@ export default function Agent() {
       setInput(q)
       // 预填走独立新会话，避免混入历史对话（首页快捷入口是全新诉求）
       try {
-        const cid = await createConversation(getUserId(), q.slice(0, 20))
+        const cid = await createConversation(getUserId(), q.slice(0, 20), shopId)
         setActiveId(cid)
         setMessages([GREETING])
         await refreshConversations()
@@ -448,7 +450,7 @@ export default function Agent() {
 
   const openNewChat = useCallback(async () => {
     try {
-      const cid = await createConversation(getUserId(), '新对话')
+      const cid = await createConversation(getUserId(), '新对话', shopId)
       setActiveId(cid)
       setMessages([GREETING])
       setDrawerOpen(false)
@@ -456,7 +458,7 @@ export default function Agent() {
     } catch (e) {
       setError(e.message || '新建会话失败')
     }
-  }, [refreshConversations])
+  }, [refreshConversations, shopId])
 
   const switchTo = useCallback(async (convId) => {
     try {
@@ -549,7 +551,7 @@ export default function Agent() {
     let sid = presetSid || activeId
     if (!sid) {
       try {
-        sid = await createConversation(getUserId(), msg.slice(0, 20))
+        sid = await createConversation(getUserId(), msg.slice(0, 20), shopId)
         setActiveId(sid)
       } catch (e) {
         setError(e.message || '创建会话失败')
@@ -752,7 +754,7 @@ export default function Agent() {
             {m.ui === 'shop_card' && m.data?.shops?.length > 0 && (
               <ShopCard
                 shops={m.data.shops}
-                onPick={(s) => { const sid = s.shop_id || s.id; setShopId(sid); setSearchParams((p) => { p.set('shop', sid); return p }, { replace: true }); send(`选择 ${s.name} 帮我下单`) }}
+                onPick={(s) => send(`选择 ${s.name} 帮我下单`)}
               />
             )}
             {m.ui === 'order_card' && (
@@ -814,15 +816,6 @@ export default function Agent() {
           <span className="text-[16px] font-medium text-dark">小兰</span>
         </span>
         <span className="ml-2 text-[9px] text-sub">AI花艺师</span>
-        {shopId && (
-          <button
-            onClick={() => { setShopId(null); setSearchParams((p) => { p.delete('shop'); return p }, { replace: true }) }}
-            className="ml-2 rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[10px] text-gold-dark"
-            title="点击解除店铺锁定"
-          >
-            🔒 {shopId}
-          </button>
-        )}
         <button
           onClick={openNewChat}
           className="press absolute right-3 text-pink text-[13px]"

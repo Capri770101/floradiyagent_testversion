@@ -149,11 +149,11 @@ export async function listConversations(userId) {
   return data.conversations || []
 }
 
-export async function createConversation(userId, title) {
+export async function createConversation(userId, title, shopId) {
   const res = await fetch(`${API_BASE}/conversations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ user_id: userId, title: title || '新对话' }),
+    body: JSON.stringify({ user_id: userId, title: title || '新对话', shop_id: shopId || undefined }),
   })
   if (!res.ok) {
     handleAuthFailure(res)

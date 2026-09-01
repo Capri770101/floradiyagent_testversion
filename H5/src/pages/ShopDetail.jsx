@@ -100,15 +100,23 @@ function ShopHeader({ shop, noticeOpen, onToggleNotice, onChat }) {
           </span>
         </div>
         {/* 联系商家：进入顾客-商家会话（契约 4.1） */}
-        {onChat && (
+        <div className="mt-2.5 flex gap-2">
+          {onChat && (
+            <button
+              onClick={onChat}
+              className="press flex flex-1 items-center justify-center gap-1.5 rounded-[2px] border border-gold/50 bg-gold/5 py-2 text-[12px] tracking-[1px] text-gold"
+            >
+              联系商家
+              <IconArrow width={11} height={11} className="rotate-90" />
+            </button>
+          )}
           <button
-            onClick={onChat}
-            className="press mt-2.5 flex w-full items-center justify-center gap-1.5 rounded-[2px] border border-gold/50 bg-gold/5 py-2 text-[12px] tracking-[1px] text-gold"
+            onClick={() => nav(`/agent?shop=${encodeURIComponent(id)}`)}
+            className="press flex flex-1 items-center justify-center gap-1.5 rounded-[2px] border border-pink/40 bg-pink/5 py-2 text-[12px] tracking-[1px] text-pink"
           >
-            联系商家
-            <IconArrow width={11} height={11} className="rotate-90" />
+            咨询花艺师
           </button>
-        )}
+        </div>
       </div>
     </div>
   )

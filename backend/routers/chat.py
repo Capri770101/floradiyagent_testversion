@@ -173,7 +173,7 @@ async def create_conversation(req: CreateConvRequest, request: Request) -> dict[
     uid = await resolve_uid(request, req.user_id)
     if not uid:
         raise HTTPException(status_code=401, detail='缺少用户身份')
-    cid = await mem_store.create_conversation(uid, req.title or '新对话')
+    cid = await mem_store.create_conversation(uid, req.title or '新对话', shop_id=req.shop_id)
     return {'conversation_id': cid, 'id': cid}
 
 @router.get('/conversations/{conv_id}/messages')

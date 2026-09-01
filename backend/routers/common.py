@@ -131,6 +131,7 @@ class ResetRequest(BaseModel):
 class CreateConvRequest(BaseModel):
     user_id: str | None = Field(None, min_length=1, max_length=64, description='鉴权模式下以 JWT 为准，可不传')
     title: str | None = Field(None, description='会话标题（留空则由首条消息自动生成）')
+    shop_id: str | None = Field(None, description='可选，进入店铺时绑定 shop_id，整个会话期间不变')
 
 class RenameConvRequest(BaseModel):
     user_id: str | None = Field(None, min_length=1, max_length=64, description='鉴权模式下以 JWT 为准，可不传')

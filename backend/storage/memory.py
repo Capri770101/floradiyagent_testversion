@@ -22,28 +22,35 @@ logger = logging.getLogger('memory')
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec='seconds')
 
-async def get_or_create_session(user_id: str, conversation_id: str | None=None) -> str:
+async def get_or_create_session(user_id: str, conversation_id: str | None=None, shop_id: str | None=None) -> str:
     """返回会话 ID。
 
     - conversation_id 为空：为该用户新建一个会话（多会话模型下，不再 1:1 复用）。
     - conversation_id 给定：校验归属后复用；若该 id 不存在（如前端先建会话再发消息），
       则以该 id 创建会话，保证前后端会话 ID 一致。
+    - shop_id：新建会话时绑定店铺，整个会话期间不变。
     """
     async with dba.transaction() as c:
         if conversation_id:
             rows = await c.execute('SELECT session_id FROM sessions WHERE session_id = ? AND user_id = ?', (conversation_id, user_id))
             if rows:
                 return rows[0]['session_id']
-            await c.execute('INSERT INTO sessions(session_id, user_id, stage, title, created_at, updated_at) VALUES (?,?,?,?,?,?)', (conversation_id, user_id, 'analyze', '新对话', _now(), _now()))
+            await c.execute('INSERT INTO sessions(session_id, user_id, stage, title, shop_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', (conversation_id, user_id, 'analyze', '新对话', shop_id, _now(), _now()))
             return conversation_id
         session_id = uuid.uuid4().hex
-        await c.execute('INSERT INTO sessions(session_id, user_id, stage, title, created_at, updated_at) VALUES (?,?,?,?,?,?)', (session_id, user_id, 'analyze', '新对话', _now(), _now()))
+        await c.execute('INSERT INTO sessions(session_id, user_id, stage, title, shop_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', (session_id, user_id, 'analyze', '新对话', shop_id, _now(), _now()))
         return session_id
 
 async def get_stage(session_id: str) -> str:
     async with dba.transaction() as c:
         rows = await c.execute('SELECT stage FROM sessions WHERE session_id = ?', (session_id,))
     return rows[0]['stage'] if rows else 'analyze'
+
+async def get_session_shop_id(session_id: str) -> str | None:
+    """读取会话绑定的 shop_id（无绑定返回 None）。"""
+    async with dba.transaction() as c:
+        rows = await c.execute('SELECT shop_id FROM sessions WHERE session_id = ?', (session_id,))
+    return rows[0]['shop_id'] if rows else None
 
 async def update_stage(session_id: str, stage: str) -> None:
     async with dba.transaction() as c:
@@ -153,23 +160,23 @@ async def reset_session(user_id: str, conversation_id: str | None=None) -> bool:
         await c.execute('DELETE FROM sessions WHERE session_id = ?', (sid,))
     return True
 
-async def create_conversation(user_id: str, title: str='新对话') -> str:
-    """新建一个会话，返回会话 ID。"""
+async def create_conversation(user_id: str, title: str='新对话', shop_id: str | None=None) -> str:
+    """新建一个会话，返回会话 ID。shop_id 绑定后整个会话期间不变。"""
     sid = uuid.uuid4().hex
     async with dba.transaction() as c:
-        await c.execute('INSERT INTO sessions(session_id, user_id, stage, title, created_at, updated_at) VALUES (?,?,?,?,?,?)', (sid, user_id, 'analyze', (title or '新对话')[:50], _now(), _now()))
+        await c.execute('INSERT INTO sessions(session_id, user_id, stage, title, shop_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', (sid, user_id, 'analyze', (title or '新对话')[:50], shop_id, _now(), _now()))
     return sid
 
 async def list_conversations(user_id: str) -> list[dict[str, Any]]:
     """列出某用户的全部会话（按最近活动时间倒序）。"""
     async with dba.transaction() as c:
-        rows = await c.execute('SELECT session_id, title, preview, created_at, updated_at FROM sessions WHERE user_id = ? ORDER BY updated_at DESC', (user_id,))
-    return [{'id': r['session_id'], 'title': r['title'] or '新对话', 'preview': r['preview'] or '', 'created_at': r['created_at'], 'updated_at': r['updated_at']} for r in rows]
+        rows = await c.execute('SELECT session_id, title, preview, shop_id, created_at, updated_at FROM sessions WHERE user_id = ? ORDER BY updated_at DESC', (user_id,))
+    return [{'id': r['session_id'], 'title': r['title'] or '新对话', 'preview': r['preview'] or '', 'shop_id': r['shop_id'], 'created_at': r['created_at'], 'updated_at': r['updated_at']} for r in rows]
 
 async def get_conversation(conversation_id: str) -> dict[str, Any] | None:
     """读取单个会话元信息（无则返回 None）。"""
     async with dba.transaction() as c:
-        rows = await c.execute('SELECT session_id, user_id, title, preview, created_at, updated_at FROM sessions WHERE session_id = ?', (conversation_id,))
+        rows = await c.execute('SELECT session_id, user_id, title, preview, shop_id, created_at, updated_at FROM sessions WHERE session_id = ?', (conversation_id,))
     return dict(rows[0]) if rows else None
 
 async def update_conversation_preview(conversation_id: str, preview: str) -> None:

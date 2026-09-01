@@ -125,10 +125,13 @@ class ReActAgent:
 
     async def run(self, user_id: str, message: str, session_id: str | None, user_role: str, location: dict[str, float] | None, on_event: Callable[[dict], None] | None=None, shop_id: str | None=None) -> ChatResponse:
         t0 = time.perf_counter()
-        sid = await mem_store.get_or_create_session(user_id, session_id)
+        sid = await mem_store.get_or_create_session(user_id, session_id, shop_id=shop_id)
+        # shop_id 绑定在会话上，以会话存储的为准（创建时写入，整个会话不变）
+        session_shop = await mem_store.get_session_shop_id(sid)
+        shop_id = session_shop or shop_id
         stage = SessionStage(await mem_store.get_stage(sid))
         if stage == SessionStage.DONE and (not _is_chitchat(message)):
-            sid = await mem_store.create_conversation(user_id, title=message[:20])
+            sid = await mem_store.create_conversation(user_id, title=message[:20], shop_id=shop_id)
             stage = SessionStage.ANALYZE
         existing_req = await mem_store.get_requirement(sid)
         turn_req = extract_requirement(message)
